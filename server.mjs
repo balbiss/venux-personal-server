@@ -121,7 +121,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.4-DEBUG";
+const SERVER_VERSION = "1.1.4-FIX";
 
 function log(msg) {
     const logMsg = `[BOT LOG] [V${SERVER_VERSION}] ${new Date().toLocaleTimeString()} - ${msg}`;
@@ -1451,6 +1451,7 @@ async function handleAiSdr({ text, audioBase64, history = [], systemPrompt, chat
                 `- Seja amigável, curto e direto.\n` +
                 `- Use linguagem natural e brasileira.\n` +
                 `- Seja EXTREMAMENTE CURTO (max 1-2 frases por resposta).\n` +
+                `- NÃO INVENTE INFORMAÇÕES. Se não souber algo baseado nas suas instruções, peça desculpas ou ofereça passar para um atendente.\n` +
                 `- Se o cliente pedir para falar com um humano ou se você não souber responder, envie exatamente: [TRANSFERIR]\n` +
                 `- Se você detectar que o objetivo do atendimento (conforme suas instruções) foi concluído ou que o lead está pronto, finalize a resposta e adicione a tag secreta: [QUALIFICADO]`
         }];
@@ -2200,10 +2201,11 @@ app.post("/webhook", async (req, res) => {
                     }
                 }
             }
+        } else {
+            log(`[WEBHOOK SKIP] ChatId não pôde ser extraído de tokenId: ${tokenId}`);
         }
-    }
-} else {
-    log(`[WEBHOOK SKIP] Faltando tokenId (${!!tokenId}) ou event(${!!event}).Keys: ${ Object.keys(body).join(",") } `);
+    } else {
+        log(`[WEBHOOK SKIP] Faltando tokenId (${!!tokenId}) ou event (${!!event}). Keys: ${Object.keys(body).join(",")}`);
     }
     return res.send({ ok: true });
 });
@@ -2229,7 +2231,7 @@ async function checkScheduledCampaigns() {
         if (error) throw error;
 
         for (const item of (data || [])) {
-            log(`[WORKER] Iniciando campanha agendada ${ item.id } para ${ item.chat_id } `);
+            log(`[WORKER] Iniciando campanha agendada ${item.id} para ${item.chat_id} `);
 
             // Marcar como RUNNING no banco
             await supabase
@@ -2264,17 +2266,17 @@ async function checkScheduledCampaigns() {
                 await bot.telegram.sendMessage(item.chat_id, `⏰ * Agendamento Ativado! *\n\nIniciando agora o disparo para \`${item.inst_id}\`.`, { parse_mode: "Markdown" });
             } catch (e) { }
 
-runCampaign(Number(item.chat_id), item.inst_id).then(async () => {
-    // Ao finalizar, marcar como COMPLETED no banco
-    await supabase
-        .from('scheduled_campaigns')
-        .update({ status: 'COMPLETED' })
-        .eq('id', item.id);
-});
+            runCampaign(Number(item.chat_id), item.inst_id).then(async () => {
+                // Ao finalizar, marcar como COMPLETED no banco
+                await supabase
+                    .from('scheduled_campaigns')
+                    .update({ status: 'COMPLETED' })
+                    .eq('id', item.id);
+            });
         }
     } catch (e) {
-    log(`[WORKER ERR] ${e.message}`);
-}
+        log(`[WORKER ERR] ${e.message}`);
+    }
 }
 
 // Iniciar worker a cada 1 minuto
