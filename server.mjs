@@ -2060,7 +2060,8 @@ app.post("/webhook", async (req, res) => {
                 log(`[WEBHOOK] Msg from: ${remoteJid} | Group: ${isGroup} | FromMe: ${isFromMe} | Text: ${text.substring(0, 50)}`);
 
                 // 1. FILTRO: Apenas Chats Privados, ignora grupos e canais
-                if (remoteJid.endsWith("@s.whatsapp.net") && !isGroup) {
+                const isPrivate = remoteJid.endsWith("@s.whatsapp.net") || remoteJid.endsWith("@lid");
+                if (isPrivate && !isGroup) {
                     const session = await getSession(chatId);
                     const inst = session.whatsapp.instances.find(i => i.id === tokenId);
 
