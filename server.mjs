@@ -121,7 +121,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.29-PRO";
+const SERVER_VERSION = "1.1.30-PRO";
 
 function log(msg) {
     const logMsg = `[BOT LOG] [V${SERVER_VERSION}] ${new Date().toLocaleTimeString()} - ${msg}`;
@@ -1405,41 +1405,55 @@ bot.action(/^wa_toggle_presence_(.+)$/, async (ctx) => {
 });
 
 // --- Prompt Factory Engine (SaaS Logic) ---
+// --- Prompt Factory Engine (SaaS Logic) ---
 function generateSystemPrompt(inst) {
     if (!inst.niche || inst.niche === 'legacy' || inst.niche === 'custom') {
         return inst.ai_prompt || "Você é um assistente virtual prestativo.";
     }
 
     const data = inst.niche_data || {};
-    const style = data.style || "Amigável e com Emojis";
-    const tone = data.tone || "Acolhedora";
+    const agentName = data.agent_name || (inst.niche === 'medical_clinic' ? 'Dani' : 'Balbis');
+    const company = data.company_name || 'nossa empresa';
+    const strategy = data.rules || 'Seja gentil, use o nome do lead e valide cada resposta antes de prosseguir.';
 
-    let identity = "";
-    let objective = "";
+    // Estrutura Baseada no Modelo de Performance n8n
+    return `
+# PERSONA E ESTRATÉGIA
+Você se chama ${agentName}. 
+Você é a assistente virtual da empresa ${company}. 
 
-    if (inst.niche === 'real_estate') {
-        identity = `Sou o assistente virtual da imobiliária ${data.company_name || 'nossa empresa'}. Minha bio: ${data.bio || 'Especialista em encontrar imóveis'}.`;
-        objective = `Qualificar o interesse (comprar/alugar), localização e preço. Funil: ${data.funnel || 'Geral'}. Regras: ${data.rules || 'Sempre tente agendar visita'}.`;
-    } else if (inst.niche === 'medical_clinic') {
-        identity = `Sou o assistente virtual da clínica ${data.company_name || 'nossa clínica'}. Identidade: ${data.bio || 'Focada em bem-estar'}.`;
-        objective = `Informar convênios (${data.plans || 'diversos'}), especialidades (${data.specialties || 'geral'}) e direcionar para o link de agendamento: ${data.booking_link || 'solicite suporte'}.`;
-    } else {
-        identity = `Sou o assistente virtual da empresa ${data.company_name || 'Vexnus'}.`;
-        objective = `Ajudar o cliente com ${data.products || 'nossos serviços'} conforme os objetivos: ${data.goal || 'atendimento geral'}.`;
-    }
+ESTRATÉGIA DE CONDUÇÃO: 
+"${strategy}"
 
-    return `SUA IDENTIDADE: ${identity}\n` +
-        `OBJETIVO DO ATENDIMENTO: ${objective}\n\n` +
-        `ESTILO: ${style} | TOM: ${tone}\n\n` +
-        `DIRETRIZES TÉCNICAS (SIGA À RISCA):\n` +
-        `- NUNCA copie e cole uma saudação padrão. Se apresente apenas se for necessário e de forma natural.\n` +
-        `- ANTI-REPETIÇÃO: NUNCA use a mesma frase ou estrutura de resposta duas vezes na mesma conversa. Se o cliente perguntar algo que você já respondeu (como seu nome), mude o jeito de falar: "Como eu te disse, me chamo Balbis! 😉" em vez de repetir a apresentação formal.\n` +
-        `- ESPELHAMENTO SOCIAL: Reaja ao que o cliente diz (elogios, dúvidas, casualidades) antes de prosseguir com a próxima pergunta.\n` +
-        `- PACIÊNCIA: Faça apenas UMA pergunta por mensagem.\n` +
-        `- Se o histórico mostrar que você já se apresentou, NÃO se apresente de novo. Vá direto ao ponto.\n` +
-        `- Use linguagem natural brasileira.\n` +
-        `- Use [QUALIFICADO] quando o objetivo for atingido.\n` +
-        `- Use [TRANSFERIR] se o cliente pedir humano ou se você travar.`;
+# MODO HUMANIZADO (HIGH-CONVERSION)
+- Use gírias leves se o tom for amigável.
+- Responda apenas o necessário. Nunca dê textos longos.
+- ESPELHAMENTO SOCIAL: Reaja ao que o cliente diz (Ex: "Que legal!", "Entendo") antes de prosseguir.
+
+# REGRAS DE OURO (NUNCA QUEBRE)
+1. SAUDAÇÃO INTELIGENTE: Se apresente apenas na PRIMEIRA mensagem. Se o histórico já mostra que você falou oi, vá direto ao assunto.
+2. ANTI-REPETIÇÃO CRÍTICA: Nunca repita a mesma estrutura de frase. 
+3. ANTI-LOOPING: Se o dado (nome, local, etc) já está no histórico, NUNCA pergunte novamente. Pule para o próximo passo.
+4. PACIÊNCIA: Faça EXATAMENTE UMA pergunta por mensagem. Aguarde a resposta do lead.
+
+# FLUXO DE ATENDIMENTO (FUNIL)
+${inst.niche === 'real_estate' ? `
+1. Identificar se quer Comprar ou Alugar.
+2. Identificar Localização desejada.
+3. Identificar Faixa de Preço/Renda.
+4. Agendar conversa com corretor.` :
+            inst.niche === 'medical_clinic' ? `
+1. Identificar a necessidade/especialidade.
+2. Verificar convênio (${data.plans || 'diversos'}).
+3. Direcionar para agendamento: ${data.booking_link || 'solicite suporte'}.` :
+                `1. Qualificar a necessidade geral.
+2. Apresentar solução/serviço.
+3. Coletar contato/agendar.`}
+
+# FINALIZAÇÃO
+Ao concluir a qualificação, use a tag [QUALIFICADO].
+Se não souber responder ou pedirem humano, use a tag [TRANSFERIR].
+`;
 }
 
 // --- Módulo AI SDR / Suporte ---
@@ -1813,10 +1827,12 @@ async function handleAiSdr({ text, audioBase64, history = [], systemPrompt, chat
                 `- Se você detectar que o objetivo do atendimento (conforme suas instruções) foi concluído ou que o lead está pronto, finalize a resposta e adicione a tag secreta: [QUALIFICADO]`
         }];
 
-        // Adicionar histórico (últimas 15 msgs)
-        history.slice(-15).forEach(msg => {
+        // Adicionar histórico (últimas 15 msgs) ordenado cronologicamente
+        const sortedHistory = [...history].reverse().slice(-15);
+
+        sortedHistory.forEach(msg => {
             const isMe = msg.from_me === true || msg.FromMe === true ||
-                (msg.sender_jid && msg.sender_jid.includes("me")) ||
+                (msg.sender_jid && (msg.sender_jid.includes("me") || msg.sender_jid === chatId)) ||
                 (msg.Info?.FromMe === true);
             const role = isMe ? "assistant" : "user";
 
