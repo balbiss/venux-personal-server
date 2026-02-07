@@ -2241,12 +2241,7 @@ app.post("/webhook", async (req, res) => {
                 log(`[WEBHOOK SKIP] Mensagem ignorada (Grupo ou Canal): ${remoteJid}`);
             }
         }
-    }
-    return res.send({ ok: true });
-}
-
-    res.send({ ok: true });
-});
+    });
 
 // -- Configure Bot Commands Menu --
 bot.telegram.setMyCommands([
