@@ -2008,7 +2008,7 @@ app.get("/api/instance/:id/status-proxy", async (req, res) => {
 
 app.post("/webhook", async (req, res) => {
     const body = req.body || {};
-    log(`[WEBHOOK IN] Recebido corpo: ${JSON.stringify(body).substring(0, 500)}`);
+    log(`[WEBHOOK IN] Recebido corpo: ${JSON.stringify(body).substring(0, 2000)}`);
 
     // -- 1. Tratar Webhook SyncPay (Pagamento) --
     if (body.external_id && (body.status === "paid" || body.status === "confirmed")) {
@@ -2024,11 +2024,11 @@ app.post("/webhook", async (req, res) => {
 
     // -- 2. Tratar Webhook WUZAPI (WhatsApp) --
     // WUZAPI pode enviar como token/event ou instanceName/type dependendo da versão/configuração
-    const tokenId = body.token || body.instanceName || body.instance_name;
-    const event = body.type || body.event;
+    const tokenId = body.token || body.instanceName || body.instance_name || (body.event && (body.event.instanceName || body.event.token));
+    const event = body.type || (typeof body.event === 'string' ? body.event : (body.event && body.event.type));
 
     if (tokenId && event) {
-        log(`[WEBHOOK] Evento: ${event} | Token: ${tokenId}`);
+        log(`[WEBHOOK] Evento: ${event} | Token: ${tokenId} | Keys: ${Object.keys(body).join(",")}`);
 
         // Extrair chatId do tokenId (wa_CHATID_RAND)
         const parts = tokenId.split("_");
