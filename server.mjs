@@ -121,7 +121,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.21-PRO";
+const SERVER_VERSION = "1.1.22-PRO";
 
 function log(msg) {
     const logMsg = `[BOT LOG] [V${SERVER_VERSION}] ${new Date().toLocaleTimeString()} - ${msg}`;
@@ -424,7 +424,7 @@ bot.start(async (ctx) => {
 // --- Menu Handlers ---
 bot.action("cmd_instancias_menu", async (ctx) => {
     safeAnswer(ctx);
-    await listInstances(ctx);
+    await showInstances(ctx);
 });
 
 // Atalhos Globais (SaaS Dashboard)
