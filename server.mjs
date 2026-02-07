@@ -121,7 +121,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.1-DEBUG";
+const SERVER_VERSION = "1.1.2-DEBUG";
 
 function log(msg) {
     const logMsg = `[BOT LOG] [V${SERVER_VERSION}] ${new Date().toLocaleTimeString()} - ${msg}`;
@@ -2235,11 +2235,12 @@ app.post("/webhook", async (req, res) => {
                     }
                 }
             }
-        } else {
-            log(`[WEBHOOK SKIP] Faltando tokenId (${!!tokenId}) ou event (${!!event}). Keys: ${Object.keys(body).join(",")}`);
         }
-        return res.send({ ok: true });
-    });
+    } else {
+        log(`[WEBHOOK SKIP] Faltando tokenId (${!!tokenId}) ou event (${!!event}). Keys: ${Object.keys(body).join(",")}`);
+    }
+    return res.send({ ok: true });
+});
 
 // -- Configure Bot Commands Menu --
 bot.telegram.setMyCommands([
