@@ -2,13 +2,19 @@ version: '3.8'
 
 services:
   venux-server:
-    image: venux-personal-server:latest
-    container_name: venux_server
+    image: node:22-alpine
     restart: always
-    build: .
+    working_dir: /app
     ports:
       - "8788:8788"
+    command: >
+      sh -c "apk add --no-cache git &&
+             git clone https://github.com/balbiss/venux-personal-server.git . &&
+             npm install --production &&
+             node server.mjs"
     # Portainer will manage env vars via its UI
     volumes:
-      # Persistent session storage (if file based)
-      - ./bot_sessions:/app/bot_sessions
+      - venux_data:/app/bot_sessions
+
+volumes:
+  venux_data:
