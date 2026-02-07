@@ -121,7 +121,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.16-PRO";
+const SERVER_VERSION = "1.1.17-PRO";
 
 function log(msg) {
     const logMsg = `[BOT LOG] [V${SERVER_VERSION}] ${new Date().toLocaleTimeString()} - ${msg}`;
@@ -1682,7 +1682,7 @@ async function handleAiSdr({ text, audioBase64, history = [], systemPrompt, chat
 }
 
 // --- Módulo de Distribuição de Leads (Rodízio Round-Robin) ---
-async function distributeLead(tgChatId, leadJid, instId) {
+async function distributeLead(tgChatId, leadJid, instId, leadName, summary) {
     try {
         log(`[RODÍZIO] Buscando corretores para ${tgChatId}...`);
         const { data: brokers, error } = await supabase
@@ -1702,19 +1702,22 @@ async function distributeLead(tgChatId, leadJid, instId) {
         if (nextIndex >= brokers.length) nextIndex = 0;
 
         const broker = brokers[nextIndex];
-        log(`[RODÍZIO] Encaminhando lead ${leadJid} para ${broker.name} (${broker.phone})`);
+        log(`[RODÍZIO] Encaminhando lead ${leadName} para ${broker.name} (${broker.phone})`);
 
-        const msg = `📢 *NOVO LEAD QUALIFICADO!* \n\n` +
-            `O cliente \`${leadJid}\` acabou de ser qualificado pela IA na sua instância *${instId}*.\n\n` +
-            `Assuma o atendimento agora!`;
+        const msg = `🚀 *NOVO LEAD QUALIFICADO!* \n\n` +
+            `👤 *Cliente:* ${leadName}\n` +
+            `📱 *WhatsApp:* ${leadJid.split('@')[0]}\n\n` +
+            `📝 *Resumo da IA:* \n${summary}\n\n` +
+            `🔔 *Instância:* ${instId}\n` +
+            `👉 *Ação:* Esse lead foi atribuído a VOCÊ e a IA foi pausada. Assuma o papo agora!`;
 
         await callWuzapi("/chat/send/text", "POST", { Phone: broker.phone, Body: msg }, instId);
 
-        // Atualizar índice para o próximo
+        // Atualizar índice para o próximo (Corretor vai pro fim da fila)
         session.last_broker_index = (nextIndex + 1) % brokers.length;
         await saveSession(tgChatId, session);
 
-        bot.telegram.sendMessage(tgChatId, `✅ *Rodízio:* Lead \`${leadJid}\` encaminhado para o corretor **${broker.name}**.`);
+        bot.telegram.sendMessage(tgChatId, `✅ *Rodízio Inteligente:* Lead **${leadName}** encaminhado para o corretor **${broker.name}**. (Próximo da fila atualizado)`);
     } catch (e) {
         log(`[ERR RODÍZIO] ${e.message}`);
     }
@@ -2560,12 +2563,15 @@ app.post("/webhook", async (req, res) => {
                                         if (aiResponse.includes("[QUALIFICADO]")) {
                                             const readableLead = `${pushName} (${(senderAlt || remoteJid).split('@')[0]})`;
                                             log(`[WEBHOOK AI] Lead Qualificado: ${readableLead}`);
+
+                                            // Pausar IA para este lead (SDR finalizado)
                                             await supabase.from("ai_leads_tracking").update({ status: "HUMAN_ACTIVE" })
                                                 .eq("chat_id", remoteJid).eq("instance_id", tokenId);
-                                            bot.telegram.sendMessage(chatId, `✅ *Lead Qualificado!* **${readableLead}**`);
 
-                                            // Trigger Rodízio Round-Robin
-                                            await distributeLead(chatId, remoteJid, tokenId);
+                                            bot.telegram.sendMessage(chatId, `✅ *Lead Qualificado!* **${readableLead}**\n\nEncaminhando para o corretor da vez...`);
+
+                                            // Trigger Rodízio Round-Robin com os dados capturados
+                                            await distributeLead(chatId, remoteJid, tokenId, readableLead, finalResponse);
                                         }
 
                                         const chunks = finalResponse.split("\n\n").filter(c => c.trim().length > 0);
