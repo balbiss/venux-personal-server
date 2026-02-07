@@ -121,7 +121,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.11-FIX";
+const SERVER_VERSION = "1.1.12-FIX";
 
 function log(msg) {
     const logMsg = `[BOT LOG] [V${SERVER_VERSION}] ${new Date().toLocaleTimeString()} - ${msg}`;
@@ -2238,6 +2238,7 @@ app.post("/webhook", async (req, res) => {
                     messageObj.videoMessage?.caption ||
                     messageObj.documentMessage?.caption ||
                     info.Body || "";
+                const audioBase64 = messageObj.audioMessage?.url || messageObj.audioMessage?.directPath || rawData.Audio || null;
 
                 log(`[WEBHOOK] Msg from: ${remoteJid} | Group: ${isGroup} | FromMe: ${isFromMe} | Text: ${text.substring(0, 50)}`);
 
