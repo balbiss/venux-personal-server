@@ -1126,6 +1126,7 @@ async function renderWebhookMenu(ctx, id) {
 
 bot.action(/^wa_web_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
+    await safeDelete(ctx);
     const id = ctx.match[1];
     await renderWebhookMenu(ctx, id);
 });
