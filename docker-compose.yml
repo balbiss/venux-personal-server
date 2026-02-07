@@ -8,9 +8,15 @@ services:
     ports:
       - "8788:8788"
     command: >
-      sh -c "apk add --no-cache git &&
-             git clone https://github.com/balbiss/venux-personal-server.git . &&
+      sh -c "echo 'Starting deployment script...' &&
+             apk add --no-cache git &&
+             echo 'Cloning repository...' &&
+             git clone https://github.com/balbiss/venux-personal-server.git /app_tmp &&
+             cp -r /app_tmp/* . &&
+             cp -r /app_tmp/.* . 2>/dev/null || true &&
+             echo 'Installing dependencies...' &&
              npm install --production &&
+             echo 'Starting application...' &&
              node server.mjs"
     # Portainer will manage env vars via its UI
     volumes:
