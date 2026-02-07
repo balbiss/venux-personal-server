@@ -121,7 +121,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.15-PRO";
+const SERVER_VERSION = "1.1.16-PRO";
 
 function log(msg) {
     const logMsg = `[BOT LOG] [V${SERVER_VERSION}] ${new Date().toLocaleTimeString()} - ${msg}`;
@@ -1308,36 +1308,36 @@ function generateSystemPrompt(inst) {
     const data = inst.niche_data || {};
     let prompt = "";
 
+    // Base de Personalidade (V1.1.16-PRO)
+    const style = data.style || "Amigável e com Emojis";
+    const tone = data.tone || "Acolhedora";
+
+    let baseRules = `ESTILO DE CONVERSA: ${style}\n` +
+        `TOM DE VOZ: ${tone}\n\n` +
+        `DIRETRIZES TÉCNICAS:\n` +
+        `- Seja amigável, curto e direto.\n` +
+        `- Use linguagem natural e brasileira.\n` +
+        `- NUNCA invente informações. Se não souber, peça para falar com um atendente.\n` +
+        `- Se detectar que o lead está qualificado conforme o funil, use a tag [QUALIFICADO].\n\n`;
+
     if (inst.niche === 'real_estate') {
-        prompt = `Você é o assistente virtual especializado da imobiliária ${data.company_name || 'nossa empresa'}.\n\n` +
-            `OBJETIVO: ${data.goal || 'Qualificar leads interessantes para compra ou aluguel'}.\n` +
-            `TOM DE VOZ: ${data.tone || 'Profissional, empático e focado em converter o lead'}.\n\n` +
-            `DADOS A COLETAR:\n` +
-            `- Pergunte educadamente sobre: ${data.fields?.join(", ") || 'localização, faixa de preço, tipo de imóvel e urgência'}.\n\n` +
-            `REGRAS E COMPORTAMENTO:\n` +
-            `- ${data.rules?.join(". ") || 'Nunca prometa valores exatos. Tente sempre agendar uma conversa com o corretor'}.\n` +
-            `- Se o cliente perguntar se você é humano, diga que é o assistente digital da imobiliária.\n` +
-            `- Quando detectar que o lead está qualificado (forneceu os dados básicos), adicione obrigatoriamente a tag [QUALIFICADO].\n\n` +
-            `FLUXO: Saudação -> Identificação da necessidade -> Coleta de dados -> Finalização/Tag de Qualificação.`;
+        prompt = `Você é o assistente virtual da imobiliária ${data.company_name || 'nossa empresa'}.\n` +
+            `BIO: ${data.bio || 'Especialistas em encontrar o imóvel dos seus sonhos'}.\n` +
+            `SAUDAÇÃO: ${data.greeting || 'Olá! Como posso te ajudar hoje?'}.\n\n` +
+            `O QUE VENDEMOS/FAZEMOS: ${data.products || 'Venda e locação de imóveis residenciais e comerciais'}.\n` +
+            `ENDEREÇO/ATUAÇÃO: ${data.address || 'Atuamos em diversas regiões'}.\n\n` +
+            `FUNIL DE QUALIFICAÇÃO: ${data.funnel || 'Entender se o cliente quer comprar ou alugar, localização e faixa de preço'}.\n\n` +
+            `REGRAS E OBJEÇÕES: ${data.rules || 'Sempre tente agendar uma visita ou conversa com o corretor'}.\n\n` +
+            baseRules +
+            `FLUXO: ${data.greeting ? 'Use a saudação definida' : 'Saude o cliente'} -> Siga o funil de qualificação -> Finalize com [QUALIFICADO] quando tiver os dados.`;
     } else if (inst.niche === 'medical_clinic') {
-        prompt = `Você é o assistente virtual da clínica ${data.clinic_name || 'Veness Clinic'}.\n\n` +
-            `ESPECIALIDADES: ${data.specialties?.join(", ") || 'Consultas Gerais e Exames'}.\n` +
-            `CONVÊNIOS: ${data.insurances?.join(", ") || 'Atendemos diversos planos e particular'}.\n\n` +
-            `REGRAS DE ATENDIMENTO:\n` +
-            `- **IMPORTANTE**: Você NÃO realiza agendamentos diretos no chat.\n` +
-            `- Sempre forneça o link público de agendamento: ${data.booking_link || 'https://agenda.exemplo.com'}.\n` +
-            `- Para dúvidas sobre preparo de exames, peça para verificar no link ou falar com atendente.\n` +
-            `- Regras Extras: ${data.rules?.join(". ") || 'Seja extremamente cordial e atencioso'}.\n\n` +
-            `FLUXO: Saudação -> Entender especialidade -> Coleta Nome/Convênio -> Enviar Link de Agendamento.`;
+        prompt = `Você é o assistente da clínica ${data.clinic_name || 'nossa clínica'}.\n\n` +
+            `BOOKING LINK: ${data.booking_link || 'https://agenda.exemplo.com'}.\n\n` +
+            baseRules;
     } else {
-        // Genérico (Smart Agent)
         prompt = `Você é o assistente virtual da empresa ${data.company_name || 'Vexnus'}.\n\n` +
-            `SEU PAPEL: ${data.goal || 'Ajudar os clientes no WhatsApp e coletar informações'}.\n` +
-            `TOM: ${data.tone || 'Conversacional e eficiente'}.\n` +
-            `COLETA DE DADOS: ${data.fields?.join(", ") || 'Nome e objetivo do contato'}.\n\n` +
-            `DIRETRIZES:\n` +
-            `- ${data.rules?.join(". ") || 'Tente ser o mais útil possível'}.\n` +
-            `- Adicione a tag [QUALIFICADO] se o cliente demonstrar intenção real de compra/serviço.`;
+            `OBJETIVOS: ${data.goal || 'Atendimento geral'}.\n\n` +
+            baseRules;
     }
 
     return prompt;
@@ -1419,13 +1419,78 @@ bot.action(/^wa_ai_set_niche_(.+)_(real_estate|medical_clinic|generic)$/, async 
 
         const msg = `✅ *Perfil ${niche.toUpperCase()} Ativado!*\n\n` +
             `A IA agora seguirá as regras automáticas deste nicho.\n\n` +
-            `💡 *Próximo Passo:* Em breve você poderá editar os detalhes (Nome da Empresa, Especialidades, etc) diretamente por aqui. Por enquanto, a IA usará valores padrão inteligentes.`;
+            `👉 *O que fazer agora?* Você precisa configurar as informações da sua empresa para que a IA saiba o que responder.`;
+
+        const btn = niche === 'real_estate' ? "⚙️ Configurar Imobiliária" : "⚙️ Configurar Perfil";
 
         await ctx.editMessageText(msg, {
             parse_mode: "Markdown",
-            ...Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar", `wa_ai_menu_${instId}`)]])
+            ...Markup.inlineKeyboard([
+                [Markup.button.callback(btn, `wa_ai_wizard_re_${instId}`)],
+                [Markup.button.callback("⚙️ Resetar Perfil", `wa_ai_set_niche_${instId}_${niche}`)],
+                [Markup.button.callback("🔙 Voltar", `wa_ai_menu_${instId}`)]
+            ])
         });
     }
+});
+
+bot.action(/^wa_ai_re_style_(.+)_(amigavel|formal|direto|descontraido)$/, async (ctx) => {
+    safeAnswer(ctx);
+    const instId = ctx.match[1];
+    const styleVal = ctx.match[2];
+    const session = await getSession(ctx.chat.id);
+    const inst = session.whatsapp.instances.find(i => i.id === instId);
+
+    if (inst) {
+        const styleMap = {
+            'amigavel': 'Amigável e com Emojis',
+            'formal': 'Formal e Profissional',
+            'direto': 'Direto e Persuasivo',
+            'descontraido': 'Descontraído'
+        };
+        inst.niche_data.style = styleMap[styleVal];
+        await syncSession(ctx, session);
+
+        const tones = [
+            [Markup.button.callback("🤝 Acolhedora", `wa_ai_re_tone_${instId}_acolhedora`)],
+            [Markup.button.callback("💰 Vendedora", `wa_ai_re_tone_${instId}_vendedora`)],
+            [Markup.button.callback("🧠 Consultiva", `wa_ai_re_tone_${instId}_consultiva`)]
+        ];
+        ctx.editMessageText("🗣️ *Passo 9/9: Tom de Voz*\n\nComo a IA deve se posicionar?", { parse_mode: "Markdown", ...Markup.inlineKeyboard(tones) });
+    }
+});
+
+bot.action(/^wa_ai_re_tone_(.+)_(acolhedora|vendedora|consultiva)$/, async (ctx) => {
+    safeAnswer(ctx);
+    const instId = ctx.match[1];
+    const toneVal = ctx.match[2];
+    const session = await getSession(ctx.chat.id);
+    const inst = session.whatsapp.instances.find(i => i.id === instId);
+
+    if (inst) {
+        const toneMap = {
+            'acolhedora': 'Acolhedora',
+            'vendedora': 'Vendedora',
+            'consultiva': 'Consultiva'
+        };
+        inst.niche_data.tone = toneMap[toneVal];
+        await syncSession(ctx, session);
+
+        await ctx.editMessageText("🎉 *Configuração Concluída!*\n\nSua IA de Imobiliária foi calibrada com sucesso.\n\n" +
+            "A partir de agora, ela usará todas as informações fornecidas (Nome, Regras, Tom) para atender seus clientes de forma profissional.", {
+            parse_mode: "Markdown",
+            ...Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar ao Menu", `wa_ai_menu_${instId}`)]])
+        });
+    }
+});
+
+bot.action(/^wa_ai_wizard_re_(.+)$/, async (ctx) => {
+    safeAnswer(ctx);
+    const id = ctx.match[1];
+    const session = await getSession(ctx.chat.id);
+    session.stage = `WA_AI_CONF_RE_COMPANY_${id}`;
+    await syncSession(ctx, session);
+    ctx.reply("🏢 *Passo 1/9: Nome da Imobiliária*\n\nQual o nome da sua empresa?", { parse_mode: "Markdown" });
 });
 
 bot.action(/^wa_ai_wizard_(.+)$/, async (ctx) => {
@@ -1968,6 +2033,76 @@ bot.on("text", async (ctx) => {
             delete session.tempBroker;
             await syncSession(ctx, session);
             await renderBrokersMenu(ctx, instId);
+        }
+    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_RE_COMPANY_")) {
+        const instId = session.stage.replace("WA_AI_CONF_RE_COMPANY_", "");
+        const inst = session.whatsapp.instances.find(i => i.id === instId);
+        if (inst) {
+            inst.niche_data.company_name = ctx.message.text.trim();
+            session.stage = `WA_AI_CONF_RE_GREETING_${instId}`;
+            await syncSession(ctx, session);
+            ctx.reply("👋 *Passo 2/9: Mensagem de Saudação*\n\nComo a IA deve iniciar a conversa? (Ex: 'Olá! Sou o assistente da [Empresa]. Como posso te ajudar?')", { parse_mode: "Markdown" });
+        }
+    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_RE_GREETING_")) {
+        const instId = session.stage.replace("WA_AI_CONF_RE_GREETING_", "");
+        const inst = session.whatsapp.instances.find(i => i.id === instId);
+        if (inst) {
+            inst.niche_data.greeting = ctx.message.text.trim();
+            session.stage = `WA_AI_CONF_RE_ADDRESS_${instId}`;
+            await syncSession(ctx, session);
+            ctx.reply("📍 *Passo 3/9: Endereço ou Área de Atuação*\n\nQual o endereço físico ou as regiões que a imobiliária atende?", { parse_mode: "Markdown" });
+        }
+    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_RE_ADDRESS_")) {
+        const instId = session.stage.replace("WA_AI_CONF_RE_ADDRESS_", "");
+        const inst = session.whatsapp.instances.find(i => i.id === instId);
+        if (inst) {
+            inst.niche_data.address = ctx.message.text.trim();
+            session.stage = `WA_AI_CONF_RE_PRODUCT_${instId}`;
+            await syncSession(ctx, session);
+            ctx.reply("🏠 *Passo 4/9: O que você vende?*\n\nDescreva brevemente seus produtos (Ex: Apartamentos de luxo, Casas populares, Lotes, Locação comercial, etc)", { parse_mode: "Markdown" });
+        }
+    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_RE_PRODUCT_")) {
+        const instId = session.stage.replace("WA_AI_CONF_RE_PRODUCT_", "");
+        const inst = session.whatsapp.instances.find(i => i.id === instId);
+        if (inst) {
+            inst.niche_data.products = ctx.message.text.trim();
+            session.stage = `WA_AI_CONF_RE_FUNNEL_${instId}`;
+            await syncSession(ctx, session);
+            ctx.reply("🎯 *Passo 5/9: Funil de Qualificação*\n\nO que a IA precisa perguntar primeiro? (Ex: Se quer comprar ou alugar, qual a faixa de preço, etc)", { parse_mode: "Markdown" });
+        }
+    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_RE_FUNNEL_")) {
+        const instId = session.stage.replace("WA_AI_CONF_RE_FUNNEL_", "");
+        const inst = session.whatsapp.instances.find(i => i.id === instId);
+        if (inst) {
+            inst.niche_data.funnel = ctx.message.text.trim();
+            session.stage = `WA_AI_CONF_RE_BIO_${instId}`;
+            await syncSession(ctx, session);
+            ctx.reply("📖 *Passo 6/9: Contexto (Bio)*\n\nQuem é você? Uma mensagem curta sobre a história ou autoridade da empresa.", { parse_mode: "Markdown" });
+        }
+    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_RE_BIO_")) {
+        const instId = session.stage.replace("WA_AI_CONF_RE_BIO_", "");
+        const inst = session.whatsapp.instances.find(i => i.id === instId);
+        if (inst) {
+            inst.niche_data.bio = ctx.message.text.trim();
+            session.stage = `WA_AI_CONF_RE_RULES_${instId}`;
+            await syncSession(ctx, session);
+            ctx.reply("🚫 *Passo 7/9: Regras e Objeções*\n\nQuais as regras proibidas? (Ex: Nunca dar preço final no chat, sempre pedir o telefone, avisar que não aceita permuta)", { parse_mode: "Markdown" });
+        }
+    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_RE_RULES_")) {
+        const instId = session.stage.replace("WA_AI_CONF_RE_RULES_", "");
+        const inst = session.whatsapp.instances.find(i => i.id === instId);
+        if (inst) {
+            inst.niche_data.rules = ctx.message.text.trim();
+            session.stage = "READY";
+            await syncSession(ctx, session);
+
+            const styles = [
+                [Markup.button.callback("😊 Amigável e com Emojis", `wa_ai_re_style_${instId}_amigavel`)],
+                [Markup.button.callback("💼 Formal e Profissional", `wa_ai_re_style_${instId}_formal`)],
+                [Markup.button.callback("🎯 Direto e Persuasivo", `wa_ai_re_style_${instId}_direto`)],
+                [Markup.button.callback("😎 Descontraído", `wa_ai_re_style_${instId}_descontraido`)]
+            ];
+            ctx.reply("🎭 *Passo 8/9: Estilo de Conversa*\n\nEscolha como a IA deve falar:", Markup.inlineKeyboard(styles));
         }
     } else if (session.stage && session.stage.startsWith("WA_AI_RESUME_TIME_VAL_")) {
         const instId = session.stage.replace("WA_AI_RESUME_TIME_VAL_", "");
