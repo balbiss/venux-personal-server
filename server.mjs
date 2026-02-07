@@ -121,7 +121,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.17-PRO";
+const SERVER_VERSION = "1.1.18-PRO";
 
 function log(msg) {
     const logMsg = `[BOT LOG] [V${SERVER_VERSION}] ${new Date().toLocaleTimeString()} - ${msg}`;
@@ -1350,23 +1350,52 @@ async function renderAiMenu(ctx, instId) {
     if (!inst) return ctx.reply("❌ Instância não encontrada.");
 
     const isEnabled = inst.ai_enabled || false;
-    const prompt = inst.ai_prompt || "Nenhuma instrução definida. (A IA agirá de forma genérica)";
+    const isNiche = inst.niche && inst.niche !== 'legacy' && inst.niche !== 'custom';
+
+    let instructionsText = "";
+    if (isNiche) {
+        const data = inst.niche_data || {};
+        const nicheNames = { 'real_estate': '🏠 Imobiliária', 'medical_clinic': '🏥 Clínica Médica', 'generic': '🤖 Agente Genérico' };
+        instructionsText = `🧬 *DNA do Agente (${nicheNames[inst.niche] || inst.niche})*\n\n` +
+            `🏢 *Empresa:* ${data.company_name || '_Não configurado_'}\n` +
+            `🎭 *Estilo:* ${data.style || 'Amigável'}\n` +
+            `🗣️ *Tom:* ${data.tone || 'Acolhedor'}\n` +
+            `🎯 *Funil:* ${data.funnel ? (data.funnel.substring(0, 40) + "...") : 'Padrão'}`;
+    } else {
+        const prompt = inst.ai_prompt || "Nenhuma instrução definida. (A IA agirá de forma genérica)";
+        instructionsText = `📝 *Instruções (Manual):* \n\`${prompt.substring(0, 100)}${prompt.length > 100 ? "..." : ""}\``;
+    }
 
     const text = `🤖 *Configuração de IA SDR (${instId})*\n\n` +
-        `Ative a IA para que ela responda automaticamente seus clientes no WhatsApp.\n\n` +
-        `🔋 *Status:* ${isEnabled ? "✅ Ativado" : "❌ Desativado"}\n` +
-        `📝 *Instruções:* \`${prompt.substring(0, 100)}${prompt.length > 100 ? "..." : ""}\``;
+        `🔋 *Status:* ${isEnabled ? "✅ Ativado" : "❌ Desativado"}\n\n` +
+        instructionsText;
 
-    const buttons = [
-        [Markup.button.callback(isEnabled ? "🔴 Desativar IA" : "🟢 Ativar IA", `wa_toggle_ai_${instId}`)],
-        [Markup.button.callback("🎭 Modelos de Agente (NICHOS)", `wa_ai_niche_menu_${instId}`)],
-        [Markup.button.callback("📝 Prompt Manual (Custom)", `wa_set_ai_prompt_${instId}`)],
-        [Markup.button.callback("⏱️ Tempo de Reativação", `wa_ai_resume_time_${instId}`)],
-        [Markup.button.callback("🧙‍♂️ Mágico de Prompt (Auxílio)", `wa_ai_wizard_${instId}`)],
-        [Markup.button.callback("🔔 Configurar Follow-ups", `wa_ai_followup_menu_${instId}`)],
-        [Markup.button.callback("🔄 Forçar Sincronização Webhook", `wa_ai_sync_web_${instId}`)],
-        [Markup.button.callback("🔙 Voltar", `manage_${instId}`)]
-    ];
+    const buttons = [];
+
+    // Linha 1: Ativar/Desativar
+    buttons.push([Markup.button.callback(isEnabled ? "🔴 Desativar IA" : "🟢 Ativar IA", `wa_toggle_ai_${instId}`)]);
+
+    // Linha 2: Nicho (Principal se estiver em modo fábrica)
+    if (isNiche) {
+        const btnLabel = inst.niche === 'real_estate' ? "⚙️ Configurar Imobiliária" : "⚙️ Configurar Perfil";
+        buttons.push([Markup.button.callback(btnLabel, `wa_ai_wizard_re_${instId}`)]);
+        buttons.push([Markup.button.callback("🎭 Mudar de Modelo (NICHO)", `wa_ai_niche_menu_${instId}`)]);
+    } else {
+        buttons.push([Markup.button.callback("🎭 Modelos de Agente (NICHOS)", `wa_ai_niche_menu_${instId}`)]);
+        buttons.push([Markup.button.callback("📝 Prompt Manual (Custom)", `wa_set_ai_prompt_${instId}`)]);
+    }
+
+    // Linha 3: Extras
+    buttons.push([Markup.button.callback("⏱️ Tempo de Reativação", `wa_ai_resume_time_${instId}`)]);
+
+    // Só mostra assistente se não for nicho (nichos usam o wizard)
+    if (!isNiche) {
+        buttons.push([Markup.button.callback("🧙‍♂️ Mágico de Prompt (Auxílio)", `wa_ai_wizard_${instId}`)]);
+    }
+
+    buttons.push([Markup.button.callback("🔔 Follow-ups", `wa_ai_followup_menu_${instId}`)]);
+    buttons.push([Markup.button.callback("🔄 Sincronizar Webhook", `wa_ai_sync_web_${instId}`)]);
+    buttons.push([Markup.button.callback("🔙 Voltar", `manage_${instId}`)]);
 
     if (ctx.updateType === "callback_query") {
         await ctx.editMessageText(text, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
