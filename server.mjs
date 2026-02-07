@@ -121,12 +121,20 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.4-FIX";
+const SERVER_VERSION = "1.1.5-FIX";
 
 function log(msg) {
     const logMsg = `[BOT LOG] [V${SERVER_VERSION}] ${new Date().toLocaleTimeString()} - ${msg}`;
     console.log(logMsg);
     try { fs.appendFileSync("bot.log", logMsg + "\n"); } catch (e) { }
+}
+
+async function safeDelete(ctx) {
+    try {
+        if (ctx.callbackQuery && ctx.callbackQuery.message) {
+            await ctx.deleteMessage().catch(() => { });
+        }
+    } catch (e) { }
 }
 
 async function checkVip(chatId) {
@@ -539,13 +547,11 @@ bot.action("cmd_conectar", async (ctx) => {
 
 bot.action("cmd_instancias", async (ctx) => {
     safeAnswer(ctx);
+    await safeDelete(ctx);
     return showInstances(ctx);
 });
 
-bot.action(/^manage_(.+)$/, async (ctx) => {
-    safeAnswer(ctx);
-    const id = ctx.match[1];
-
+async function renderManageMenu(ctx, id) {
     // Verificar status em tempo real para decidir o que exibir
     const stats = await callWuzapi(`/session/status`, "GET", null, id);
     let isOnline = false;
@@ -582,6 +588,13 @@ bot.action(/^manage_(.+)$/, async (ctx) => {
         parse_mode: "Markdown",
         ...Markup.inlineKeyboard(buttons)
     });
+}
+
+bot.action(/^manage_(.+)$/, async (ctx) => {
+    safeAnswer(ctx);
+    await safeDelete(ctx);
+    const id = ctx.match[1];
+    await renderManageMenu(ctx, id);
 });
 
 // Handler para tela de integração API
@@ -1293,6 +1306,7 @@ async function renderAiMenu(ctx, instId) {
     const buttons = [
         [Markup.button.callback(isEnabled ? "🔴 Desativar IA" : "🟢 Ativar IA", `wa_toggle_ai_${instId}`)],
         [Markup.button.callback("📝 Definir Instruções (Prompt)", `wa_set_ai_prompt_${instId}`)],
+        [Markup.button.callback("🧙‍♂️ Mágico de Prompt (Auxílio)", `wa_ai_wizard_${instId}`)],
         [Markup.button.callback("🔔 Configurar Follow-ups", `wa_ai_followup_menu_${instId}`)],
         [Markup.button.callback("🔄 Forçar Sincronização Webhook", `wa_ai_sync_web_${instId}`)],
         [Markup.button.callback("🔙 Voltar", `manage_${instId}`)]
@@ -1307,9 +1321,20 @@ async function renderAiMenu(ctx, instId) {
 
 bot.action(/^wa_ai_menu_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
+    await safeDelete(ctx);
     const id = ctx.match[1];
     await ensureWebhookSet(id); // Sincroniza ao abrir o menu
     await renderAiMenu(ctx, id);
+});
+
+bot.action(/^wa_ai_wizard_(.+)$/, async (ctx) => {
+    safeAnswer(ctx);
+    await safeDelete(ctx);
+    const id = ctx.match[1];
+    const session = await getSession(ctx.chat.id);
+    session.stage = `WA_WIZ_NAME_${id}`;
+    await syncSession(ctx, session);
+    ctx.reply("🧙‍♂️ *Mágico de Prompt: Passo 1/3*\n\nQual o **NOME** da sua empresa ou do seu negócio?", { parse_mode: "Markdown" });
 });
 
 bot.action(/^wa_ai_sync_web_(.+)$/, async (ctx) => {
@@ -1668,6 +1693,45 @@ bot.on("text", async (ctx) => {
         } else {
             ctx.reply(`❌ Erro ao criar na API: ${res.error || "Tente novamente mais tarde"}`);
         }
+
+    } else if (session.stage && session.stage.startsWith("WA_WIZ_NAME_")) {
+        const instId = session.stage.replace("WA_WIZ_NAME_", "");
+        session.wiz_data = { name: ctx.message.text.trim() };
+        session.stage = `WA_WIZ_PRODUCT_${instId}`;
+        await syncSession(ctx, session);
+        ctx.reply("📦 *Passo 2/3: Produto/Serviço*\n\nLegal! Agora me conte: o que você vende ou qual serviço sua empresa oferece?", { parse_mode: "Markdown" });
+
+    } else if (session.stage && session.stage.startsWith("WA_WIZ_PRODUCT_")) {
+        const instId = session.stage.replace("WA_WIZ_PRODUCT_", "");
+        session.wiz_data.product = ctx.message.text.trim();
+        session.stage = `WA_WIZ_GOAL_${instId}`;
+        await syncSession(ctx, session);
+        ctx.reply("🎯 *Passo 3/3: Objetivo*\n\nQual o objetivo principal deste WhatsApp? (Ex: Tirar dúvidas, agendar consultoria, vender produtos, suporte técnico)", { parse_mode: "Markdown" });
+
+    } else if (session.stage && session.stage.startsWith("WA_WIZ_GOAL_")) {
+        const instId = session.stage.replace("WA_WIZ_GOAL_", "");
+        const goal = ctx.message.text.trim();
+        const { name, product } = session.wiz_data;
+
+        const generatedPrompt = `Você é o assistente virtual da empresa ${name}. ` +
+            `Seu foco principal é ${product}. ` +
+            `Seu objetivo no atendimento é ${goal}. ` +
+            `Sempre use um tom profissional, amigável e prestativo. ` +
+            `Responda de forma clara e objetiva.`;
+
+        // Salvar na instância
+        const inst = session.whatsapp.instances.find(i => i.id === instId);
+        if (inst) {
+            inst.ai_prompt = generatedPrompt;
+            inst.ai_enabled = true; // Ativar por padrão ao usar o mágico
+            await syncSession(ctx, session);
+            ctx.reply("✨ *Configuração Concluída!*\n\nSeu prompt foi gerado e a IA foi ativada automaticamente.\n\n" +
+                `📝 *Prompt Gerado:* \n\`${generatedPrompt}\``, { parse_mode: "Markdown" });
+            await renderAiMenu(ctx, instId);
+        }
+        session.stage = "READY";
+        delete session.wiz_data;
+        await syncSession(ctx, session);
 
     } else if (session.stage && session.stage.startsWith("WA_BROKER_WAIT_NAME_")) {
         const config = await getSystemConfig();
