@@ -121,7 +121,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.26-PRO";
+const SERVER_VERSION = "1.1.27-PRO";
 
 function log(msg) {
     const logMsg = `[BOT LOG] [V${SERVER_VERSION}] ${new Date().toLocaleTimeString()} - ${msg}`;
@@ -2920,7 +2920,8 @@ bot.telegram.setMyCommands([
     { command: "instancias", description: "📱 Minhas Instâncias Conectadas" },
     { command: "conectar", description: "🔗 Conectar Novo WhatsApp" },
     { command: "vip", description: "💎 Status do Plano Premium" }
-]);
+]).then(() => log("✅ Menu de Comandos atualizado com sucesso no Telegram"))
+    .catch(err => log(`❌ Erro ao atualizar Menu de Comandos: ${err.message}`));
 
 // -- Background Worker para Agendamentos --
 async function checkScheduledCampaigns() {
