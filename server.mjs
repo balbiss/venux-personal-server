@@ -2039,13 +2039,27 @@ app.post("/webhook", async (req, res) => {
             } else if (event === "Disconnected") {
                 bot.telegram.sendMessage(chatId, `⚠️ *WhatsApp Desconectado!*\n\nA instância \`${tokenId}\` foi desconectada. Gere um novo QR Code para reconectar.`, { parse_mode: "Markdown" });
             } else if (event === "Message") {
-                const data = body.data || {};
-                const remoteJid = data.RemoteJID || "";
-                const isFromMe = data.FromMe || false;
-                log(`[WEBHOOK] Message from ${remoteJid} | isFromMe: ${isFromMe}`);
+                // WUZAPI normaliza os dados no campo 'data' ou 'event' dependendo da versão
+                const rawData = body.event || body.data || {};
+                const info = rawData.Info || rawData || {};
+                const messageObj = rawData.Message || {};
 
-                // 1. FILTRO: Apenas Chats Privados (@s.whatsapp.net), ignora grupos (@g.us) e canais (@newsletter)
-                if (remoteJid.endsWith("@s.whatsapp.net")) {
+                const remoteJid = info.RemoteJID || info.Chat || info.Sender || info.SenderAlt || "";
+                const isFromMe = info.IsFromMe || false;
+                const isGroup = info.IsGroup || remoteJid.includes("@g.us");
+
+                // Extração do corpo da mensagem (Texto ou Legenda de Mídia)
+                let text = messageObj.conversation ||
+                    messageObj.extendedTextMessage?.text ||
+                    messageObj.imageMessage?.caption ||
+                    messageObj.videoMessage?.caption ||
+                    messageObj.documentMessage?.caption ||
+                    info.Body || "";
+
+                log(`[WEBHOOK] Msg from: ${remoteJid} | Group: ${isGroup} | FromMe: ${isFromMe} | Text: ${text.substring(0, 50)}`);
+
+                // 1. FILTRO: Apenas Chats Privados, ignora grupos e canais
+                if (remoteJid.endsWith("@s.whatsapp.net") && !isGroup) {
                     const session = await getSession(chatId);
                     const inst = session.whatsapp.instances.find(i => i.id === tokenId);
 
@@ -2089,20 +2103,19 @@ app.post("/webhook", async (req, res) => {
                     if (inst && inst.ai_enabled) {
                         log(`[WEBHOOK AI] Processando mensagem para ${tokenId}...`);
 
-                        let text = data.Body || "";
                         let audioBase64 = null;
+                        const dataForAudio = info; // Wuzapi audio info is usually in top level of data/info
 
-                        // Tratar Áudio (Diferentes formatos possíveis na API)
-                        if (data.Type === "audio" || (data.Mimetype && data.Mimetype.includes("audio"))) {
+                        // Tratar Áudio
+                        if (info.Type === "audio" || (info.Mimetype && info.Mimetype.includes("audio"))) {
                             log(`[WEBHOOK AI] Áudio detectado. Baixando...`);
-                            // Tenta baixar via WUZAPI se não vier base64
                             const downloadRes = await callWuzapi("/chat/downloadaudio", "POST", {
-                                Url: data.Url,
-                                MediaKey: data.MediaKey,
-                                Mimetype: data.Mimetype,
-                                FileSHA256: data.FileSHA256,
-                                FileLength: data.FileLength,
-                                DirectPath: data.DirectPath
+                                Url: info.Url,
+                                MediaKey: info.MediaKey,
+                                Mimetype: info.Mimetype,
+                                FileSHA256: info.FileSHA256,
+                                FileLength: info.FileLength,
+                                DirectPath: info.DirectPath
                             }, tokenId);
 
                             if (downloadRes.success && downloadRes.data && downloadRes.data.Data) {
