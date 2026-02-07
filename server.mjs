@@ -1313,9 +1313,16 @@ bot.action(/^wa_ai_menu_(.+)$/, async (ctx) => {
 bot.action(/^wa_ai_sync_web_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
+    log(`[SYNC] Iniciando sincronização manual para ${id}...`);
     await ensureWebhookSet(id);
     ctx.answerCbQuery("✅ Webhook sincronizado com sucesso!");
-    await renderAiMenu(ctx, id);
+    try {
+        await renderAiMenu(ctx, id);
+    } catch (e) {
+        if (!e.message.includes("message is not modified")) {
+            log(`[SYNC ERR] ${e.message}`);
+        }
+    }
 });
 
 bot.action(/^wa_toggle_ai_(.+)$/, async (ctx) => {
@@ -2000,8 +2007,8 @@ app.get("/api/instance/:id/status-proxy", async (req, res) => {
 });
 
 app.post("/webhook", async (req, res) => {
-    const body = req.body;
-    log(`[WEBHOOK] Recebido: ${JSON.stringify(body)}`);
+    const body = req.body || {};
+    log(`[WEBHOOK IN] Recebido corpo: ${JSON.stringify(body).substring(0, 500)}`);
 
     // -- 1. Tratar Webhook SyncPay (Pagamento) --
     if (body.external_id && (body.status === "paid" || body.status === "confirmed")) {
