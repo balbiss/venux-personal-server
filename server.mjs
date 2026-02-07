@@ -121,7 +121,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.30-PRO";
+const SERVER_VERSION = "1.1.31-PRO";
 
 function log(msg) {
     const logMsg = `[BOT LOG] [V${SERVER_VERSION}] ${new Date().toLocaleTimeString()} - ${msg}`;
@@ -1404,8 +1404,6 @@ bot.action(/^wa_toggle_presence_(.+)$/, async (ctx) => {
     }
 });
 
-// --- Prompt Factory Engine (SaaS Logic) ---
-// --- Prompt Factory Engine (SaaS Logic) ---
 function generateSystemPrompt(inst) {
     if (!inst.niche || inst.niche === 'legacy' || inst.niche === 'custom') {
         return inst.ai_prompt || "Você é um assistente virtual prestativo.";
@@ -1433,7 +1431,7 @@ ESTRATÉGIA DE CONDUÇÃO:
 # REGRAS DE OURO (NUNCA QUEBRE)
 1. SAUDAÇÃO INTELIGENTE: Se apresente apenas na PRIMEIRA mensagem. Se o histórico já mostra que você falou oi, vá direto ao assunto.
 2. ANTI-REPETIÇÃO CRÍTICA: Nunca repita a mesma estrutura de frase. 
-3. ANTI-LOOPING: Se o dado (nome, local, etc) já está no histórico, NUNCA pergunte novamente. Pule para o próximo passo.
+3. ANTI-LOOPING (MÁXIMA PRIORIDADE): Verifique no histórico se o dado (Ex: Comprar ou Alugar, Localização, Nome) já foi fornecido. Se já foi, NUNCA pergunte novamente. Pule imediatamente para o próximo passo do funil. Se o cliente disse "Quero comprar", não pergunte se ele quer comprar ou alugar.
 4. PACIÊNCIA: Faça EXATAMENTE UMA pergunta por mensagem. Aguarde a resposta do lead.
 
 # FLUXO DE ATENDIMENTO (FUNIL)
@@ -1814,25 +1812,16 @@ async function handleAiSdr({ text, audioBase64, history = [], systemPrompt, chat
 
         if (!userMessage && history.length === 0) return null;
 
-        // 2. Formatar Histórico para context
-        const messages = [{
-            role: "system",
-            content: `${systemPrompt}\n\n` +
-                `DIRETRIZES TÉCNICAS:\n` +
-                `- Seja amigável, curto e direto.\n` +
-                `- Use linguagem natural e brasileira.\n` +
-                `- Seja EXTREMAMENTE CURTO (max 1-2 frases por resposta).\n` +
-                `- NÃO INVENTE INFORMAÇÕES. Se não souber algo baseado nas suas instruções, peça desculpas ou ofereça passar para um atendente.\n` +
-                `- Se o cliente pedir para falar com um humano ou se você não souber responder, envie exatamente: [TRANSFERIR]\n` +
-                `- Se você detectar que o objetivo do atendimento (conforme suas instruções) foi concluído ou que o lead está pronto, finalize a resposta e adicione a tag secreta: [QUALIFICADO]`
-        }];
+        // 2. Formatar Histórico para context (Cronologia Correta)
+        const messages = [{ role: "system", content: systemPrompt }];
 
-        // Adicionar histórico (últimas 15 msgs) ordenado cronologicamente
+        // Adicionar histórico (últimas 15 msgs) ordenado cronologicamente (Antigo -> Novo)
         const sortedHistory = [...history].reverse().slice(-15);
 
         sortedHistory.forEach(msg => {
+            // Identificação robusta do papel (Removido sender_jid === chatId que causava bug)
             const isMe = msg.from_me === true || msg.FromMe === true ||
-                (msg.sender_jid && (msg.sender_jid.includes("me") || msg.sender_jid === chatId)) ||
+                (msg.sender_jid && msg.sender_jid.includes("me")) ||
                 (msg.Info?.FromMe === true);
             const role = isMe ? "assistant" : "user";
 
