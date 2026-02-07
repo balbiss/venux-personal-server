@@ -121,7 +121,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.24-PRO";
+const SERVER_VERSION = "1.1.25-PRO";
 
 function log(msg) {
     const logMsg = `[BOT LOG] [V${SERVER_VERSION}] ${new Date().toLocaleTimeString()} - ${msg}`;
@@ -653,6 +653,9 @@ async function renderManageMenu(ctx, id) {
         }
     }
 
+    const session = await getSession(ctx.chat.id);
+    const inst = session.whatsapp.instances.find(i => i.id === id);
+
     const buttons = [];
     if (!isOnline) {
         buttons.push([Markup.button.callback("📷 Gerar QR Code", `wa_qr_${id}`)]);
@@ -661,10 +664,13 @@ async function renderManageMenu(ctx, id) {
         buttons.push([Markup.button.callback("🚀 Disparo em Massa", `wa_mass_init_${id}`)]);
     }
 
-    buttons.push([Markup.button.callback("🌐 Configurar Webhook", `wa_web_${id}`)]);
     buttons.push([Markup.button.callback("🤖 Configurar IA SDR", `wa_ai_menu_${id}`)]);
-    buttons.push([Markup.button.callback("👥 Gerenciar Corretores", `wa_brokers_menu_${id}`)]);
-    buttons.push([Markup.button.callback("🔗 Integração API", `wa_api_${id}`)]);
+
+    // Mostra corretores apenas se for nicho imobiliária
+    if (inst && inst.niche === 'real_estate') {
+        buttons.push([Markup.button.callback("👥 Gerenciar Corretores", `wa_brokers_menu_${id}`)]);
+    }
+
     buttons.push([Markup.button.callback("🚪 Logout", `wa_logout_${id}`), Markup.button.callback("🗑️ Deletar", `wa_del_${id}`)]);
     buttons.push([Markup.button.callback("🔙 Voltar", "cmd_instancias")]);
 
