@@ -121,7 +121,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.23-PRO";
+const SERVER_VERSION = "1.1.24-PRO";
 
 function log(msg) {
     const logMsg = `[BOT LOG] [V${SERVER_VERSION}] ${new Date().toLocaleTimeString()} - ${msg}`;
@@ -617,7 +617,7 @@ async function startConnection(ctx) {
 async function showVipStatus(ctx) {
     const session = await getSession(ctx.chat.id);
     const isVip = await checkVip(ctx.chat.id);
-    const config = getSystemConfig();
+    const config = await getSystemConfig();
     if (isVip) {
         const expiry = new Date(session.subscriptionExpiry).toLocaleDateString("pt-BR");
         return ctx.reply(`✅ Você é VIP! Validade: ${expiry}`);
