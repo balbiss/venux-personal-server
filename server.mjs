@@ -121,7 +121,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.28-PRO";
+const SERVER_VERSION = "1.1.29-PRO";
 
 function log(msg) {
     const logMsg = `[BOT LOG] [V${SERVER_VERSION}] ${new Date().toLocaleTimeString()} - ${msg}`;
@@ -1411,54 +1411,35 @@ function generateSystemPrompt(inst) {
     }
 
     const data = inst.niche_data || {};
-    let prompt = "";
-
-    // Base de Personalidade (V1.1.16-PRO)
     const style = data.style || "Amigável e com Emojis";
     const tone = data.tone || "Acolhedora";
 
-    let baseRules = `ESTILO DE CONVERSA: ${style}\n` +
-        `TOM DE VOZ: ${tone}\n\n` +
-        `DIRETRIZES DE HUMANIZAÇÃO (CRÍTICO):\n` +
-        `- Seja extremamente humano, caloroso e empático.\n` +
-        `- ESPELHAMENTO SOCIAL: Sempre valide ou reaja ao que o cliente disse (Ex: "Poxa legal", "Que bom!", "Entendo perfeitamente") antes de fazer a próxima pergunta.\n` +
-        `- PACIÊNCIA: NUNCA peça mais de uma informação por vez. Siga o fluxo natural da conversa.\n` +
-        `- Use linguagem natural brasileira, com gírias leves se o estilo for amigável.\n` +
-        `- IMPORTANTE: Se o histórico mostrar que você já cumprimentou o cliente, NÃO repita saudação. Foque em continuar de onde parou.\n` +
-        `- NUNCA invente informações. Se não souber, peça para falar com um atendente.\n` +
-        `- Se detectar que o lead está qualificado, use a tag [QUALIFICADO].\n\n`;
+    let identity = "";
+    let objective = "";
 
     if (inst.niche === 'real_estate') {
-        prompt = `Você é o assistente virtual da imobiliária ${data.company_name || 'nossa empresa'}.\n` +
-            `BIO: ${data.bio || 'Especialistas em encontrar o imóvel dos seus sonhos'}.\n` +
-            `SAUDAÇÃO: ${data.greeting || 'Olá! Como posso te ajudar hoje?'}.\n\n` +
-            `O QUE VENDEMOS/FAZEMOS: ${data.products || 'Venda e locação de imóveis residenciais e comerciais'}.\n` +
-            `ENDEREÇO/ATUAÇÃO: ${data.address || 'Atuamos em diversas regiões'}.\n\n` +
-            `FUNIL DE QUALIFICAÇÃO: ${data.funnel || 'Entender se o cliente quer comprar ou alugar, localização e faixa de preço'}.\n\n` +
-            `REGRAS E OBJEÇÕES: ${data.rules || 'Sempre tente agendar uma visita ou conversa com o corretor'}.\n\n` +
-            baseRules +
-            `FLUXO: ${data.greeting ? 'Se for a PRIMEIRA mensagem, use a saudação definida' : 'Saude o cliente se for o início'} -> Siga o funil de qualificação -> Finalize com [QUALIFICADO] quando tiver os dados.`;
+        identity = `Sou o assistente virtual da imobiliária ${data.company_name || 'nossa empresa'}. Minha bio: ${data.bio || 'Especialista em encontrar imóveis'}.`;
+        objective = `Qualificar o interesse (comprar/alugar), localização e preço. Funil: ${data.funnel || 'Geral'}. Regras: ${data.rules || 'Sempre tente agendar visita'}.`;
     } else if (inst.niche === 'medical_clinic') {
-        prompt = `Você é o assistente virtual da clínica ${data.company_name || 'nossa clínica'}.\n` +
-            `BIO/IDENTIDADE: ${data.bio || 'Equipe atenciosa focada no seu bem-estar'}.\n` +
-            `ESPECIALIDADES: ${data.specialties || 'Clínica geral e diversas especialidades'}.\n` +
-            `CONVÊNIOS: ${data.plans || 'Aceitamos diversos convênios e particular'}.\n` +
-            `ENDEREÇO: ${data.address || 'Consulte-nos para localização'}.\n` +
-            `SAUDAÇÃO: ${data.greeting || 'Olá! Bem-vindo à nossa clínica. Como podemos ajudar?'}.\n\n` +
-            `BOOKING/AGENDAMENTO: Acesse ${data.booking_link || 'o link fornecido'} ou peça para falar com a recepção.\n\n` +
-            baseRules +
-            `OBJETIVO: Qualificar a necessidade do paciente -> Informar convênios/especialidades -> Direcionar para o link de agendamento -> Finalizar com [QUALIFICADO].`;
+        identity = `Sou o assistente virtual da clínica ${data.company_name || 'nossa clínica'}. Identidade: ${data.bio || 'Focada em bem-estar'}.`;
+        objective = `Informar convênios (${data.plans || 'diversos'}), especialidades (${data.specialties || 'geral'}) e direcionar para o link de agendamento: ${data.booking_link || 'solicite suporte'}.`;
     } else {
-        prompt = `Você é o assistente virtual da empresa ${data.company_name || 'Vexnus'}.\n` +
-            `IDENTIDADE: ${data.bio || 'Assistente prestativo focado em te ajudar'}.\n` +
-            `OBJETIVOS: ${data.goal || 'Atendimento geral e suporte ao cliente'}.\n` +
-            `PRODUTOS/SERVIÇOS: ${data.products || 'Consulte nosso portfólio'}.\n` +
-            `SAUDAÇÃO: ${data.greeting || 'Olá! Em que posso ser útil?'}.\n` +
-            `REGRAS: ${data.rules || 'Sempre seja educado e tente ajudar o cliente'}.\n\n` +
-            baseRules;
+        identity = `Sou o assistente virtual da empresa ${data.company_name || 'Vexnus'}.`;
+        objective = `Ajudar o cliente com ${data.products || 'nossos serviços'} conforme os objetivos: ${data.goal || 'atendimento geral'}.`;
     }
 
-    return prompt;
+    return `SUA IDENTIDADE: ${identity}\n` +
+        `OBJETIVO DO ATENDIMENTO: ${objective}\n\n` +
+        `ESTILO: ${style} | TOM: ${tone}\n\n` +
+        `DIRETRIZES TÉCNICAS (SIGA À RISCA):\n` +
+        `- NUNCA copie e cole uma saudação padrão. Se apresente apenas se for necessário e de forma natural.\n` +
+        `- ANTI-REPETIÇÃO: NUNCA use a mesma frase ou estrutura de resposta duas vezes na mesma conversa. Se o cliente perguntar algo que você já respondeu (como seu nome), mude o jeito de falar: "Como eu te disse, me chamo Balbis! 😉" em vez de repetir a apresentação formal.\n` +
+        `- ESPELHAMENTO SOCIAL: Reaja ao que o cliente diz (elogios, dúvidas, casualidades) antes de prosseguir com a próxima pergunta.\n` +
+        `- PACIÊNCIA: Faça apenas UMA pergunta por mensagem.\n` +
+        `- Se o histórico mostrar que você já se apresentou, NÃO se apresente de novo. Vá direto ao ponto.\n` +
+        `- Use linguagem natural brasileira.\n` +
+        `- Use [QUALIFICADO] quando o objetivo for atingido.\n` +
+        `- Use [TRANSFERIR] se o cliente pedir humano ou se você travar.`;
 }
 
 // --- Módulo AI SDR / Suporte ---
