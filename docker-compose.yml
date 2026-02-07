@@ -8,9 +8,7 @@ services:
     build: .
     ports:
       - "8788:8788"
-    # Portainer will override these env vars, but good for local test
-    env_file:
-      - .env
+    # Portainer will manage env vars via its UI
     volumes:
       # Persistent session storage (if file based)
       - ./bot_sessions:/app/bot_sessions
