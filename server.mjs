@@ -121,7 +121,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.25-PRO";
+const SERVER_VERSION = "1.1.26-PRO";
 
 function log(msg) {
     const logMsg = `[BOT LOG] [V${SERVER_VERSION}] ${new Date().toLocaleTimeString()} - ${msg}`;
@@ -570,6 +570,30 @@ bot.command("diag_users", async (ctx) => {
     // Apenas para diagnóstico seu
     const res = await callWuzapi("/admin/users", "GET");
     ctx.reply(`👥 *Usuários WUZAPI:*\n\n\`${JSON.stringify(res, null, 2).substring(0, 3000)}\``, { parse_mode: "Markdown" });
+});
+
+bot.command("disparos", async (ctx) => {
+    const session = await getSession(ctx.chat.id);
+    if (session.whatsapp.instances.length === 0) return ctx.reply("❌ Você não tem nenhuma instância conectada.");
+    const buttons = session.whatsapp.instances.map(inst => [Markup.button.callback(`📢 Campanhas: ${inst.name}`, `wa_mass_init_${inst.id}`)]);
+    buttons.push([Markup.button.callback("🔙 Voltar", "start")]);
+    ctx.reply("📢 *Módulo de Disparos em Massa*\n\nEscolha uma instância:", { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
+});
+
+bot.command("rodizio", async (ctx) => {
+    const session = await getSession(ctx.chat.id);
+    if (session.whatsapp.instances.length === 0) return ctx.reply("❌ Você não tem nenhuma instância conectada.");
+    const buttons = session.whatsapp.instances.map(inst => [Markup.button.callback(`👥 Rodízio: ${inst.name}`, `wa_brokers_menu_${inst.id}`)]);
+    buttons.push([Markup.button.callback("🔙 Voltar", "start")]);
+    ctx.reply("👥 *Módulo de Rodízio de Leads*\n\nEscolha uma instância:", { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
+});
+
+bot.command("agenda", async (ctx) => {
+    const session = await getSession(ctx.chat.id);
+    if (session.whatsapp.instances.length === 0) return ctx.reply("❌ Você não tem nenhuma instância conectada.");
+    const buttons = session.whatsapp.instances.map(inst => [Markup.button.callback(`🔔 Follow-ups: ${inst.name}`, `wa_ai_followup_menu_${inst.id}`)]);
+    buttons.push([Markup.button.callback("🔙 Voltar", "start")]);
+    ctx.reply("🔔 *Módulo de Follow-ups e Agendamentos*\n\nEscolha uma instância:", { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
 });
 
 async function showInstances(ctx) {
@@ -2888,10 +2912,14 @@ app.post("/webhook", async (req, res) => {
 
 // -- Configure Bot Commands Menu --
 bot.telegram.setMyCommands([
-    { command: "start", description: "Menu Principal" },
-    { command: "instancias", description: "Minhas Instâncias" },
-    { command: "conectar", description: "Conectar Novo WhatsApp" },
-    { command: "vip", description: "Status do Plano Pro" }
+    { command: "start", description: "🚀 Menu Principal / Dashboard" },
+    { command: "stats", description: "📊 Dashboard de Leads (Analytics)" },
+    { command: "disparos", description: "📢 Módulo de Disparo em Massa" },
+    { command: "rodizio", description: "👥 Módulo de Rodízio de Leads" },
+    { command: "agenda", description: "🔔 Follow-ups e Agendamentos" },
+    { command: "instancias", description: "📱 Minhas Instâncias Conectadas" },
+    { command: "conectar", description: "🔗 Conectar Novo WhatsApp" },
+    { command: "vip", description: "💎 Status do Plano Premium" }
 ]);
 
 // -- Background Worker para Agendamentos --
