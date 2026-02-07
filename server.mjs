@@ -121,7 +121,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.20-PRO";
+const SERVER_VERSION = "1.1.21-PRO";
 
 function log(msg) {
     const logMsg = `[BOT LOG] [V${SERVER_VERSION}] ${new Date().toLocaleTimeString()} - ${msg}`;
@@ -438,6 +438,46 @@ bot.action("cmd_shortcuts_disparos", async (ctx) => {
     ctx.editMessageText("📢 *Escolha uma instância para gerenciar Disparos:*", { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
 });
 
+bot.command("stats", async (ctx) => {
+    try {
+        const session = await getSession(ctx.chat.id);
+        const instIds = session.whatsapp.instances.map(i => i.id);
+
+        if (instIds.length === 0) return ctx.reply("❌ Você ainda não possui instâncias configuradas.");
+
+        // 1. Leads Qualificados Totais
+        const { data: leads, error } = await supabase
+            .from("ai_leads_tracking")
+            .select("*")
+            .in("instance_id", instIds)
+            .eq("status", "HUMAN_ACTIVE");
+
+        if (error) throw error;
+
+        // 2. Leads de Hoje
+        const today = new Date().toISOString().split('T')[0];
+        const leadsToday = leads.filter(l => l.last_interaction.startsWith(today));
+
+        // 3. Stats por Instância
+        let instStats = "";
+        for (const inst of session.whatsapp.instances) {
+            const count = leads.filter(l => l.instance_id === inst.id).length;
+            instStats += `- *${inst.name}:* ${count} leads qualificados\n`;
+        }
+
+        const msg = `📊 *Dashboard de Leads (Analytics)*\n\n` +
+            `🔥 *Leads Qualificados (Total):* ${leads.length}\n` +
+            `📅 *Leads de Hoje:* ${leadsToday.length}\n\n` +
+            `📱 *Performance por Instância:*\n${instStats || '_Sem dados_'}\n\n` +
+            `💡 *Dica:* Seus leads qualificados são aqueles que foram pausados para atendimento humano ou entregues via rodízio.`;
+
+        ctx.reply(msg, { parse_mode: "Markdown" });
+    } catch (e) {
+        log(`[STATS ERR] ${e.message}`);
+        ctx.reply("❌ Erro ao buscar estatísticas. Tente novamente mais tarde.");
+    }
+});
+
 bot.action("cmd_shortcuts_rodizio", async (ctx) => {
     safeAnswer(ctx);
     const session = await getSession(ctx.chat.id);
@@ -657,7 +697,7 @@ bot.action(/^wa_api_(.+)$/, async (ctx) => {
         parse_mode: "Markdown",
         ...Markup.inlineKeyboard([
             [Markup.button.callback("📜 Ver Endpoints de Mensagem", `wa_endpoints_${id}`)],
-            [Markup.button.callback("🔙 Voltar", `manage_${id}`)]
+            [Markup.button.callback("🔙 Voltar", `wa_api_${id}`)]
         ])
     });
 });
@@ -1366,12 +1406,22 @@ function generateSystemPrompt(inst) {
             baseRules +
             `FLUXO: ${data.greeting ? 'Se for a PRIMEIRA mensagem, use a saudação definida' : 'Saude o cliente se for o início'} -> Siga o funil de qualificação -> Finalize com [QUALIFICADO] quando tiver os dados.`;
     } else if (inst.niche === 'medical_clinic') {
-        prompt = `Você é o assistente da clínica ${data.clinic_name || 'nossa clínica'}.\n\n` +
-            `BOOKING LINK: ${data.booking_link || 'https://agenda.exemplo.com'}.\n\n` +
-            baseRules;
+        prompt = `Você é o assistente virtual da clínica ${data.company_name || 'nossa clínica'}.\n` +
+            `BIO/IDENTIDADE: ${data.bio || 'Equipe atenciosa focada no seu bem-estar'}.\n` +
+            `ESPECIALIDADES: ${data.specialties || 'Clínica geral e diversas especialidades'}.\n` +
+            `CONVÊNIOS: ${data.plans || 'Aceitamos diversos convênios e particular'}.\n` +
+            `ENDEREÇO: ${data.address || 'Consulte-nos para localização'}.\n` +
+            `SAUDAÇÃO: ${data.greeting || 'Olá! Bem-vindo à nossa clínica. Como podemos ajudar?'}.\n\n` +
+            `BOOKING/AGENDAMENTO: Acesse ${data.booking_link || 'o link fornecido'} ou peça para falar com a recepção.\n\n` +
+            baseRules +
+            `OBJETIVO: Qualificar a necessidade do paciente -> Informar convênios/especialidades -> Direcionar para o link de agendamento -> Finalizar com [QUALIFICADO].`;
     } else {
-        prompt = `Você é o assistente virtual da empresa ${data.company_name || 'Vexnus'}.\n\n` +
-            `OBJETIVOS: ${data.goal || 'Atendimento geral'}.\n\n` +
+        prompt = `Você é o assistente virtual da empresa ${data.company_name || 'Vexnus'}.\n` +
+            `IDENTIDADE: ${data.bio || 'Assistente prestativo focado em te ajudar'}.\n` +
+            `OBJETIVOS: ${data.goal || 'Atendimento geral e suporte ao cliente'}.\n` +
+            `PRODUTOS/SERVIÇOS: ${data.products || 'Consulte nosso portfólio'}.\n` +
+            `SAUDAÇÃO: ${data.greeting || 'Olá! Em que posso ser útil?'}.\n` +
+            `REGRAS: ${data.rules || 'Sempre seja educado e tente ajudar o cliente'}.\n\n` +
             baseRules;
     }
 
@@ -1412,8 +1462,20 @@ async function renderAiMenu(ctx, instId) {
 
     // Linha 2: Nicho (Principal se estiver em modo fábrica)
     if (isNiche) {
-        const btnLabel = inst.niche === 'real_estate' ? "⚙️ Configurar Imobiliária" : "⚙️ Configurar Perfil";
-        buttons.push([Markup.button.callback(btnLabel, `wa_ai_wizard_re_${instId}`)]);
+        let btnLabel = "⚙️ Configurar Perfil";
+        let action = `wa_ai_wizard_re_${instId}`;
+
+        if (inst.niche === 'real_estate') {
+            btnLabel = "⚙️ Configurar Imobiliária";
+            action = `wa_ai_wizard_re_${instId}`;
+        } else if (inst.niche === 'medical_clinic') {
+            btnLabel = "⚙️ Configurar Clínica";
+            action = `wa_ai_wizard_mc_${instId}`;
+        } else if (inst.niche === 'generic') {
+            btnLabel = "⚙️ Configurar Negócio";
+            action = `wa_ai_wizard_gn_${instId}`;
+        }
+        buttons.push([Markup.button.callback(btnLabel, action)]);
         buttons.push([Markup.button.callback("🎭 Mudar de Modelo (NICHO)", `wa_ai_niche_menu_${instId}`)]);
     } else {
         buttons.push([Markup.button.callback("🎭 Modelos de Agente (NICHOS)", `wa_ai_niche_menu_${instId}`)]);
@@ -1554,7 +1616,25 @@ bot.action(/^wa_ai_wizard_re_(.+)$/, async (ctx) => {
     const session = await getSession(ctx.chat.id);
     session.stage = `WA_AI_CONF_RE_COMPANY_${id}`;
     await syncSession(ctx, session);
-    ctx.reply("🏢 *Passo 1/9: Nome da Imobiliária*\n\nQual o nome da sua empresa?", { parse_mode: "Markdown" });
+    await ctx.reply("🏢 *Passo 1/9: Nome da Imobiliária*\n\nQual o nome da sua empresa?", { parse_mode: "Markdown" });
+});
+
+bot.action(/^wa_ai_wizard_mc_(.+)$/, async (ctx) => {
+    safeAnswer(ctx);
+    const id = ctx.match[1];
+    const session = await getSession(ctx.chat.id);
+    session.stage = `WA_AI_CONF_MC_COMPANY_${id}`;
+    await syncSession(ctx, session);
+    await ctx.reply("🏥 *Passo 1/8: Nome da Clínica*\n\nQual o nome da sua clínica?", { parse_mode: "Markdown" });
+});
+
+bot.action(/^wa_ai_wizard_gn_(.+)$/, async (ctx) => {
+    safeAnswer(ctx);
+    const id = ctx.match[1];
+    const session = await getSession(ctx.chat.id);
+    session.stage = `WA_AI_CONF_GN_COMPANY_${id}`;
+    await syncSession(ctx, session);
+    await ctx.reply("🤖 *Passo 1/7: Nome da Empresa*\n\nQual o nome do seu negócio?", { parse_mode: "Markdown" });
 });
 
 bot.action(/^wa_ai_wizard_(.+)$/, async (ctx) => {
@@ -2157,6 +2237,138 @@ bot.on("text", async (ctx) => {
             await syncSession(ctx, session);
             ctx.reply("🚫 *Passo 7/9: Regras e Objeções*\n\nQuais as regras proibidas? (Ex: Nunca dar preço final no chat, sempre pedir o telefone, avisar que não aceita permuta)", { parse_mode: "Markdown" });
         }
+    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_MC_COMPANY_")) {
+        const instId = session.stage.replace("WA_AI_CONF_MC_COMPANY_", "");
+        const inst = session.whatsapp.instances.find(i => i.id === instId);
+        if (inst) {
+            inst.niche_data.company_name = ctx.message.text.trim();
+            session.stage = `WA_AI_CONF_MC_SPECIALTIES_${instId}`;
+            await syncSession(ctx, session);
+            ctx.reply("🩺 *Passo 2/8: Especialidades*\n\nQuais especialidades a clínica atende? (Ex: Cardiologia, Dermatologia, Ginecologia)", { parse_mode: "Markdown" });
+        }
+    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_MC_SPECIALTIES_")) {
+        const instId = session.stage.replace("WA_AI_CONF_MC_SPECIALTIES_", "");
+        const inst = session.whatsapp.instances.find(i => i.id === instId);
+        if (inst) {
+            inst.niche_data.specialties = ctx.message.text.trim();
+            session.stage = `WA_AI_CONF_MC_PLANS_${instId}`;
+            await syncSession(ctx, session);
+            ctx.reply("💳 *Passo 3/8: Convênios*\n\nQuais convênios a clínica aceita? (Ex: Unimed, Bradesco, SulAmérica, Particular)", { parse_mode: "Markdown" });
+        }
+    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_MC_PLANS_")) {
+        const instId = session.stage.replace("WA_AI_CONF_MC_PLANS_", "");
+        const inst = session.whatsapp.instances.find(i => i.id === instId);
+        if (inst) {
+            inst.niche_data.plans = ctx.message.text.trim();
+            session.stage = `WA_AI_CONF_MC_BOOKING_${instId}`;
+            await syncSession(ctx, session);
+            ctx.reply("🔗 *Passo 4/8: Link de Agendamento*\n\nInsira o link para marcar consultas (Ex: Doctoralia, Agenda própria ou Link do Whats)", { parse_mode: "Markdown" });
+        }
+    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_MC_BOOKING_")) {
+        const instId = session.stage.replace("WA_AI_CONF_MC_BOOKING_", "");
+        const inst = session.whatsapp.instances.find(i => i.id === instId);
+        if (inst) {
+            inst.niche_data.booking_link = ctx.message.text.trim();
+            session.stage = `WA_AI_CONF_MC_ADDRESS_${instId}`;
+            await syncSession(ctx, session);
+            ctx.reply("📍 *Passo 5/8: Endereço*\n\nQual o endereço físico da clínica?", { parse_mode: "Markdown" });
+        }
+    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_MC_ADDRESS_")) {
+        const instId = session.stage.replace("WA_AI_CONF_MC_ADDRESS_", "");
+        const inst = session.whatsapp.instances.find(i => i.id === instId);
+        if (inst) {
+            inst.niche_data.address = ctx.message.text.trim();
+            session.stage = `WA_AI_CONF_MC_GREETING_${instId}`;
+            await syncSession(ctx, session);
+            ctx.reply("👋 *Passo 6/8: Saudação*\n\nComo a IA deve iniciar a conversa? (Ex: Olá, seja bem-vindo à Clínica Saúde. Em que podemos ajudar?)", { parse_mode: "Markdown" });
+        }
+    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_MC_GREETING_")) {
+        const instId = session.stage.replace("WA_AI_CONF_MC_GREETING_", "");
+        const inst = session.whatsapp.instances.find(i => i.id === instId);
+        if (inst) {
+            inst.niche_data.greeting = ctx.message.text.trim();
+            session.stage = `WA_AI_CONF_MC_BIO_${instId}`;
+            await syncSession(ctx, session);
+            ctx.reply("🧠 *Passo 7/8: Bio do Agente*\n\nDefina a personalidade (Ex: Você é a Dra. Ana, assistente virtual atenciosa e prestativa)", { parse_mode: "Markdown" });
+        }
+    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_MC_BIO_")) {
+        const instId = session.stage.replace("WA_AI_CONF_MC_BIO_", "");
+        const inst = session.whatsapp.instances.find(i => i.id === instId);
+        if (inst) {
+            inst.niche_data.bio = ctx.message.text.trim();
+            session.stage = "READY";
+            await syncSession(ctx, session);
+
+            const styles = [
+                [Markup.button.callback("🤝 Acolhedor e Humano", `wa_ai_re_style_${instId}_amigavel`)],
+                [Markup.button.callback("💼 Clínico e Profissional", `wa_ai_re_style_${instId}_formal`)],
+                [Markup.button.callback("⚡ Rápido e Eficiente", `wa_ai_re_style_${instId}_direto`)]
+            ];
+            ctx.reply("🎭 *Passo 8/8: Estilo de Conversa*\n\nComo a IA deve se portar visualmente?", Markup.inlineKeyboard(styles));
+        }
+
+        // --- GENERIC WIZARD ---
+    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_GN_COMPANY_")) {
+        const instId = session.stage.replace("WA_AI_CONF_GN_COMPANY_", "");
+        const inst = session.whatsapp.instances.find(i => i.id === instId);
+        if (inst) {
+            inst.niche_data.company_name = ctx.message.text.trim();
+            session.stage = `WA_AI_CONF_GN_GOAL_${instId}`;
+            await syncSession(ctx, session);
+            ctx.reply("🎯 *Passo 2/7: Qual o Objetivo Principal?*\n\n(Ex: Vender cursos, tirar dúvidas de alunos, agendar orçamentos)", { parse_mode: "Markdown" });
+        }
+    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_GN_GOAL_")) {
+        const instId = session.stage.replace("WA_AI_CONF_GN_GOAL_", "");
+        const inst = session.whatsapp.instances.find(i => i.id === instId);
+        if (inst) {
+            inst.niche_data.goal = ctx.message.text.trim();
+            session.stage = `WA_AI_CONF_GN_PRODUCTS_${instId}`;
+            await syncSession(ctx, session);
+            ctx.reply("📦 *Passo 3/7: O que você vende/faz?*\n\nDescreva seus produtos ou serviços detalhadamente.", { parse_mode: "Markdown" });
+        }
+    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_GN_PRODUCTS_")) {
+        const instId = session.stage.replace("WA_AI_CONF_GN_PRODUCTS_", "");
+        const inst = session.whatsapp.instances.find(i => i.id === instId);
+        if (inst) {
+            inst.niche_data.products = ctx.message.text.trim();
+            session.stage = `WA_AI_CONF_GN_RULES_${instId}`;
+            await syncSession(ctx, session);
+            ctx.reply("🚫 *Passo 4/7: Regras do Jogo*\n\nO que a IA NÃO pode fazer? (Ex: Não dar desconto, não falar do concorrente, não falar de política)", { parse_mode: "Markdown" });
+        }
+    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_GN_RULES_")) {
+        const instId = session.stage.replace("WA_AI_CONF_GN_RULES_", "");
+        const inst = session.whatsapp.instances.find(i => i.id === instId);
+        if (inst) {
+            inst.niche_data.rules = ctx.message.text.trim();
+            session.stage = `WA_AI_CONF_GN_GREETING_${instId}`;
+            await syncSession(ctx, session);
+            ctx.reply("👋 *Passo 5/7: Saudação Inicial*\n\nComo o robô deve começar o papo?", { parse_mode: "Markdown" });
+        }
+    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_GN_GREETING_")) {
+        const instId = session.stage.replace("WA_AI_CONF_GN_GREETING_", "");
+        const inst = session.whatsapp.instances.find(i => i.id === instId);
+        if (inst) {
+            inst.niche_data.greeting = ctx.message.text.trim();
+            session.stage = `WA_AI_CONF_GN_BIO_${instId}`;
+            await syncSession(ctx, session);
+            ctx.reply("🧠 *Passo 6/7: Identidade*\n\nQuem é você? (Ex: Você é o Max, assistente virtual da Loja X, especialista em games)", { parse_mode: "Markdown" });
+        }
+    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_GN_BIO_")) {
+        const instId = session.stage.replace("WA_AI_CONF_GN_BIO_", "");
+        const inst = session.whatsapp.instances.find(i => i.id === instId);
+        if (inst) {
+            inst.niche_data.bio = ctx.message.text.trim();
+            session.stage = "READY";
+            await syncSession(ctx, session);
+
+            const styles = [
+                [Markup.button.callback("😊 Amigável", `wa_ai_re_style_${instId}_amigavel`)],
+                [Markup.button.callback("💼 Sério", `wa_ai_re_style_${instId}_formal`)],
+                [Markup.button.callback("😎 Descontraído", `wa_ai_re_style_${instId}_descontraido`)]
+            ];
+            ctx.reply("🎭 *Passo 7/7: Estilo Final*\n\nComo a IA deve falar comigo?", Markup.inlineKeyboard(styles));
+        }
+
     } else if (session.stage && session.stage.startsWith("WA_AI_CONF_RE_RULES_")) {
         const instId = session.stage.replace("WA_AI_CONF_RE_RULES_", "");
         const inst = session.whatsapp.instances.find(i => i.id === instId);
