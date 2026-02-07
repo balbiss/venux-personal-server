@@ -121,7 +121,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.3-DEBUG";
+const SERVER_VERSION = "1.1.4-DEBUG";
 
 function log(msg) {
     const logMsg = `[BOT LOG] [V${SERVER_VERSION}] ${new Date().toLocaleTimeString()} - ${msg}`;
@@ -2131,6 +2131,9 @@ app.post("/webhook", async (req, res) => {
                         }
 
                         if (text || audioBase64) {
+                            // Anti-Ban & Humanization: Começar a digitar IMEDIATAMENTE
+                            try { await callWuzapi("/chat/presence", "POST", { Phone: remoteJid, type: "composing" }, tokenId); } catch (e) { }
+
                             // Buscar Histórico antes de responder
                             log(`[WEBHOOK AI] Buscando histórico para context...`);
                             const histRes = await callWuzapi(`/chat/history?chat_jid=${remoteJid}&limit=15`, "GET", null, tokenId);
@@ -2148,94 +2151,59 @@ app.post("/webhook", async (req, res) => {
                                 // --- DETECÇÃO DE SOLICITAÇÃO DE TRANSBORDO ---
                                 if (aiResponse.includes("[TRANSFERIR]")) {
                                     log(`[WEBHOOK AI] IA solicitou transbordo para ${remoteJid}`);
-
-                                    // 1. Marcar como atendimento humano no banco
                                     await supabase.from("ai_leads_tracking").update({ status: "HUMAN_ACTIVE" })
                                         .eq("chat_id", remoteJid).eq("instance_id", tokenId);
-
-                                    // 2. Notificar no Telegram com botão para retomar
                                     const notifyText = `⚠️ *Solicitação de Atendimento Humano*\n\n` +
                                         `O cliente \`${remoteJid}\` na instância *${inst.name}* precisa de ajuda.\n\n` +
                                         `A IA foi pausada para este lead até que você a retome manualmente.`;
-
                                     bot.telegram.sendMessage(chatId, notifyText, {
                                         parse_mode: "Markdown",
-                                        ...Markup.inlineKeyboard([
-                                            [Markup.button.callback("✅ Retomar IA para este Lead", `wa_ai_resume_${tokenId}_${remoteJid}`)]
-                                        ])
+                                        ...Markup.inlineKeyboard([[Markup.button.callback("✅ Retomar IA", `wa_ai_resume_${tokenId}_${remoteJid}`)]])
                                     });
                                     return res.send({ ok: true });
                                 }
 
-                                // --- DETECÇÃO DE LEAD QUALIFICADO (Rodízio) ---
-                                if (aiResponse.includes("[QUALIFICADO]")) {
-                                    log(`[WEBHOOK AI] Lead Qualificado detectado: ${remoteJid}`);
+                                // --- DETECÇÃO DE QUALIFICADO ---
+                                let finalResponse = aiResponse.replace("[QUALIFICADO]", "").trim();
+                                const isQualified = aiResponse.includes("[QUALIFICADO]");
 
-                                    // 1. Marcar como humano no banco
+                                if (isQualified) {
+                                    log(`[WEBHOOK AI] Lead Qualificado: ${remoteJid}`);
                                     await supabase.from("ai_leads_tracking").update({ status: "HUMAN_ACTIVE" })
                                         .eq("chat_id", remoteJid).eq("instance_id", tokenId);
-
-                                    // 2. Buscar próximo corretor (Rodízio Round-Robin)
-                                    const { data: brokers } = await supabase
-                                        .from("real_estate_brokers")
-                                        .select("*")
-                                        .eq("status", "active")
-                                        .order("last_assigned_at", { ascending: true })
-                                        .limit(1);
-
-                                    if (brokers && brokers.length > 0) {
-                                        const broker = brokers[0];
-                                        log(`[RODÍZIO] Atribuindo lead ${remoteJid} ao corretor ${broker.name}`);
-
-                                        // Atualizar tempo de atribuição
-                                        await supabase.from("real_estate_brokers").update({ last_assigned_at: new Date().toISOString() }).eq("id", broker.id);
-
-                                        // Notificar Corretor via WhatsApp
-                                        const brokerMsg = `🚀 *NOVO LEAD QUALIFICADO!*\n\n` +
-                                            `👤 *Lead:* ${remoteJid.split('@')[0]}\n` +
-                                            `📝 *Resumo:* O cliente acaba de ser qualificado pela IA SDR.\n\n` +
-                                            `👉 *Clique para atender:* https://wa.me/${tokenId}?text=Atendimento%20ao%20lead%20${remoteJid.split('@')[0]}`;
-
-                                        await callWuzapi("/chat/send/text", "POST", {
-                                            Phone: broker.phone,
-                                            Body: brokerMsg
-                                        }, tokenId);
-
-                                        // Notificar Admin no Telegram
-                                        bot.telegram.sendMessage(chatId, `✅ *Lead Distribuído!*\nO cliente \`${remoteJid}\` foi encaminhado para o corretor *${broker.name}*.`, { parse_mode: "Markdown" });
-                                    } else {
-                                        bot.telegram.sendMessage(chatId, `⚠️ *Lead Qualificado, mas sem corretores ativos!*\nO cliente \`${remoteJid}\` precisa de atendimento, mas não há corretores na fila.`, { parse_mode: "Markdown" });
-                                    }
-
-                                    // Limpar a tag para enviar para o cliente
-                                    const cleanResponse = aiResponse.replace("[QUALIFICADO]", "").trim();
-                                    if (cleanResponse) {
-                                        await callWuzapi("/chat/send/text", "POST", { Phone: remoteJid, Body: cleanResponse }, tokenId);
-                                    }
-                                    return res.send({ ok: true });
+                                    // (O rodízio aqui é opcional, mantendo o simples por enquanto ou reaplicando se desejar)
+                                    bot.telegram.sendMessage(chatId, `✅ *Lead Qualificado!* \` ${remoteJid}\``);
                                 }
 
-                                log(`[WEBHOOK AI] Respondendo a ${remoteJid}: "${aiResponse.substring(0, 50)}..."`);
+                                log(`[WEBHOOK AI] Respondendo a ${remoteJid}: "${finalResponse.substring(0, 50)}..."`);
 
-                                // Anti-Ban: Simular "digitando"
-                                try {
-                                    await callWuzapi("/chat/presence", "POST", { Phone: remoteJid, type: "composing" }, tokenId);
-                                    const typingTime = 2000 + Math.random() * 3000;
-                                    await new Promise(r => setTimeout(r, typingTime));
-                                } catch (e) { }
+                                // Humanização Avançada: Picotar mensagens por parágrafos
+                                const chunks = finalResponse.split("\n\n").filter(c => c.trim().length > 0);
 
-                                await callWuzapi("/chat/send/text", "POST", {
-                                    Phone: remoteJid,
-                                    Body: aiResponse
-                                }, tokenId);
+                                for (const chunk of chunks) {
+                                    // Delay baseado no tamanho do texto (simular tempo de leitura/escrita)
+                                    const delay = Math.min(Math.max(chunk.length * 60, 1500), 6000);
+                                    await new Promise(r => setTimeout(r, delay));
+
+                                    await callWuzapi("/chat/send/text", "POST", {
+                                        Phone: remoteJid,
+                                        Body: chunk.trim()
+                                    }, tokenId);
+
+                                    // Se houver mais de um chunk, volta a digitar
+                                    if (chunks.indexOf(chunk) < chunks.length - 1) {
+                                        try { await callWuzapi("/chat/presence", "POST", { Phone: remoteJid, type: "composing" }, tokenId); } catch (e) { }
+                                    }
+                                }
                             }
                         }
                     }
                 }
             }
         }
-    } else {
-        log(`[WEBHOOK SKIP] Faltando tokenId (${!!tokenId}) ou event (${!!event}). Keys: ${Object.keys(body).join(",")}`);
+    }
+} else {
+    log(`[WEBHOOK SKIP] Faltando tokenId (${!!tokenId}) ou event(${!!event}).Keys: ${ Object.keys(body).join(",") } `);
     }
     return res.send({ ok: true });
 });
@@ -2261,7 +2229,7 @@ async function checkScheduledCampaigns() {
         if (error) throw error;
 
         for (const item of (data || [])) {
-            log(`[WORKER] Iniciando campanha agendada ${item.id} para ${item.chat_id}`);
+            log(`[WORKER] Iniciando campanha agendada ${ item.id } para ${ item.chat_id } `);
 
             // Marcar como RUNNING no banco
             await supabase
@@ -2293,20 +2261,20 @@ async function checkScheduledCampaigns() {
 
             // Avisar o usuário
             try {
-                await bot.telegram.sendMessage(item.chat_id, `⏰ *Agendamento Ativado!*\n\nIniciando agora o disparo para \`${item.inst_id}\`.`, { parse_mode: "Markdown" });
+                await bot.telegram.sendMessage(item.chat_id, `⏰ * Agendamento Ativado! *\n\nIniciando agora o disparo para \`${item.inst_id}\`.`, { parse_mode: "Markdown" });
             } catch (e) { }
 
-            runCampaign(Number(item.chat_id), item.inst_id).then(async () => {
-                // Ao finalizar, marcar como COMPLETED no banco
-                await supabase
-                    .from('scheduled_campaigns')
-                    .update({ status: 'COMPLETED' })
-                    .eq('id', item.id);
-            });
+runCampaign(Number(item.chat_id), item.inst_id).then(async () => {
+    // Ao finalizar, marcar como COMPLETED no banco
+    await supabase
+        .from('scheduled_campaigns')
+        .update({ status: 'COMPLETED' })
+        .eq('id', item.id);
+});
         }
     } catch (e) {
-        log(`[WORKER ERR] ${e.message}`);
-    }
+    log(`[WORKER ERR] ${e.message}`);
+}
 }
 
 // Iniciar worker a cada 1 minuto
