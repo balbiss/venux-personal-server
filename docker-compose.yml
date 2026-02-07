@@ -8,9 +8,9 @@ services:
     ports:
       - "8788:8788"
     command: >
-      sh -c "echo 'Starting deployment script V1.1.9-FIX...' &&
+      sh -c "echo 'Starting deployment script V1.1.10-FIX...' &&
              apk add --no-cache git &&
-             echo 'Cloning fresh repository (V1.1.9-FIX)...' &&
+             echo 'Cloning fresh repository (V1.1.10-FIX)...' &&
              rm -rf /app_tmp &&
              git clone https://github.com/balbiss/venux-personal-server.git /app_tmp &&
              echo 'Updating application files...' &&
@@ -18,7 +18,7 @@ services:
              cp -rf /app_tmp/.* . 2>/dev/null || true &&
              echo 'Installing dependencies...' &&
              npm install --production &&
-             echo 'Starting application V1.1.9-FIX...' &&
+             echo 'Starting application V1.1.10-FIX...' &&
              node server.mjs"
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}

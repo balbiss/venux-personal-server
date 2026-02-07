@@ -121,7 +121,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.9-FIX";
+const SERVER_VERSION = "1.1.10-FIX";
 
 function log(msg) {
     const logMsg = `[BOT LOG] [V${SERVER_VERSION}] ${new Date().toLocaleTimeString()} - ${msg}`;
@@ -134,6 +134,16 @@ const aiQueues = new Map(); // Debouncing
 async function safeDelete(ctx) {
     try {
         if (ctx.callbackQuery && ctx.callbackQuery.message) {
+            // Efeito de Desintegração Simulado (Particle Dissolve)
+            const frames = ["▓▓▓▓▓▓▓▓▓", "▒▒▒▒▒▒▒▒▒", "░░░░░░░░░", "........."];
+            for (const frame of frames) {
+                try {
+                    await ctx.editMessageText(frame).catch(() => { });
+                    await new Promise(r => setTimeout(r, 100)); // Delay curto para fluidez
+                } catch (e) { break; }
+            }
+            await ctx.deleteMessage().catch(() => { });
+        } else if (ctx.message) {
             await ctx.deleteMessage().catch(() => { });
         }
     } catch (e) { }
