@@ -121,7 +121,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.5-FIX";
+const SERVER_VERSION = "1.1.6-FIX";
 
 function log(msg) {
     const logMsg = `[BOT LOG] [V${SERVER_VERSION}] ${new Date().toLocaleTimeString()} - ${msg}`;
@@ -547,7 +547,6 @@ bot.action("cmd_conectar", async (ctx) => {
 
 bot.action("cmd_instancias", async (ctx) => {
     safeAnswer(ctx);
-    await safeDelete(ctx);
     return showInstances(ctx);
 });
 
@@ -592,7 +591,6 @@ async function renderManageMenu(ctx, id) {
 
 bot.action(/^manage_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
-    await safeDelete(ctx);
     const id = ctx.match[1];
     await renderManageMenu(ctx, id);
 });
@@ -1126,7 +1124,6 @@ async function renderWebhookMenu(ctx, id) {
 
 bot.action(/^wa_web_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
-    await safeDelete(ctx);
     const id = ctx.match[1];
     await renderWebhookMenu(ctx, id);
 });
@@ -1322,7 +1319,6 @@ async function renderAiMenu(ctx, instId) {
 
 bot.action(/^wa_ai_menu_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
-    await safeDelete(ctx);
     const id = ctx.match[1];
     await ensureWebhookSet(id); // Sincroniza ao abrir o menu
     await renderAiMenu(ctx, id);
@@ -1330,7 +1326,6 @@ bot.action(/^wa_ai_menu_(.+)$/, async (ctx) => {
 
 bot.action(/^wa_ai_wizard_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
-    await safeDelete(ctx);
     const id = ctx.match[1];
     const session = await getSession(ctx.chat.id);
     session.stage = `WA_WIZ_NAME_${id}`;
