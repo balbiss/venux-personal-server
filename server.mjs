@@ -121,8 +121,10 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
+const SERVER_VERSION = "1.0.8-DEBUG";
+
 function log(msg) {
-    const logMsg = `[BOT LOG] ${new Date().toLocaleTimeString()} - ${msg}`;
+    const logMsg = `[BOT LOG] [V${SERVER_VERSION}] ${new Date().toLocaleTimeString()} - ${msg}`;
     console.log(logMsg);
     try { fs.appendFileSync("bot.log", logMsg + "\n"); } catch (e) { }
 }
@@ -2023,216 +2025,225 @@ app.post("/webhook", async (req, res) => {
     }
 
     // -- 2. Tratar Webhook WUZAPI (WhatsApp) --
-    // WUZAPI pode enviar como token/event ou instanceName/type dependendo da versão/configuração
-    const tokenId = body.token || body.instanceName || body.instance_name || (body.event && (body.event.instanceName || body.event.token));
-    const event = body.type || (typeof body.event === 'string' ? body.event : (body.event && body.event.type));
+    // WUZAPI pode variar os nomes dos campos (token/event, instanceName/type, CamelCase, nestings)
+    const tokenId = body.token ||
+        body.instanceName ||
+        body.instance_name ||
+        (body.event && (body.event.instanceName || body.event.InstanceName || body.event.token || body.event.Token));
+
+    const event = body.type ||
+        (typeof body.event === 'string' ? body.event : (body.event && (body.event.type || body.event.Type || body.event.event)));
 
     if (tokenId && event) {
         log(`[WEBHOOK] Evento: ${event} | Token: ${tokenId} | Keys: ${Object.keys(body).join(",")}`);
+    } else {
+        log(`[WEBHOOK SKIP] Faltando tokenId (${!!tokenId}) ou event (${!!event}). Keys: ${Object.keys(body).join(",")}`);
+        return res.send({ ok: true });
+    }
 
-        // Extrair chatId do tokenId (wa_CHATID_RAND)
-        const parts = tokenId.split("_");
-        if (parts.length >= 2) {
-            const chatId = parts[1];
+    // Extrair chatId do tokenId (wa_CHATID_RAND)
+    const parts = tokenId.split("_");
+    if (parts.length >= 2) {
+        const chatId = parts[1];
 
-            if (event === "Connected" || event === "LoggedIn") {
-                bot.telegram.sendMessage(chatId, `✅ *WhatsApp Conectado!*\n\nA instância \`${tokenId}\` agora está online e pronta para uso.`, { parse_mode: "Markdown" });
-            } else if (event === "Disconnected") {
-                bot.telegram.sendMessage(chatId, `⚠️ *WhatsApp Desconectado!*\n\nA instância \`${tokenId}\` foi desconectada. Gere um novo QR Code para reconectar.`, { parse_mode: "Markdown" });
-            } else if (event === "Message") {
-                // WUZAPI normaliza os dados no campo 'data' ou 'event' dependendo da versão
-                const rawData = body.event || body.data || {};
-                const info = rawData.Info || rawData || {};
-                const messageObj = rawData.Message || {};
+        if (event === "Connected" || event === "LoggedIn") {
+            bot.telegram.sendMessage(chatId, `✅ *WhatsApp Conectado!*\n\nA instância \`${tokenId}\` agora está online e pronta para uso.`, { parse_mode: "Markdown" });
+        } else if (event === "Disconnected") {
+            bot.telegram.sendMessage(chatId, `⚠️ *WhatsApp Desconectado!*\n\nA instância \`${tokenId}\` foi desconectada. Gere um novo QR Code para reconectar.`, { parse_mode: "Markdown" });
+        } else if (event === "Message") {
+            // WUZAPI normaliza os dados no campo 'data' ou 'event' dependendo da versão
+            const rawData = body.event || body.data || {};
+            const info = rawData.Info || rawData || {};
+            const messageObj = rawData.Message || {};
 
-                const remoteJid = info.RemoteJID || info.Chat || info.Sender || info.SenderAlt || "";
-                const isFromMe = info.IsFromMe || false;
-                const isGroup = info.IsGroup || remoteJid.includes("@g.us");
+            const remoteJid = info.RemoteJID || info.Chat || info.Sender || info.SenderAlt || "";
+            const isFromMe = info.IsFromMe || false;
+            const isGroup = info.IsGroup || remoteJid.includes("@g.us");
 
-                // Extração do corpo da mensagem (Texto ou Legenda de Mídia)
-                let text = messageObj.conversation ||
-                    messageObj.extendedTextMessage?.text ||
-                    messageObj.imageMessage?.caption ||
-                    messageObj.videoMessage?.caption ||
-                    messageObj.documentMessage?.caption ||
-                    info.Body || "";
+            // Extração do corpo da mensagem (Texto ou Legenda de Mídia)
+            let text = messageObj.conversation ||
+                messageObj.extendedTextMessage?.text ||
+                messageObj.imageMessage?.caption ||
+                messageObj.videoMessage?.caption ||
+                messageObj.documentMessage?.caption ||
+                info.Body || "";
 
-                log(`[WEBHOOK] Msg from: ${remoteJid} | Group: ${isGroup} | FromMe: ${isFromMe} | Text: ${text.substring(0, 50)}`);
+            log(`[WEBHOOK] Msg from: ${remoteJid} | Group: ${isGroup} | FromMe: ${isFromMe} | Text: ${text.substring(0, 50)}`);
 
-                // 1. FILTRO: Apenas Chats Privados, ignora grupos e canais
-                const isPrivate = remoteJid.endsWith("@s.whatsapp.net") || remoteJid.endsWith("@lid");
-                if (isPrivate && !isGroup) {
-                    const session = await getSession(chatId);
-                    const inst = session.whatsapp.instances.find(i => i.id === tokenId);
+            // 1. FILTRO: Apenas Chats Privados, ignora grupos e canais
+            const isPrivate = remoteJid.endsWith("@s.whatsapp.net") || remoteJid.endsWith("@lid");
+            if (isPrivate && !isGroup) {
+                const session = await getSession(chatId);
+                const inst = session.whatsapp.instances.find(i => i.id === tokenId);
 
-                    log(`[DEBUG] Check Instance: ${tokenId} | Found: ${!!inst} | AI Enabled: ${inst?.ai_enabled}`);
+                log(`[DEBUG] Check Instance: ${tokenId} | Found: ${!!inst} | AI Enabled: ${inst?.ai_enabled}`);
 
-                    if (isFromMe) {
-                        // --- DETECÇÃO DE RESPOSTA HUMANA (Manual Transfer) ---
-                        log(`[WEBHOOK] Resposta humana detectada para ${remoteJid}. Pausando IA.`);
-                        await supabase.from("ai_leads_tracking").upsert({
-                            chat_id: remoteJid,
-                            instance_id: tokenId,
-                            last_interaction: new Date().toISOString(),
-                            status: "HUMAN_ACTIVE"
-                        }, { onConflict: "chat_id, instance_id" });
-                        return res.send({ ok: true });
-                    }
-
-                    // Verificar se o lead está em atendimento humano
-                    const { data: tracking } = await supabase
-                        .from("ai_leads_tracking")
-                        .select("status")
-                        .eq("chat_id", remoteJid)
-                        .eq("instance_id", tokenId)
-                        .maybeSingle();
-
-                    if (tracking && tracking.status === "HUMAN_ACTIVE") {
-                        log(`[WEBHOOK] IA Pausada para ${remoteJid} (Atendimento humano).`);
-                        return res.send({ ok: true });
-                    }
-
-                    // --- TRACKING PARA FOLLOW-UP ---
-                    // Se o lead mandou mensagem, resetamos o tracking para essa instância
+                if (isFromMe) {
+                    // --- DETECÇÃO DE RESPOSTA HUMANA (Manual Transfer) ---
+                    log(`[WEBHOOK] Resposta humana detectada para ${remoteJid}. Pausando IA.`);
                     await supabase.from("ai_leads_tracking").upsert({
                         chat_id: remoteJid,
                         instance_id: tokenId,
                         last_interaction: new Date().toISOString(),
-                        nudge_count: 0,
-                        status: "RESPONDED"
+                        status: "HUMAN_ACTIVE"
                     }, { onConflict: "chat_id, instance_id" });
+                    return res.send({ ok: true });
+                }
 
-                    if (inst && inst.ai_enabled) {
-                        log(`[WEBHOOK AI] Processando mensagem para ${tokenId}...`);
+                // Verificar se o lead está em atendimento humano
+                const { data: tracking } = await supabase
+                    .from("ai_leads_tracking")
+                    .select("status")
+                    .eq("chat_id", remoteJid)
+                    .eq("instance_id", tokenId)
+                    .maybeSingle();
 
-                        let audioBase64 = null;
-                        const dataForAudio = info; // Wuzapi audio info is usually in top level of data/info
+                if (tracking && tracking.status === "HUMAN_ACTIVE") {
+                    log(`[WEBHOOK] IA Pausada para ${remoteJid} (Atendimento humano).`);
+                    return res.send({ ok: true });
+                }
 
-                        // Tratar Áudio
-                        if (info.Type === "audio" || (info.Mimetype && info.Mimetype.includes("audio"))) {
-                            log(`[WEBHOOK AI] Áudio detectado. Baixando...`);
-                            const downloadRes = await callWuzapi("/chat/downloadaudio", "POST", {
-                                Url: info.Url,
-                                MediaKey: info.MediaKey,
-                                Mimetype: info.Mimetype,
-                                FileSHA256: info.FileSHA256,
-                                FileLength: info.FileLength,
-                                DirectPath: info.DirectPath
-                            }, tokenId);
+                // --- TRACKING PARA FOLLOW-UP ---
+                // Se o lead mandou mensagem, resetamos o tracking para essa instância
+                await supabase.from("ai_leads_tracking").upsert({
+                    chat_id: remoteJid,
+                    instance_id: tokenId,
+                    last_interaction: new Date().toISOString(),
+                    nudge_count: 0,
+                    status: "RESPONDED"
+                }, { onConflict: "chat_id, instance_id" });
 
-                            if (downloadRes.success && downloadRes.data && downloadRes.data.Data) {
-                                audioBase64 = downloadRes.data.Data;
-                            }
-                        }
+                if (inst && inst.ai_enabled) {
+                    log(`[WEBHOOK AI] Processando mensagem para ${tokenId}...`);
 
-                        if (text || audioBase64) {
-                            // Buscar Histórico antes de responder
-                            log(`[WEBHOOK AI] Buscando histórico para context...`);
-                            const histRes = await callWuzapi(`/chat/history?chat_jid=${remoteJid}&limit=15`, "GET", null, tokenId);
-                            const history = histRes.success && Array.isArray(histRes.data) ? histRes.data : [];
+                    let audioBase64 = null;
+                    const dataForAudio = info; // Wuzapi audio info is usually in top level of data/info
 
-                            const aiResponse = await handleAiSdr({
-                                text,
-                                audioBase64,
-                                history,
-                                systemPrompt: inst.ai_prompt || "Você é um assistente prestativo.",
-                                chatId
-                            });
+                    // Tratar Áudio
+                    if (info.Type === "audio" || (info.Mimetype && info.Mimetype.includes("audio"))) {
+                        log(`[WEBHOOK AI] Áudio detectado. Baixando...`);
+                        const downloadRes = await callWuzapi("/chat/downloadaudio", "POST", {
+                            Url: info.Url,
+                            MediaKey: info.MediaKey,
+                            Mimetype: info.Mimetype,
+                            FileSHA256: info.FileSHA256,
+                            FileLength: info.FileLength,
+                            DirectPath: info.DirectPath
+                        }, tokenId);
 
-                            if (aiResponse) {
-                                // --- DETECÇÃO DE SOLICITAÇÃO DE TRANSBORDO ---
-                                if (aiResponse.includes("[TRANSFERIR]")) {
-                                    log(`[WEBHOOK AI] IA solicitou transbordo para ${remoteJid}`);
-
-                                    // 1. Marcar como atendimento humano no banco
-                                    await supabase.from("ai_leads_tracking").update({ status: "HUMAN_ACTIVE" })
-                                        .eq("chat_id", remoteJid).eq("instance_id", tokenId);
-
-                                    // 2. Notificar no Telegram com botão para retomar
-                                    const notifyText = `⚠️ *Solicitação de Atendimento Humano*\n\n` +
-                                        `O cliente \`${remoteJid}\` na instância *${inst.name}* precisa de ajuda.\n\n` +
-                                        `A IA foi pausada para este lead até que você a retome manualmente.`;
-
-                                    bot.telegram.sendMessage(chatId, notifyText, {
-                                        parse_mode: "Markdown",
-                                        ...Markup.inlineKeyboard([
-                                            [Markup.button.callback("✅ Retomar IA para este Lead", `wa_ai_resume_${tokenId}_${remoteJid}`)]
-                                        ])
-                                    });
-                                    return res.send({ ok: true });
-                                }
-
-                                // --- DETECÇÃO DE LEAD QUALIFICADO (Rodízio) ---
-                                if (aiResponse.includes("[QUALIFICADO]")) {
-                                    log(`[WEBHOOK AI] Lead Qualificado detectado: ${remoteJid}`);
-
-                                    // 1. Marcar como humano no banco
-                                    await supabase.from("ai_leads_tracking").update({ status: "HUMAN_ACTIVE" })
-                                        .eq("chat_id", remoteJid).eq("instance_id", tokenId);
-
-                                    // 2. Buscar próximo corretor (Rodízio Round-Robin)
-                                    const { data: brokers } = await supabase
-                                        .from("real_estate_brokers")
-                                        .select("*")
-                                        .eq("status", "active")
-                                        .order("last_assigned_at", { ascending: true })
-                                        .limit(1);
-
-                                    if (brokers && brokers.length > 0) {
-                                        const broker = brokers[0];
-                                        log(`[RODÍZIO] Atribuindo lead ${remoteJid} ao corretor ${broker.name}`);
-
-                                        // Atualizar tempo de atribuição
-                                        await supabase.from("real_estate_brokers").update({ last_assigned_at: new Date().toISOString() }).eq("id", broker.id);
-
-                                        // Notificar Corretor via WhatsApp
-                                        const brokerMsg = `🚀 *NOVO LEAD QUALIFICADO!*\n\n` +
-                                            `👤 *Lead:* ${remoteJid.split('@')[0]}\n` +
-                                            `📝 *Resumo:* O cliente acaba de ser qualificado pela IA SDR.\n\n` +
-                                            `👉 *Clique para atender:* https://wa.me/${tokenId}?text=Atendimento%20ao%20lead%20${remoteJid.split('@')[0]}`;
-
-                                        await callWuzapi("/chat/send/text", "POST", {
-                                            Phone: broker.phone,
-                                            Body: brokerMsg
-                                        }, tokenId);
-
-                                        // Notificar Admin no Telegram
-                                        bot.telegram.sendMessage(chatId, `✅ *Lead Distribuído!*\nO cliente \`${remoteJid}\` foi encaminhado para o corretor *${broker.name}*.`, { parse_mode: "Markdown" });
-                                    } else {
-                                        bot.telegram.sendMessage(chatId, `⚠️ *Lead Qualificado, mas sem corretores ativos!*\nO cliente \`${remoteJid}\` precisa de atendimento, mas não há corretores na fila.`, { parse_mode: "Markdown" });
-                                    }
-
-                                    // Limpar a tag para enviar para o cliente
-                                    const cleanResponse = aiResponse.replace("[QUALIFICADO]", "").trim();
-                                    if (cleanResponse) {
-                                        await callWuzapi("/chat/send/text", "POST", { Phone: remoteJid, Body: cleanResponse }, tokenId);
-                                    }
-                                    return res.send({ ok: true });
-                                }
-
-                                log(`[WEBHOOK AI] Respondendo a ${remoteJid}: "${aiResponse.substring(0, 50)}..."`);
-
-                                // Anti-Ban: Simular "digitando"
-                                try {
-                                    await callWuzapi("/user/presence", "POST", { type: "composing" }, tokenId);
-                                    const typingTime = 2000 + Math.random() * 3000;
-                                    await new Promise(r => setTimeout(r, typingTime));
-                                } catch (e) { }
-
-                                await callWuzapi("/chat/send/text", "POST", {
-                                    Phone: remoteJid,
-                                    Body: aiResponse
-                                }, tokenId);
-                            }
+                        if (downloadRes.success && downloadRes.data && downloadRes.data.Data) {
+                            audioBase64 = downloadRes.data.Data;
                         }
                     }
-                } else {
-                    log(`[WEBHOOK SKIP] Mensagem ignorada (Grupo ou Canal): ${remoteJid}`);
+
+                    if (text || audioBase64) {
+                        // Buscar Histórico antes de responder
+                        log(`[WEBHOOK AI] Buscando histórico para context...`);
+                        const histRes = await callWuzapi(`/chat/history?chat_jid=${remoteJid}&limit=15`, "GET", null, tokenId);
+                        const history = histRes.success && Array.isArray(histRes.data) ? histRes.data : [];
+
+                        const aiResponse = await handleAiSdr({
+                            text,
+                            audioBase64,
+                            history,
+                            systemPrompt: inst.ai_prompt || "Você é um assistente prestativo.",
+                            chatId
+                        });
+
+                        if (aiResponse) {
+                            // --- DETECÇÃO DE SOLICITAÇÃO DE TRANSBORDO ---
+                            if (aiResponse.includes("[TRANSFERIR]")) {
+                                log(`[WEBHOOK AI] IA solicitou transbordo para ${remoteJid}`);
+
+                                // 1. Marcar como atendimento humano no banco
+                                await supabase.from("ai_leads_tracking").update({ status: "HUMAN_ACTIVE" })
+                                    .eq("chat_id", remoteJid).eq("instance_id", tokenId);
+
+                                // 2. Notificar no Telegram com botão para retomar
+                                const notifyText = `⚠️ *Solicitação de Atendimento Humano*\n\n` +
+                                    `O cliente \`${remoteJid}\` na instância *${inst.name}* precisa de ajuda.\n\n` +
+                                    `A IA foi pausada para este lead até que você a retome manualmente.`;
+
+                                bot.telegram.sendMessage(chatId, notifyText, {
+                                    parse_mode: "Markdown",
+                                    ...Markup.inlineKeyboard([
+                                        [Markup.button.callback("✅ Retomar IA para este Lead", `wa_ai_resume_${tokenId}_${remoteJid}`)]
+                                    ])
+                                });
+                                return res.send({ ok: true });
+                            }
+
+                            // --- DETECÇÃO DE LEAD QUALIFICADO (Rodízio) ---
+                            if (aiResponse.includes("[QUALIFICADO]")) {
+                                log(`[WEBHOOK AI] Lead Qualificado detectado: ${remoteJid}`);
+
+                                // 1. Marcar como humano no banco
+                                await supabase.from("ai_leads_tracking").update({ status: "HUMAN_ACTIVE" })
+                                    .eq("chat_id", remoteJid).eq("instance_id", tokenId);
+
+                                // 2. Buscar próximo corretor (Rodízio Round-Robin)
+                                const { data: brokers } = await supabase
+                                    .from("real_estate_brokers")
+                                    .select("*")
+                                    .eq("status", "active")
+                                    .order("last_assigned_at", { ascending: true })
+                                    .limit(1);
+
+                                if (brokers && brokers.length > 0) {
+                                    const broker = brokers[0];
+                                    log(`[RODÍZIO] Atribuindo lead ${remoteJid} ao corretor ${broker.name}`);
+
+                                    // Atualizar tempo de atribuição
+                                    await supabase.from("real_estate_brokers").update({ last_assigned_at: new Date().toISOString() }).eq("id", broker.id);
+
+                                    // Notificar Corretor via WhatsApp
+                                    const brokerMsg = `🚀 *NOVO LEAD QUALIFICADO!*\n\n` +
+                                        `👤 *Lead:* ${remoteJid.split('@')[0]}\n` +
+                                        `📝 *Resumo:* O cliente acaba de ser qualificado pela IA SDR.\n\n` +
+                                        `👉 *Clique para atender:* https://wa.me/${tokenId}?text=Atendimento%20ao%20lead%20${remoteJid.split('@')[0]}`;
+
+                                    await callWuzapi("/chat/send/text", "POST", {
+                                        Phone: broker.phone,
+                                        Body: brokerMsg
+                                    }, tokenId);
+
+                                    // Notificar Admin no Telegram
+                                    bot.telegram.sendMessage(chatId, `✅ *Lead Distribuído!*\nO cliente \`${remoteJid}\` foi encaminhado para o corretor *${broker.name}*.`, { parse_mode: "Markdown" });
+                                } else {
+                                    bot.telegram.sendMessage(chatId, `⚠️ *Lead Qualificado, mas sem corretores ativos!*\nO cliente \`${remoteJid}\` precisa de atendimento, mas não há corretores na fila.`, { parse_mode: "Markdown" });
+                                }
+
+                                // Limpar a tag para enviar para o cliente
+                                const cleanResponse = aiResponse.replace("[QUALIFICADO]", "").trim();
+                                if (cleanResponse) {
+                                    await callWuzapi("/chat/send/text", "POST", { Phone: remoteJid, Body: cleanResponse }, tokenId);
+                                }
+                                return res.send({ ok: true });
+                            }
+
+                            log(`[WEBHOOK AI] Respondendo a ${remoteJid}: "${aiResponse.substring(0, 50)}..."`);
+
+                            // Anti-Ban: Simular "digitando"
+                            try {
+                                await callWuzapi("/user/presence", "POST", { type: "composing" }, tokenId);
+                                const typingTime = 2000 + Math.random() * 3000;
+                                await new Promise(r => setTimeout(r, typingTime));
+                            } catch (e) { }
+
+                            await callWuzapi("/chat/send/text", "POST", {
+                                Phone: remoteJid,
+                                Body: aiResponse
+                            }, tokenId);
+                        }
+                    }
                 }
+            } else {
+                log(`[WEBHOOK SKIP] Mensagem ignorada (Grupo ou Canal): ${remoteJid}`);
             }
         }
-        return res.send({ ok: true });
     }
+    return res.send({ ok: true });
+}
 
     res.send({ ok: true });
 });
