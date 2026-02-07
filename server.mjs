@@ -121,7 +121,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.8-FIX";
+const SERVER_VERSION = "1.1.9-FIX";
 
 function log(msg) {
     const logMsg = `[BOT LOG] [V${SERVER_VERSION}] ${new Date().toLocaleTimeString()} - ${msg}`;
@@ -1306,6 +1306,7 @@ async function renderAiMenu(ctx, instId) {
     const buttons = [
         [Markup.button.callback(isEnabled ? "🔴 Desativar IA" : "🟢 Ativar IA", `wa_toggle_ai_${instId}`)],
         [Markup.button.callback("📝 Definir Instruções (Prompt)", `wa_set_ai_prompt_${instId}`)],
+        [Markup.button.callback("⏱️ Tempo de Reativação", `wa_ai_resume_time_${instId}`)],
         [Markup.button.callback("🧙‍♂️ Mágico de Prompt (Auxílio)", `wa_ai_wizard_${instId}`)],
         [Markup.button.callback("🔔 Configurar Follow-ups", `wa_ai_followup_menu_${instId}`)],
         [Markup.button.callback("🔄 Forçar Sincronização Webhook", `wa_ai_sync_web_${instId}`)],
@@ -1361,6 +1362,15 @@ bot.action(/^wa_toggle_ai_(.+)$/, async (ctx) => {
         ctx.answerCbQuery(`IA ${inst.ai_enabled ? "Ativada" : "Desativada"}!`);
         await renderAiMenu(ctx, id);
     }
+});
+
+bot.action(/^wa_ai_resume_time_(.+)$/, async (ctx) => {
+    safeAnswer(ctx);
+    const instId = ctx.match[1];
+    const session = await getSession(ctx.chat.id);
+    session.stage = `WA_AI_RESUME_TIME_VAL_${instId}`;
+    await syncSession(ctx, session);
+    ctx.reply("⏱️ *Tempo de Reativação Automática*\n\nDigite após quantas **horas** de silêncio (inatividade humana) a IA deve voltar a responder esse lead.\n\nExemplos:\n- `0.5` (30 minutos)\n- `1` (1 hora)\n- `24` (1 dia)", { parse_mode: "Markdown" });
 });
 
 bot.action(/^wa_ai_resume_(.+)_(.+)$/, async (ctx) => {
@@ -1502,6 +1512,88 @@ async function handleAiSdr({ text, audioBase64, history = [], systemPrompt, chat
     } catch (e) {
         log(`[ERR AI SDR] ${e.message}`);
         return null;
+    }
+}
+
+// --- Módulo de Distribuição de Leads (Rodízio Round-Robin) ---
+async function distributeLead(tgChatId, leadJid, instId) {
+    try {
+        log(`[RODÍZIO] Buscando corretores para ${tgChatId}...`);
+        const { data: brokers, error } = await supabase
+            .from("real_estate_brokers")
+            .select("*")
+            .eq("tg_chat_id", String(tgChatId))
+            .eq("status", "active");
+
+        if (error || !brokers || brokers.length === 0) {
+            log(`[RODÍZIO] Nenhum corretor ativo encontrado para ${tgChatId}`);
+            return;
+        }
+
+        const session = await getSession(tgChatId);
+        let nextIndex = session.last_broker_index || 0;
+
+        if (nextIndex >= brokers.length) nextIndex = 0;
+
+        const broker = brokers[nextIndex];
+        log(`[RODÍZIO] Encaminhando lead ${leadJid} para ${broker.name} (${broker.phone})`);
+
+        const msg = `📢 *NOVO LEAD QUALIFICADO!* \n\n` +
+            `O cliente \\`${ leadJid }\\` acabou de ser qualificado pela IA na sua instância *${instId}*.\n\n` +
+                `Assuma o atendimento agora!`;
+
+        await callWuzapi("/chat/send/text", "POST", { Phone: broker.phone, Body: msg }, instId);
+
+        // Atualizar índice para o próximo
+        session.last_broker_index = (nextIndex + 1) % brokers.length;
+        await saveSession(tgChatId, session);
+
+        bot.telegram.sendMessage(tgChatId, `✅ *Rodízio:* Lead \\`${ leadJid }\\` encaminhado para o corretor **${broker.name}**.`);
+    } catch (e) {
+        log(`[ERR RODÍZIO] ${e.message}`);
+    }
+}
+
+// --- Worker de Reativação Automática da IA ---
+async function checkAutoResume() {
+    try {
+        // Buscar leads em atendimento humano
+        const { data: leads, error } = await supabase
+            .from("ai_leads_tracking")
+            .select("*")
+            .eq("status", "HUMAN_ACTIVE");
+
+        if (error || !leads) return;
+
+        for (const lead of leads) {
+            const parts = lead.instance_id.split("_");
+            if (parts.length < 2) continue;
+            const tgChatId = parts[1];
+
+            const session = await getSession(tgChatId);
+            const inst = session.whatsapp.instances.find(i => i.id === lead.instance_id);
+
+            if (!inst) continue;
+
+            // Por padrão 2 horas se não configurado
+            const resumeHours = inst.auto_resume_hours || 2;
+            const now = new Date();
+            const lastInt = new Date(lead.last_interaction);
+            const diffMs = now - lastInt;
+            const diffHours = diffMs / (1000 * 60 * 60);
+
+            if (diffHours >= resumeHours) {
+                log(`[AUTO-RESUME] Reativando IA para ${lead.chat_id} (Inativo por ${diffHours.toFixed(1)}h)`);
+                await supabase.from("ai_leads_tracking").update({ status: "RESPONDED" })
+                    .eq("id", lead.id);
+
+                bot.telegram.sendMessage(tgChatId, `🤖 *IA Reativada:* O lead \\`${ lead.chat_id }\\` estava em silêncio por ${resumeHours}h. A IA assumiu o atendimento novamente.`, {
+                    parse_mode: "Markdown"
+                });
+            }
+        }
+    } catch (e) {
+        log(`[ERR AUTO-RESUME] ${e.message}`);
     }
 }
 
@@ -1776,6 +1868,20 @@ bot.on("text", async (ctx) => {
             await syncSession(ctx, session);
             await renderBrokersMenu(ctx, instId);
         }
+    } else if (session.stage && session.stage.startsWith("WA_AI_RESUME_TIME_VAL_")) {
+        const instId = session.stage.replace("WA_AI_RESUME_TIME_VAL_", "");
+        const val = parseFloat(ctx.message.text.trim().replace(",", "."));
+        if (isNaN(val) || val < 0.1) return ctx.reply("❌ Valor inválido. Use um número (ex: 0.5 para 30 min, 2 para 2 horas).");
+
+        const inst = session.whatsapp.instances.find(i => i.id === instId);
+        if (inst) {
+            inst.auto_resume_hours = val;
+            await syncSession(ctx, session);
+            ctx.reply(`✅ *Tempo Atualizado:* A IA voltará a atender após **${val}h** de silêncio humano.`);
+            await renderAiMenu(ctx, instId);
+        }
+        session.stage = "READY";
+        await syncSession(ctx, session);
         return;
 
     } else if (session.stage && session.stage.startsWith("WA_WAITING_MASS_CONTACTS_")) {
@@ -2212,6 +2318,9 @@ app.post("/webhook", async (req, res) => {
                                             await supabase.from("ai_leads_tracking").update({ status: "HUMAN_ACTIVE" })
                                                 .eq("chat_id", remoteJid).eq("instance_id", tokenId);
                                             bot.telegram.sendMessage(chatId, `✅ *Lead Qualificado!* \` ${remoteJid}\``);
+
+                                            // Trigger Rodízio Round-Robin
+                                            await distributeLead(chatId, remoteJid, tokenId);
                                         }
 
                                         const chunks = finalResponse.split("\n\n").filter(c => c.trim().length > 0);
@@ -2371,6 +2480,7 @@ async function checkAiFollowups() {
 
 // Iniciar worker de follow-up a cada 5 minutos
 setInterval(checkAiFollowups, 300000);
+setInterval(checkAutoResume, 600000); // Check every 10 min
 
 bot.launch().then(() => {
     log("Bot Ativo");
