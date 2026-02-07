@@ -121,7 +121,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.12-FIX";
+const SERVER_VERSION = "1.1.13-FIX";
 
 function log(msg) {
     const logMsg = `[BOT LOG] [V${SERVER_VERSION}] ${new Date().toLocaleTimeString()} - ${msg}`;
@@ -2229,6 +2229,8 @@ app.post("/webhook", async (req, res) => {
                 const messageObj = rawData.Message || {};
 
                 const remoteJid = info.RemoteJID || info.Chat || info.Sender || info.SenderAlt || "";
+                const pushName = info.PushName || "Desconhecido";
+                const senderAlt = info.SenderAlt || "";
                 const isFromMe = info.IsFromMe || false;
                 const isGroup = info.IsGroup || remoteJid.includes("@g.us");
 
@@ -2310,11 +2312,12 @@ app.post("/webhook", async (req, res) => {
 
                                     if (aiResponse) {
                                         if (aiResponse.includes("[TRANSFERIR]")) {
-                                            log(`[WEBHOOK AI] IA solicitou transbordo para ${remoteJid}`);
+                                            const readableLead = `${pushName} (${(senderAlt || remoteJid).split('@')[0]})`;
+                                            log(`[WEBHOOK AI] IA solicitou transbordo para ${readableLead}`);
                                             await supabase.from("ai_leads_tracking").update({ status: "HUMAN_ACTIVE" })
                                                 .eq("chat_id", remoteJid).eq("instance_id", tokenId);
                                             const notifyText = `⚠️ *Solicitação de Atendimento Humano*\n\n` +
-                                                `O cliente \`${remoteJid}\` na instância *${inst.name}* precisa de ajuda.\n\n` +
+                                                `O cliente **${readableLead}** na instância *${inst.name}* precisa de ajuda.\n\n` +
                                                 `A IA foi pausada para este lead até que você a retome manualmente.`;
                                             bot.telegram.sendMessage(chatId, notifyText, {
                                                 parse_mode: "Markdown",
@@ -2325,10 +2328,11 @@ app.post("/webhook", async (req, res) => {
 
                                         let finalResponse = aiResponse.replace("[QUALIFICADO]", "").trim();
                                         if (aiResponse.includes("[QUALIFICADO]")) {
-                                            log(`[WEBHOOK AI] Lead Qualificado: ${remoteJid}`);
+                                            const readableLead = `${pushName} (${(senderAlt || remoteJid).split('@')[0]})`;
+                                            log(`[WEBHOOK AI] Lead Qualificado: ${readableLead}`);
                                             await supabase.from("ai_leads_tracking").update({ status: "HUMAN_ACTIVE" })
                                                 .eq("chat_id", remoteJid).eq("instance_id", tokenId);
-                                            bot.telegram.sendMessage(chatId, `✅ *Lead Qualificado!* \` ${remoteJid}\``);
+                                            bot.telegram.sendMessage(chatId, `✅ *Lead Qualificado!* **${readableLead}**`);
 
                                             // Trigger Rodízio Round-Robin
                                             await distributeLead(chatId, remoteJid, tokenId);
