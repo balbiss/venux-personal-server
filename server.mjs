@@ -186,10 +186,9 @@ async function ensureWebhookSet(id) {
         const currentWeb = res.data?.webhook || "";
         const currentEvents = res.data?.events || "";
 
-        // Se o webhook for diferente do nosso, não mexemos para não quebrar integrações externas do usuário
+        // Se o webhook for diferente do nosso, registramos mas continuamos para atualizar (especialmente útil na migração local -> VPS)
         if (currentWeb && currentWeb !== WEBHOOK_URL) {
-            log(`[WEBHOOK SKIP] ${id} já possui webhook customizado: ${currentWeb}`);
-            return;
+            log(`[WEBHOOK UPDATE] ${id} tinha: ${currentWeb}. Atualizando para: ${WEBHOOK_URL}`);
         }
 
         // Se já for o nosso E os eventos estiverem OK, não precisa refazer
