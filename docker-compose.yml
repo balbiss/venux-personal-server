@@ -11,6 +11,7 @@ services:
       sh -c "echo 'Starting deployment script...' &&
              apk add --no-cache git &&
              echo 'Cloning repository...' &&
+             rm -rf /app_tmp &&
              git clone https://github.com/balbiss/venux-personal-server.git /app_tmp &&
              cp -r /app_tmp/* . &&
              cp -r /app_tmp/.* . 2>/dev/null || true &&
