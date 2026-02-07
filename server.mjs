@@ -121,7 +121,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.14-PRO";
+const SERVER_VERSION = "1.1.15-PRO";
 
 function log(msg) {
     const logMsg = `[BOT LOG] [V${SERVER_VERSION}] ${new Date().toLocaleTimeString()} - ${msg}`;
@@ -1400,10 +1400,12 @@ bot.action(/^wa_ai_niche_menu_(.+)$/, async (ctx) => {
     await ctx.editMessageText(text, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
 });
 
-bot.action(/^wa_ai_set_niche_(.+)_(.+)$/, async (ctx) => {
+bot.action(/^wa_ai_set_niche_(.+)_(real_estate|medical_clinic|generic)$/, async (ctx) => {
     safeAnswer(ctx);
     const instId = ctx.match[1];
     const niche = ctx.match[2];
+    log(`[NICHE] Usuário tentou setar nicho: ${niche} para instância: ${instId}`);
+
     const session = await getSession(ctx.chat.id);
     const inst = session.whatsapp.instances.find(i => i.id === instId);
 
@@ -1413,7 +1415,7 @@ bot.action(/^wa_ai_set_niche_(.+)_(.+)$/, async (ctx) => {
         if (!inst.niche_data) inst.niche_data = {};
 
         await syncSession(ctx, session);
-        ctx.answerCbQuery(`✅ Modelo ${niche} ativado!`);
+        ctx.answerCbQuery(`✅ Modelo ${niche} ativado!`).catch(() => { });
 
         const msg = `✅ *Perfil ${niche.toUpperCase()} Ativado!*\n\n` +
             `A IA agora seguirá as regras automáticas deste nicho.\n\n` +
