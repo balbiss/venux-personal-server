@@ -2223,16 +2223,17 @@ app.post("/webhook", async (req, res) => {
                                 }, tokenId);
                             }
                         }
-                    } else {
-                        log(`[WEBHOOK SKIP] Mensagem ignorada (Grupo ou Canal): ${remoteJid}`);
                     }
+                } else {
+                    log(`[WEBHOOK SKIP] Mensagem ignorada (Grupo ou Canal): ${remoteJid}`);
                 }
             }
-            return res.send({ ok: true });
         }
+        return res.send({ ok: true });
+    }
 
-        res.send({ ok: true });
-    });
+    res.send({ ok: true });
+});
 
 // -- Configure Bot Commands Menu --
 bot.telegram.setMyCommands([
