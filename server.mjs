@@ -121,7 +121,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.18-PRO";
+const SERVER_VERSION = "1.1.19-PRO";
 
 function log(msg) {
     const logMsg = `[BOT LOG] [V${SERVER_VERSION}] ${new Date().toLocaleTimeString()} - ${msg}`;
@@ -1317,6 +1317,7 @@ function generateSystemPrompt(inst) {
         `DIRETRIZES TÉCNICAS:\n` +
         `- Seja amigável, curto e direto.\n` +
         `- Use linguagem natural e brasileira.\n` +
+        `- IMPORTANTE: Se o histórico mostrar que você já cumprimentou o cliente, NÃO repita a saudação nem sua apresentação. Seja direto e continue o assunto.\n` +
         `- NUNCA invente informações. Se não souber, peça para falar com um atendente.\n` +
         `- Se detectar que o lead está qualificado conforme o funil, use a tag [QUALIFICADO].\n\n`;
 
@@ -1329,7 +1330,7 @@ function generateSystemPrompt(inst) {
             `FUNIL DE QUALIFICAÇÃO: ${data.funnel || 'Entender se o cliente quer comprar ou alugar, localização e faixa de preço'}.\n\n` +
             `REGRAS E OBJEÇÕES: ${data.rules || 'Sempre tente agendar uma visita ou conversa com o corretor'}.\n\n` +
             baseRules +
-            `FLUXO: ${data.greeting ? 'Use a saudação definida' : 'Saude o cliente'} -> Siga o funil de qualificação -> Finalize com [QUALIFICADO] quando tiver os dados.`;
+            `FLUXO: ${data.greeting ? 'Se for a PRIMEIRA mensagem, use a saudação definida' : 'Saude o cliente se for o início'} -> Siga o funil de qualificação -> Finalize com [QUALIFICADO] quando tiver os dados.`;
     } else if (inst.niche === 'medical_clinic') {
         prompt = `Você é o assistente da clínica ${data.clinic_name || 'nossa clínica'}.\n\n` +
             `BOOKING LINK: ${data.booking_link || 'https://agenda.exemplo.com'}.\n\n` +
@@ -1684,12 +1685,14 @@ async function handleAiSdr({ text, audioBase64, history = [], systemPrompt, chat
                 `- Se você detectar que o objetivo do atendimento (conforme suas instruções) foi concluído ou que o lead está pronto, finalize a resposta e adicione a tag secreta: [QUALIFICADO]`
         }];
 
-        // Adicionar histórico (últimas 10-15 msgs)
+        // Adicionar histórico (últimas 15 msgs)
         history.slice(-15).forEach(msg => {
-            const role = msg.sender_jid && msg.sender_jid.includes("@s.whatsapp.net") && !msg.sender_jid.includes("me") ? "user" : "assistant";
-            // Wuzapi history structure might vary, adapting to common format
-            const content = msg.text_content || msg.Body || "";
-            if (content) messages.push({ role, content });
+            // Refinação de Role: Wuzapi costuma usar FromMe ou Participants
+            const isMe = msg.from_me === true || msg.FromMe === true || (msg.sender_jid && msg.sender_jid.includes("me"));
+            const role = isMe ? "assistant" : "user";
+
+            const content = msg.text_content || msg.Body || msg.Message?.Conversation || "";
+            if (content && typeof content === 'string') messages.push({ role, content });
         });
 
         // Adicionar mensagem atual se houver
