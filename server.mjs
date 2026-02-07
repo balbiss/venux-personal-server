@@ -121,7 +121,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.22-PRO";
+const SERVER_VERSION = "1.1.23-PRO";
 
 function log(msg) {
     const logMsg = `[BOT LOG] [V${SERVER_VERSION}] ${new Date().toLocaleTimeString()} - ${msg}`;
@@ -314,8 +314,8 @@ async function renderAdminPanel(ctx) {
         [Markup.button.callback("📢 Broadcast (Msg em Massa)", "admin_broadcast")],
         [Markup.button.callback("💰 Alterar Preço", "admin_price")],
         [Markup.button.callback("⚙️ Limites Free", "admin_limit_free"), Markup.button.callback("💎 Limites VIP", "admin_limit_vip")],
-        [Markup.button.callback("👑 Gerenciar VIP Manual", "admin_vip_manual")],
-        [Markup.button.callback("❌ Fechar Painel", "admin_exit")]
+        [Markup.button.callback("👤 Ativar VIP Manual", "admin_vip_manual")],
+        [Markup.button.callback("🔙 Voltar", "start")]
     ];
 
     if (ctx.updateType === "callback_query") {
@@ -433,7 +433,7 @@ bot.action("cmd_shortcuts_disparos", async (ctx) => {
     const session = await getSession(ctx.chat.id);
     if (session.whatsapp.instances.length === 0) return ctx.reply("❌ Você não tem nenhuma instância conectada.");
 
-    const buttons = session.whatsapp.instances.map(inst => [Markup.button.callback(`📢 Campanhas: ${inst.name}`, `wa_mass_menu_${inst.id}`)]);
+    const buttons = session.whatsapp.instances.map(inst => [Markup.button.callback(`📢 Campanhas: ${inst.name}`, `wa_mass_init_${inst.id}`)]);
     buttons.push([Markup.button.callback("🔙 Voltar", "start")]);
     ctx.editMessageText("📢 *Escolha uma instância para gerenciar Disparos:*", { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
 });
@@ -483,7 +483,7 @@ bot.action("cmd_shortcuts_rodizio", async (ctx) => {
     const session = await getSession(ctx.chat.id);
     if (session.whatsapp.instances.length === 0) return ctx.reply("❌ Você não tem nenhuma instância conectada.");
 
-    const buttons = session.whatsapp.instances.map(inst => [Markup.button.callback(`👥 Rodízio: ${inst.name}`, `wa_ai_brokers_${inst.id}`)]);
+    const buttons = session.whatsapp.instances.map(inst => [Markup.button.callback(`👥 Rodízio: ${inst.name}`, `wa_brokers_menu_${inst.id}`)]);
     buttons.push([Markup.button.callback("🔙 Voltar", "start")]);
     ctx.editMessageText("👥 *Escolha uma instância para gerenciar Rodízio de Corretores:*", { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
 });
@@ -533,7 +533,7 @@ bot.action("cmd_planos_menu", async (ctx) => {
 
     const buttons = [];
     if (!isVip) buttons.push([Markup.button.callback("💎 Assinar Agora (Pix)", "gen_pix_mensal")]);
-    buttons.push([Markup.button.callback("🔙 Voltar", "cmd_start")]);
+    buttons.push([Markup.button.callback("🔙 Voltar", "start")]);
 
     ctx.editMessageText(text, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
 });
@@ -542,7 +542,7 @@ bot.action("cmd_suporte", (ctx) => {
     safeAnswer(ctx);
     ctx.editMessageText(`👤 *Suporte & Ajuda*\n\nPrecisa de ajuda? Entre em contato com o suporte oficial:\n\n👉 @SeuUsuarioDeSuporte`, {
         parse_mode: "Markdown",
-        ...Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar", "cmd_start")]])
+        ...Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar", "start")]])
     });
 });
 
@@ -597,6 +597,7 @@ async function showInstances(ctx) {
         msg += `🔹 **${inst.name}**\n🆔 \`${inst.id}\`\n📡 Status: ${status}\n\n`;
         buttons.push([Markup.button.callback(`⚙️ Gerenciar ${inst.name}`, `manage_${inst.id}`)]);
     }
+    buttons.push([Markup.button.callback("🔙 Voltar", "start")]);
     ctx.reply(msg, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
 }
 
