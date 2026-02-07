@@ -121,7 +121,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.0.8-DEBUG";
+const SERVER_VERSION = "1.0.9-DEBUG";
 
 function log(msg) {
     const logMsg = `[BOT LOG] [V${SERVER_VERSION}] ${new Date().toLocaleTimeString()} - ${msg}`;
@@ -2237,11 +2237,11 @@ app.post("/webhook", async (req, res) => {
                         }
                     }
                 }
-            } else {
-                log(`[WEBHOOK SKIP] Mensagem ignorada (Grupo ou Canal): ${remoteJid}`);
             }
         }
-    });
+    }
+}
+});
 
 // -- Configure Bot Commands Menu --
 bot.telegram.setMyCommands([
