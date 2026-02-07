@@ -121,7 +121,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.2-DEBUG";
+const SERVER_VERSION = "1.1.3-DEBUG";
 
 function log(msg) {
     const logMsg = `[BOT LOG] [V${SERVER_VERSION}] ${new Date().toLocaleTimeString()} - ${msg}`;
@@ -1447,14 +1447,12 @@ async function handleAiSdr({ text, audioBase64, history = [], systemPrompt, chat
         const messages = [{
             role: "system",
             content: `${systemPrompt}\n\n` +
-                `REGRAS DE SDR IMOBILIÁRIA:\n` +
-                `- Seu objetivo é qualificar o lead coletando: NOME, CONTATO, TIPO DE IMÓVEL (Casa, Apto, etc) e ORÇAMENTO médio.\n` +
+                `DIRETRIZES TÉCNICAS:\n` +
                 `- Seja amigável, curto e direto.\n` +
-                `- Assim que você tiver coletado essas 4 informações, encerre a conversa educadamente dizendo que o corretor responsável entrará em contato em breve e TERMINA O TEXTO EXATAMENTE COM A TAG: [QUALIFICADO]\n\n` +
-                `REGRAS GERAIS:\n` +
-                `- Seja EXTREMAMENTE CURTO (max 1-2 frases).\n` +
-                `- Use linguagem natural.\n` +
-                `- Se o cliente pedir por atendente/humano ou você travar, responda apenas: [TRANSFERIR]`
+                `- Use linguagem natural e brasileira.\n` +
+                `- Seja EXTREMAMENTE CURTO (max 1-2 frases por resposta).\n` +
+                `- Se o cliente pedir para falar com um humano ou se você não souber responder, envie exatamente: [TRANSFERIR]\n` +
+                `- Se você detectar que o objetivo do atendimento (conforme suas instruções) foi concluído ou que o lead está pronto, finalize a resposta e adicione a tag secreta: [QUALIFICADO]`
         }];
 
         // Adicionar histórico (últimas 10-15 msgs)
@@ -2221,7 +2219,7 @@ app.post("/webhook", async (req, res) => {
 
                                 // Anti-Ban: Simular "digitando"
                                 try {
-                                    await callWuzapi("/user/presence", "POST", { type: "composing" }, tokenId);
+                                    await callWuzapi("/chat/presence", "POST", { Phone: remoteJid, type: "composing" }, tokenId);
                                     const typingTime = 2000 + Math.random() * 3000;
                                     await new Promise(r => setTimeout(r, typingTime));
                                 } catch (e) { }
