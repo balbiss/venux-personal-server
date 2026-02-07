@@ -121,7 +121,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.10-FIX";
+const SERVER_VERSION = "1.1.11-FIX";
 
 function log(msg) {
     const logMsg = `[BOT LOG] [V${SERVER_VERSION}] ${new Date().toLocaleTimeString()} - ${msg}`;
@@ -1549,8 +1549,8 @@ async function distributeLead(tgChatId, leadJid, instId) {
         log(`[RODÍZIO] Encaminhando lead ${leadJid} para ${broker.name} (${broker.phone})`);
 
         const msg = `📢 *NOVO LEAD QUALIFICADO!* \n\n` +
-            `O cliente \\`${ leadJid }\\` acabou de ser qualificado pela IA na sua instância *${instId}*.\n\n` +
-                `Assuma o atendimento agora!`;
+            `O cliente \`${leadJid}\` acabou de ser qualificado pela IA na sua instância *${instId}*.\n\n` +
+            `Assuma o atendimento agora!`;
 
         await callWuzapi("/chat/send/text", "POST", { Phone: broker.phone, Body: msg }, instId);
 
@@ -1558,7 +1558,7 @@ async function distributeLead(tgChatId, leadJid, instId) {
         session.last_broker_index = (nextIndex + 1) % brokers.length;
         await saveSession(tgChatId, session);
 
-        bot.telegram.sendMessage(tgChatId, `✅ *Rodízio:* Lead \\`${ leadJid }\\` encaminhado para o corretor **${broker.name}**.`);
+        bot.telegram.sendMessage(tgChatId, `✅ *Rodízio:* Lead \`${leadJid}\` encaminhado para o corretor **${broker.name}**.`);
     } catch (e) {
         log(`[ERR RODÍZIO] ${e.message}`);
     }
@@ -1597,7 +1597,7 @@ async function checkAutoResume() {
                 await supabase.from("ai_leads_tracking").update({ status: "RESPONDED" })
                     .eq("id", lead.id);
 
-                bot.telegram.sendMessage(tgChatId, `🤖 *IA Reativada:* O lead \\`${ lead.chat_id }\\` estava em silêncio por ${resumeHours}h. A IA assumiu o atendimento novamente.`, {
+                bot.telegram.sendMessage(tgChatId, `🤖 *IA Reativada:* O lead \`${lead.chat_id}\` estava em silêncio por ${resumeHours}h. A IA assumiu o atendimento novamente.`, {
                     parse_mode: "Markdown"
                 });
             }
