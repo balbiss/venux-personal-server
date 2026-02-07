@@ -121,7 +121,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.19-PRO";
+const SERVER_VERSION = "1.1.20-PRO";
 
 function log(msg) {
     const logMsg = `[BOT LOG] [V${SERVER_VERSION}] ${new Date().toLocaleTimeString()} - ${msg}`;
@@ -406,8 +406,9 @@ bot.start(async (ctx) => {
 
     const buttons = [
         [Markup.button.callback("🚀 Minhas Instâncias", "cmd_instancias_menu")],
-        [Markup.button.callback(isVip ? "💎 Área VIP (Ativa)" : "💎 Assinar Premium", "cmd_planos_menu")],
-        [Markup.button.callback("👤 Suporte / Ajuda", "cmd_suporte")]
+        [Markup.button.callback("📢 Disparo em Massa", "cmd_shortcuts_disparos"), Markup.button.callback("👥 Rodízio de Leads", "cmd_shortcuts_rodizio")],
+        [Markup.button.callback("🔔 Follow-ups / Agenda", "cmd_shortcuts_followups")],
+        [Markup.button.callback(isVip ? "💎 Área VIP (Ativa)" : "💎 Assinar Premium", "cmd_planos_menu"), Markup.button.callback("👤 Suporte / Ajuda", "cmd_suporte")]
     ];
 
     if (isAdmin(ctx.chat.id, config)) {
@@ -423,25 +424,58 @@ bot.start(async (ctx) => {
 // --- Menu Handlers ---
 bot.action("cmd_instancias_menu", async (ctx) => {
     safeAnswer(ctx);
-    await ctx.deleteMessage(); // Limpa menu principal
-    // Redireciona para o comando original de listar instâncias
-    // Mas como o original usa ctx.reply, vamos adaptar ou chamar direto
-    // Melhor criar um handler unificado ou chamar a função se existisse
-    // Por enquanto, simulamos o comando /instancias
+    await listInstances(ctx);
+});
+
+// Atalhos Globais (SaaS Dashboard)
+bot.action("cmd_shortcuts_disparos", async (ctx) => {
+    safeAnswer(ctx);
     const session = await getSession(ctx.chat.id);
-    if (!session.whatsapp.instances.length) {
-        return ctx.reply("Você ainda não tem instâncias.", {
-            ...Markup.inlineKeyboard([[Markup.button.callback("🔗 Conectar Nova", "cmd_conectar")]])
-        });
-    }
-    // Reutilizar lógica de listar instâncias (vou refatorar depois se der, agora chamo o fluxo antigo)
-    return ctx.reply("Suas instâncias:", {
-        ...Markup.inlineKeyboard([
-            [Markup.button.callback("📱 Listar Todas", "cmd_instancias")],
-            [Markup.button.callback("🔗 Nova Conexão", "cmd_conectar")],
-            [Markup.button.callback("🔙 Voltar", "cmd_start")]
-        ])
-    });
+    if (session.whatsapp.instances.length === 0) return ctx.reply("❌ Você não tem nenhuma instância conectada.");
+
+    const buttons = session.whatsapp.instances.map(inst => [Markup.button.callback(`📢 Campanhas: ${inst.name}`, `wa_mass_menu_${inst.id}`)]);
+    buttons.push([Markup.button.callback("🔙 Voltar", "start")]);
+    ctx.editMessageText("📢 *Escolha uma instância para gerenciar Disparos:*", { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
+});
+
+bot.action("cmd_shortcuts_rodizio", async (ctx) => {
+    safeAnswer(ctx);
+    const session = await getSession(ctx.chat.id);
+    if (session.whatsapp.instances.length === 0) return ctx.reply("❌ Você não tem nenhuma instância conectada.");
+
+    const buttons = session.whatsapp.instances.map(inst => [Markup.button.callback(`👥 Rodízio: ${inst.name}`, `wa_ai_brokers_${inst.id}`)]);
+    buttons.push([Markup.button.callback("🔙 Voltar", "start")]);
+    ctx.editMessageText("👥 *Escolha uma instância para gerenciar Rodízio de Corretores:*", { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
+});
+
+bot.action("cmd_shortcuts_followups", async (ctx) => {
+    safeAnswer(ctx);
+    const session = await getSession(ctx.chat.id);
+    if (session.whatsapp.instances.length === 0) return ctx.reply("❌ Você não tem nenhuma instância conectada.");
+
+    const buttons = session.whatsapp.instances.map(inst => [Markup.button.callback(`🔔 Follow-ups: ${inst.name}`, `wa_ai_followup_menu_${inst.id}`)]);
+    buttons.push([Markup.button.callback("🔙 Voltar", "start")]);
+    ctx.editMessageText("🔔 *Escolha uma instância para gerenciar Agendamentos:*", { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
+});
+
+bot.action("start", async (ctx) => {
+    safeAnswer(ctx);
+    await ctx.deleteMessage().catch(() => { });
+    // Simula comando /start
+    const isVip = await checkVip(ctx.chat.id);
+    const config = await getSystemConfig();
+    const userFirstName = ctx.from.first_name || "Parceiro";
+    const welcomeMsg = `👋 *Olá, ${userFirstName}! Bem-vindo ao Venux SaaS* 🚀\n\n` +
+        `O sistema definitivo para automação de WhatsApp com IA e Rodízio de Leads.\n\n` +
+        `👇 *Escolha uma opção no menu abaixo:*`;
+    const buttons = [
+        [Markup.button.callback("🚀 Minhas Instâncias", "cmd_instancias_menu")],
+        [Markup.button.callback("📢 Disparo em Massa", "cmd_shortcuts_disparos"), Markup.button.callback("👥 Rodízio de Leads", "cmd_shortcuts_rodizio")],
+        [Markup.button.callback("🔔 Follow-ups / Agenda", "cmd_shortcuts_followups")],
+        [Markup.button.callback(isVip ? "💎 Área VIP (Ativa)" : "💎 Assinar Premium", "cmd_planos_menu"), Markup.button.callback("👤 Suporte / Ajuda", "cmd_suporte")]
+    ];
+    if (isAdmin(ctx.chat.id, config)) buttons.push([Markup.button.callback("👑 Painel Admin", "cmd_admin_panel")]);
+    ctx.reply(welcomeMsg, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
 });
 
 bot.action("cmd_planos_menu", async (ctx) => {
