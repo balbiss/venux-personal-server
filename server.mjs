@@ -2023,10 +2023,11 @@ app.post("/webhook", async (req, res) => {
     }
 
     // -- 2. Tratar Webhook WUZAPI (WhatsApp) --
-    // Estrutura comum WUZAPI: { "token": "...", "event": "...", "data": {...} }
-    if (body.token && body.event) {
-        const tokenId = body.token; // Nosso instanceId
-        const event = body.event;
+    // WUZAPI pode enviar como token/event ou instanceName/type dependendo da versão/configuração
+    const tokenId = body.token || body.instanceName || body.instance_name;
+    const event = body.type || body.event;
+
+    if (tokenId && event) {
         log(`[WEBHOOK] Evento: ${event} | Token: ${tokenId}`);
 
         // Extrair chatId do tokenId (wa_CHATID_RAND)
