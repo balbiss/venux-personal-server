@@ -121,7 +121,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.13-FIX";
+const SERVER_VERSION = "1.1.14-PRO";
 
 function log(msg) {
     const logMsg = `[BOT LOG] [V${SERVER_VERSION}] ${new Date().toLocaleTimeString()} - ${msg}`;
@@ -1299,6 +1299,50 @@ bot.action(/^wa_toggle_presence_(.+)$/, async (ctx) => {
     }
 });
 
+// --- Prompt Factory Engine (SaaS Logic) ---
+function generateSystemPrompt(inst) {
+    if (!inst.niche || inst.niche === 'legacy' || inst.niche === 'custom') {
+        return inst.ai_prompt || "Você é um assistente virtual prestativo.";
+    }
+
+    const data = inst.niche_data || {};
+    let prompt = "";
+
+    if (inst.niche === 'real_estate') {
+        prompt = `Você é o assistente virtual especializado da imobiliária ${data.company_name || 'nossa empresa'}.\n\n` +
+            `OBJETIVO: ${data.goal || 'Qualificar leads interessantes para compra ou aluguel'}.\n` +
+            `TOM DE VOZ: ${data.tone || 'Profissional, empático e focado em converter o lead'}.\n\n` +
+            `DADOS A COLETAR:\n` +
+            `- Pergunte educadamente sobre: ${data.fields?.join(", ") || 'localização, faixa de preço, tipo de imóvel e urgência'}.\n\n` +
+            `REGRAS E COMPORTAMENTO:\n` +
+            `- ${data.rules?.join(". ") || 'Nunca prometa valores exatos. Tente sempre agendar uma conversa com o corretor'}.\n` +
+            `- Se o cliente perguntar se você é humano, diga que é o assistente digital da imobiliária.\n` +
+            `- Quando detectar que o lead está qualificado (forneceu os dados básicos), adicione obrigatoriamente a tag [QUALIFICADO].\n\n` +
+            `FLUXO: Saudação -> Identificação da necessidade -> Coleta de dados -> Finalização/Tag de Qualificação.`;
+    } else if (inst.niche === 'medical_clinic') {
+        prompt = `Você é o assistente virtual da clínica ${data.clinic_name || 'Veness Clinic'}.\n\n` +
+            `ESPECIALIDADES: ${data.specialties?.join(", ") || 'Consultas Gerais e Exames'}.\n` +
+            `CONVÊNIOS: ${data.insurances?.join(", ") || 'Atendemos diversos planos e particular'}.\n\n` +
+            `REGRAS DE ATENDIMENTO:\n` +
+            `- **IMPORTANTE**: Você NÃO realiza agendamentos diretos no chat.\n` +
+            `- Sempre forneça o link público de agendamento: ${data.booking_link || 'https://agenda.exemplo.com'}.\n` +
+            `- Para dúvidas sobre preparo de exames, peça para verificar no link ou falar com atendente.\n` +
+            `- Regras Extras: ${data.rules?.join(". ") || 'Seja extremamente cordial e atencioso'}.\n\n` +
+            `FLUXO: Saudação -> Entender especialidade -> Coleta Nome/Convênio -> Enviar Link de Agendamento.`;
+    } else {
+        // Genérico (Smart Agent)
+        prompt = `Você é o assistente virtual da empresa ${data.company_name || 'Vexnus'}.\n\n` +
+            `SEU PAPEL: ${data.goal || 'Ajudar os clientes no WhatsApp e coletar informações'}.\n` +
+            `TOM: ${data.tone || 'Conversacional e eficiente'}.\n` +
+            `COLETA DE DADOS: ${data.fields?.join(", ") || 'Nome e objetivo do contato'}.\n\n` +
+            `DIRETRIZES:\n` +
+            `- ${data.rules?.join(". ") || 'Tente ser o mais útil possível'}.\n` +
+            `- Adicione a tag [QUALIFICADO] se o cliente demonstrar intenção real de compra/serviço.`;
+    }
+
+    return prompt;
+}
+
 // --- Módulo AI SDR / Suporte ---
 async function renderAiMenu(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -1315,7 +1359,8 @@ async function renderAiMenu(ctx, instId) {
 
     const buttons = [
         [Markup.button.callback(isEnabled ? "🔴 Desativar IA" : "🟢 Ativar IA", `wa_toggle_ai_${instId}`)],
-        [Markup.button.callback("📝 Definir Instruções (Prompt)", `wa_set_ai_prompt_${instId}`)],
+        [Markup.button.callback("🎭 Modelos de Agente (NICHOS)", `wa_ai_niche_menu_${instId}`)],
+        [Markup.button.callback("📝 Prompt Manual (Custom)", `wa_set_ai_prompt_${instId}`)],
         [Markup.button.callback("⏱️ Tempo de Reativação", `wa_ai_resume_time_${instId}`)],
         [Markup.button.callback("🧙‍♂️ Mágico de Prompt (Auxílio)", `wa_ai_wizard_${instId}`)],
         [Markup.button.callback("🔔 Configurar Follow-ups", `wa_ai_followup_menu_${instId}`)],
@@ -1335,6 +1380,50 @@ bot.action(/^wa_ai_menu_(.+)$/, async (ctx) => {
     const id = ctx.match[1];
     await ensureWebhookSet(id); // Sincroniza ao abrir o menu
     await renderAiMenu(ctx, id);
+});
+
+bot.action(/^wa_ai_niche_menu_(.+)$/, async (ctx) => {
+    safeAnswer(ctx);
+    const id = ctx.match[1];
+    const text = `🎭 *Modelos de Agente (NICHOS)*\n\n` +
+        `Escolha um modelo pré-configurado para sua instância. Isso irá gerar regras e comportamentos automáticos baseados no seu ramo.\n\n` +
+        `🏠 **Imobiliária**: Qualificação de leads, tipos de imóvel, rodízio.\n` +
+        `🏥 **Clínica Médica**: Especialidades, convênios, link de agenda.\n` +
+        `🤖 **Genérico**: Agente inteligente customizável para qualquer negócio.`;
+
+    const buttons = [
+        [Markup.button.callback("🏠 Imobiliária", `wa_ai_set_niche_${id}_real_estate`)],
+        [Markup.button.callback("🏥 Clínica Médica", `wa_ai_set_niche_${id}_medical_clinic`)],
+        [Markup.button.callback("🤖 Agente Genérico", `wa_ai_set_niche_${id}_generic`)],
+        [Markup.button.callback("🔙 Voltar", `wa_ai_menu_${id}`)]
+    ];
+    await ctx.editMessageText(text, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
+});
+
+bot.action(/^wa_ai_set_niche_(.+)_(.+)$/, async (ctx) => {
+    safeAnswer(ctx);
+    const instId = ctx.match[1];
+    const niche = ctx.match[2];
+    const session = await getSession(ctx.chat.id);
+    const inst = session.whatsapp.instances.find(i => i.id === instId);
+
+    if (inst) {
+        inst.niche = niche;
+        // Inicializa dados padrão se não existirem
+        if (!inst.niche_data) inst.niche_data = {};
+
+        await syncSession(ctx, session);
+        ctx.answerCbQuery(`✅ Modelo ${niche} ativado!`);
+
+        const msg = `✅ *Perfil ${niche.toUpperCase()} Ativado!*\n\n` +
+            `A IA agora seguirá as regras automáticas deste nicho.\n\n` +
+            `💡 *Próximo Passo:* Em breve você poderá editar os detalhes (Nome da Empresa, Especialidades, etc) diretamente por aqui. Por enquanto, a IA usará valores padrão inteligentes.`;
+
+        await ctx.editMessageText(msg, {
+            parse_mode: "Markdown",
+            ...Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar", `wa_ai_menu_${instId}`)]])
+        });
+    }
 });
 
 bot.action(/^wa_ai_wizard_(.+)$/, async (ctx) => {
@@ -2301,13 +2390,17 @@ app.post("/webhook", async (req, res) => {
                                     log(`[WEBHOOK AI] Processando mensagens agrupadas para ${remoteJid}...`);
                                     const histRes = await callWuzapi(`/chat/history?chat_jid=${remoteJid}&limit=15`, "GET", null, tokenId);
                                     const history = histRes.success && Array.isArray(histRes.data) ? histRes.data : [];
+                                    log(`[WEBHOOK AI] Prompt: ${q.text.substring(0, 50)}... | Inst: ${tokenId}`);
+
+                                    // Gerar Prompt Dinâmico baseado no Nicho (V1.1.14-PRO)
+                                    const systemPrompt = generateSystemPrompt(inst);
 
                                     const aiResponse = await handleAiSdr({
-                                        text: finalData.text,
-                                        audioBase64: finalData.audio,
-                                        history,
-                                        systemPrompt: inst.ai_prompt || "Você é um assistente prestativo.",
-                                        chatId
+                                        text: q.text,
+                                        audioBase64: q.audio,
+                                        history: history,
+                                        systemPrompt: systemPrompt,
+                                        chatId: remoteJid
                                     });
 
                                     if (aiResponse) {
