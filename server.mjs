@@ -137,7 +137,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.54-UI";
+const SERVER_VERSION = "1.1.55-UI";
 
 async function safeEdit(ctx, text, extra = {}) {
     const session = await getSession(ctx.chat.id);
@@ -337,8 +337,15 @@ async function createSyncPayPix(chatId, amount, name = "Usuario Venux") {
                 client: { name, cpf: "00000000000", email: "cliente@vendas.com", phone: "00000000000" }
             })
         });
-        return await res.json();
-    } catch (e) { log(`[ERR PIX] ${e.message}`); return { error: true }; }
+        const json = await res.json();
+        if (json.error || !json.pix_code) {
+            log(`[API PIX ERR] Response: ${JSON.stringify(json)}`);
+        }
+        return json;
+    } catch (e) {
+        log(`[ERR PIX FETCH] ${e.message}`);
+        return { error: true };
+    }
 }
 
 // -- Telegraf Bot Setup --
@@ -2650,11 +2657,19 @@ bot.action(/^wa_del_web_(.+)$/, async (ctx) => {
 bot.action("gen_pix_mensal", async (ctx) => {
     safeAnswer(ctx);
     ctx.reply("⏳ Gerando Pix...");
-    const res = await createSyncPayPix(ctx.chat.id, getSystemConfig().planPrice, ctx.from.first_name);
-    if (res.pix_code) {
-        const qr = await QRCode.toBuffer(res.pix_code);
-        ctx.replyWithPhoto({ source: qr }, { caption: `💎 *Plano Pro*\n\nPIX:\n\`${res.pix_code}\``, parse_mode: "Markdown" });
-    } else { ctx.reply("❌ Erro ao gerar pagamento."); }
+    try {
+        const config = await getSystemConfig();
+        const res = await createSyncPayPix(ctx.chat.id, config.planPrice, ctx.from.first_name);
+        if (res.pix_code) {
+            const qr = await QRCode.toBuffer(res.pix_code);
+            await ctx.replyWithPhoto({ source: qr }, { caption: `💎 *Plano Pro*\n\nPIX:\n\`${res.pix_code}\``, parse_mode: "Markdown" });
+        } else {
+            ctx.reply("❌ Erro ao gerar pagamento. Tente novamente em instantes.");
+        }
+    } catch (e) {
+        log(`[PIX_HANDLER_ERR] ${e.message}`);
+        ctx.reply("❌ Erro inesperado ao gerar pagamento.");
+    }
 });
 
 bot.on("text", async (ctx) => {
