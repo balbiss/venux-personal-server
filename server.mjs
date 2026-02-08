@@ -137,7 +137,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "V1.1.50-UI";
+const SERVER_VERSION = "V1.1.51-UI";
 
 async function safeEdit(ctx, text, extra = {}) {
     const session = await getSession(ctx.chat.id);
@@ -537,16 +537,7 @@ bot.start(async (ctx) => {
         `👇 *Escolha uma opção no menu abaixo:*`;
 
     if (!isVip && !isAdmin(ctx.chat.id, config)) {
-        const promoMsg = `👋 *Olá, ${userFirstName}! Bem-vindo ao Venux SaaS* 🚀\n\n` +
-            `Para começar a automatizar seu WhatsApp com IA, Disparos e Rodízio de Leads, você precisa de uma assinatura ativa.\n\n` +
-            `💎 *Plano Mensal:* R$ ${config.planPrice.toFixed(2)}\n\n` +
-            `✅ Acesso ilimitado às ferramentas\n` +
-            `✅ Suporte prioritário\n\n` +
-            `👇 *Assine agora via Pix para liberar seu acesso:*`;
-        return await safeEdit(ctx, promoMsg, Markup.inlineKeyboard([
-            [Markup.button.callback("💎 Assinar Agora (Pix)", "gen_pix_mensal")],
-            [Markup.button.callback("👤 Suporte / Ajuda", "cmd_suporte")]
-        ]));
+        return renderTourMenu(ctx, 0);
     }
 
     const buttons = [
@@ -561,6 +552,71 @@ bot.start(async (ctx) => {
     }
 
     await safeEdit(ctx, welcomeMsg, Markup.inlineKeyboard(buttons));
+});
+
+// --- Tour de Funcionalidades ---
+async function renderTourMenu(ctx, step = 0) {
+    const config = await getSystemConfig();
+    let text = "";
+    let buttons = [];
+
+    const steps = [
+        {
+            title: "🚀 Bem-vindo ao Venux SaaS!",
+            description: "Você acaba de acessar a plataforma mais completa para automação de vendas via WhatsApp.\n\nNossa tecnologia permite que você tenha um **SDR Artificial** trabalhando 24h por dia, qualificando leads e fechando negócios enquanto você dorme.",
+            btnNext: "Conhecer IAs 🤖"
+        },
+        {
+            title: "🏠 IA para Imobiliárias",
+            description: "Imagine uma IA que:\n✅ Conhece todo seu catálogo de imóveis.\n✅ Qualifica o lead (Preço, Região, Tipo).\n✅ Envia o contato direto para o corretor responsável.\n✅ Agenda visitas sozinho.",
+            btnNext: "IA para Clínicas 🏥"
+        },
+        {
+            title: "🏥 IA para Clínicas & Médicos",
+            description: "Automatize seu consultório:\n✅ Tira dúvidas sobre convênios.\n✅ Explica especialidades.\n✅ Envia link de agendamento automático.\n✅ Filtra urgências de consultas de rotina.",
+            btnNext: "Disparos em Massa 📢"
+        },
+        {
+            title: "📢 Disparo em Massa Inteligente",
+            description: "Alcance milhares de clientes:\n✅ Variáveis dinâmicas `{{nome}}`.\n✅ Delay aleatório anti-ban.\n✅ Suporte a fotos, vídeos e áudios.\n✅ Campanhas agendadas.",
+            btnNext: "Rodízio & Gestão 👥"
+        },
+        {
+            title: "👥 Rodízio & Automações",
+            description: "Gestão profissional de leads:\n✅ Distribua leads entre sua equipe (Fila/Rodízio).\n✅ Follow-ups automáticos (IA cobra o lead se ele não responder).\n✅ Dashboard de estatísticas em tempo real.",
+            btnNext: "💎 Começar Agora"
+        },
+        {
+            title: "💎 Escolha seu Sucesso",
+            description: `Tudo isso liberado imediatamente após a assinatura.\n\n💰 *Investimento:* R$ ${config.planPrice.toFixed(2)}/mês\n\nSem taxas de adesão. Cancele quando quiser.`,
+            btnNext: "🔥 ASSINAR AGORA (PIX)"
+        }
+    ];
+
+    const s = steps[step];
+    text = `*Step ${step + 1}/${steps.length}*\n\n` +
+        `*${s.title}*\n\n` +
+        `${s.description}`;
+
+    if (step < steps.length - 1) {
+        buttons.push([Markup.button.callback(s.btnNext, `tour_step_${step + 1}`)]);
+    } else {
+        buttons.push([Markup.button.callback(s.btnNext, "gen_pix_mensal")]);
+    }
+
+    if (step > 0) {
+        buttons.push([Markup.button.callback("⬅️ Anterior", `tour_step_${step - 1}`)]);
+    }
+
+    buttons.push([Markup.button.callback("👤 Falar com Suporte", "cmd_suporte")]);
+
+    await safeEdit(ctx, text, Markup.inlineKeyboard(buttons));
+}
+
+bot.action(/^tour_step_(\d+)$/, async (ctx) => {
+    safeAnswer(ctx);
+    const step = parseInt(ctx.match[1]);
+    await renderTourMenu(ctx, step);
 });
 
 // --- Menu Handlers ---
