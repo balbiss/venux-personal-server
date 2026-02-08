@@ -137,7 +137,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.56-UI";
+const SERVER_VERSION = "1.1.57-UI";
 
 async function safeEdit(ctx, text, extra = {}) {
     const session = await getSession(ctx.chat.id);
@@ -861,15 +861,17 @@ async function startConnection(ctx) {
     const isAdminUser = isAdmin(ctx.chat.id, config);
 
     if (!isVip && !isAdminUser) {
-        return ctx.reply("❌ Você precisa de uma assinatura VIP ativa para conectar instâncias.", {
-            ...Markup.inlineKeyboard([[Markup.button.callback("💎 Gerar Pix", "gen_pix_mensal")]])
-        });
+        return safeEdit(ctx, "❌ Você precisa de uma assinatura VIP ativa para conectar instâncias.",
+            Markup.inlineKeyboard([[Markup.button.callback("💎 Gerar Pix", "gen_pix_mensal")], [Markup.button.callback("🔙 Voltar", "cmd_instancias_menu")]])
+        );
     }
 
     if (!isAdminUser && session.whatsapp.instances.length >= config.limits.vip.instances) {
-        return ctx.reply(`❌ Limite de ${config.limits.vip.instances} instâncias atingido.`);
+        return safeEdit(ctx, `⚠️ *Limite de Instâncias Atingido!*\n\nSeu plano permite apenas ${config.limits.vip.instances} instâncias.\n\nFale com o suporte ou use /admin se for o dono.`,
+            Markup.inlineKeyboard([[Markup.button.callback("💎 Ver Planos", "cmd_planos_menu")], [Markup.button.callback("🔙 Voltar", "cmd_instancias_menu")]])
+        );
     }
-    ctx.reply("🔗 *Nova Conexão*\n\nDigite um **Nome** para identificar esta instância:");
+    await safeEdit(ctx, "🔗 *Nova Conexão*\n\nDigite um **Nome** para identificar esta instância:", Markup.inlineKeyboard([[Markup.button.callback("❌ Cancelar", "cmd_instancias_menu")]]));
     session.stage = "WA_WAITING_NAME";
     await syncSession(ctx, session);
 }
@@ -2607,7 +2609,8 @@ bot.action(/^wa_logout_(.+)$/, async (ctx) => {
     const id = ctx.match[1];
     if (!await checkOwnership(ctx, id)) return;
     const res = await callWuzapi(`/session/logout`, "POST", null, id);
-    ctx.reply(res.success ? "✅ Logout ok." : "❌ Falha no logout.");
+    ctx.answerCbQuery(res.success ? "✅ Logout ok." : "❌ Falha no logout.");
+    await renderManageMenu(ctx, id);
 });
 
 bot.action(/^wa_del_(.+)$/, async (ctx) => {
@@ -2640,7 +2643,8 @@ bot.action(/^wa_del_(.+)$/, async (ctx) => {
         const session = await getSession(ctx.chat.id);
         session.whatsapp.instances = session.whatsapp.instances.filter(i => i.id !== id);
         await syncSession(ctx, session);
-        ctx.reply("🗑️ Instância removida com sucesso!");
+        ctx.answerCbQuery("🗑️ Instância removida com sucesso!");
+        return showInstances(ctx);
     } else {
         log(`[DEL FAIL] ${id} | Internal: ${internalId} | Res: ${JSON.stringify(res)}`);
         ctx.reply(`❌ Ocorreu um erro na API Wuzapi (${res.error || "Inconhecido"}).\n\nCaso a instância já tenha sido removida manualmente do painel, você pode forçar a remoção da lista do bot:`, {
@@ -2671,22 +2675,22 @@ bot.action(/^wa_del_web_(.+)$/, async (ctx) => {
     }
 });
 
-bot.action("gen_pix_mensal", async (ctx) => {
-    safeAnswer(ctx);
-    ctx.reply("⏳ Gerando Pix...");
-    try {
-        const config = await getSystemConfig();
-        const res = await createSyncPayPix(ctx.chat.id, config.planPrice, ctx.from.first_name);
-        if (res.pix_code) {
-            const qr = await QRCode.toBuffer(res.pix_code);
-            await ctx.replyWithPhoto({ source: qr }, { caption: `💎 *Plano Pro*\n\nPIX:\n\`${res.pix_code}\``, parse_mode: "Markdown" });
-        } else {
-            ctx.reply("❌ Erro ao gerar pagamento. Tente novamente em instantes.");
-        }
-    } catch (e) {
-        log(`[PIX_HANDLER_ERR] ${e.message}`);
-        ctx.reply("❌ Erro inesperado ao gerar pagamento.");
+ctx.answerCbQuery("⏳ Gerando Pix...");
+const loadingMsg = await ctx.reply("⏳ Gerando seu pagamento Pix...");
+try {
+    const config = await getSystemConfig();
+    const res = await createSyncPayPix(ctx.chat.id, config.planPrice, ctx.from.first_name);
+    try { await ctx.telegram.deleteMessage(ctx.chat.id, loadingMsg.message_id); } catch (e) { }
+    if (res.pix_code) {
+        const qr = await QRCode.toBuffer(res.pix_code);
+        await ctx.replyWithPhoto({ source: qr }, { caption: `💎 *Plano Pro*\n\nPIX:\n\`${res.pix_code}\``, parse_mode: "Markdown" });
+    } else {
+        ctx.reply("❌ Erro ao gerar pagamento. Tente novamente em instantes.");
     }
+} catch (e) {
+    log(`[PIX_HANDLER_ERR] ${e.message}`);
+    ctx.reply("❌ Erro inesperado ao gerar pagamento.");
+}
 });
 
 bot.on("text", async (ctx) => {
@@ -2695,9 +2699,7 @@ bot.on("text", async (ctx) => {
 
     // Função de limpeza de mensagens para manter o chat limpo
     const cleanup = async () => {
-        try { if (session.last_menu_id) await ctx.telegram.deleteMessage(ctx.chat.id, session.last_menu_id); } catch (e) { }
-        try { await ctx.deleteMessage(); } catch (e) { }
-        session.last_menu_id = null;
+        try { await ctx.deleteMessage(); } catch (e) { } // Deleta a mensagem do usuário (comando ou texto)
     };
 
     // --- ADMIN STAGES ---
