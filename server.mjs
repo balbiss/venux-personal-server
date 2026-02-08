@@ -138,7 +138,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.39-FIX";
+const SERVER_VERSION = "1.1.40-UI";
 
 function log(msg) {
     const logMsg = `[BOT LOG] [V${SERVER_VERSION}] ${new Date().toLocaleTimeString()} - ${msg}`;
@@ -1000,7 +1000,7 @@ async function runCampaign(chatId, instId) {
                         ...campaign,
                         currentIndex: i + 1,
                         current: campaign.current,
-                        lastMsgId: null, // Não salvar ID da msg do bot
+                        lastMsgId: null,
                         successNumbers: campaign.successNumbers,
                         failedNumbers: campaign.failedNumbers
                     }
@@ -1008,7 +1008,17 @@ async function runCampaign(chatId, instId) {
                 await supabase.from('scheduled_campaigns').update(updateData).eq('id', campaign.dbId);
             }
 
-            const lastMsg = `📊 *Progresso: ${i + 1}/${campaign.total}*\n✅ Sucesso: ${campaign.current}\n🚀 Instância: \`${instId}\``;
+            const pct = Math.round(((i + 1) / campaign.total) * 100);
+            const filled = "🟩".repeat(Math.floor(pct / 10));
+            const empty = "⬜".repeat(10 - Math.floor(pct / 10));
+
+            const lastMsg = `🚀 *Progresso do Disparo*\n\n` +
+                `${filled}${empty} ${pct}%\n\n` +
+                `📊 *Status:* ${i + 1} de ${campaign.total}\n` +
+                `✅ *Sucesso:* ${campaign.current}\n` +
+                `⏳ *Aguardando:* ${campaign.total - (i + 1)}\n` +
+                `📱 *Instância:* \`${instId}\``;
+
             const isLast = (i + 1) === campaign.total;
             const buttons = isLast ? [] : [[Markup.button.callback("⏸️ Pausar", "wa_pause_mass"), Markup.button.callback("⏹️ Parar", "wa_stop_mass")]];
 
@@ -2791,6 +2801,9 @@ bot.on("text", async (ctx) => {
         session.stage = `WA_WAITING_MASS_MSG_${instId}`;
         await syncSession(ctx, session);
 
+        // Limpar lista de números enviada
+        try { await ctx.deleteMessage(); } catch (e) { }
+
         const prompt = `✅ *${contacts.length} contatos recebidos.*\n\n` +
             `Agora, envie o **conteúdo** que deseja disparar. Você pode enviar:\n\n` +
             `📝 *Apenas Texto:* Digite e envie normalmente.\n` +
@@ -2800,7 +2813,9 @@ bot.on("text", async (ctx) => {
             `💡 *Personalização:* Use \`{{nome}}\` para o nome do contato.\n\n` +
             `*Exemplo:* \`Oi {{nome}}!;;;Olá, como vai?;;;Fala {{nome}}!\``;
 
-        ctx.reply(prompt, { parse_mode: "Markdown" });
+        const sent = await ctx.reply(prompt, { parse_mode: "Markdown" });
+        session.last_ui_id = sent.message_id;
+        await syncSession(ctx, session);
 
     } else if (session.stage && session.stage.startsWith("WA_WAITING_MASS_MSG_")) {
         const instId = session.stage.replace("WA_WAITING_MASS_MSG_", "");
@@ -2812,8 +2827,14 @@ bot.on("text", async (ctx) => {
         session.mass_msgs = variations.length > 0 ? variations : [rawMsg];
         session.mass_media_type = 'text';
         session.stage = `WA_WAITING_MASS_DELAY_${instId}`;
+
+        // Limpar prompt anterior e msg enviada
+        if (session.last_ui_id) try { await ctx.telegram.deleteMessage(ctx.chat.id, session.last_ui_id); } catch (e) { }
+        try { await ctx.deleteMessage(); } catch (e) { }
+
+        const sent = await ctx.reply(`📝 ${session.mass_msgs.length} variações de mensagem salvas.\n\nAgora, defina o **intervalo de tempo** (delay) em segundos no formato \`MÍN-MÁX\`.\n\nExemplo: \`10-30\`.`);
+        session.last_ui_id = sent.message_id;
         await syncSession(ctx, session);
-        ctx.reply(`📝 ${session.mass_msgs.length} variações de mensagem salvas.\n\nAgora, defina o **intervalo de tempo** (delay) em segundos no formato \`MÍN-MÁX\`.\n\nExemplo: \`10-30\`.`);
 
     } else if (session.stage && session.stage.startsWith("WA_WAITING_MASS_DELAY_")) {
         const instId = session.stage.replace("WA_WAITING_MASS_DELAY_", "");
@@ -3038,7 +3059,11 @@ async function handleMassMedia(ctx, type, fileId, caption, fileName, fileSize) {
         return ctx.reply(`⚠️ *Arquivo muito grande!*\n\nO seu arquivo tem ${(fileSize / (1024 * 1024)).toFixed(1)}MB.\n\nDevido a limitações do Telegram, só conseguimos processar arquivos de até **20MB**.\n\nPor favor, envie um arquivo menor ou um link de download.`, { parse_mode: "Markdown" });
     }
 
-    ctx.reply(`⏳ Processando ${type}...`);
+    // Limpar prompt anterior e mídia enviada
+    if (session.last_ui_id) try { await ctx.telegram.deleteMessage(ctx.chat.id, session.last_ui_id); } catch (e) { }
+    try { await ctx.deleteMessage(); } catch (e) { }
+
+    const processingMsg = await ctx.reply(`⏳ Processando ${type}...`);
 
     try {
         const link = await ctx.telegram.getFileLink(fileId);
@@ -3060,9 +3085,13 @@ async function handleMassMedia(ctx, type, fileId, caption, fileName, fileSize) {
         session.mass_msg = caption || ""; // Fallback
         session.mass_file_name = fileName || "arquivo";
         session.stage = `WA_WAITING_MASS_DELAY_${instId}`;
-        await syncSession(ctx, session);
 
-        ctx.reply(`✅ ${type} recebido e processado!\n\nAgora, defina o **intervalo de tempo** (delay) em segundos no formato \`MÍN-MÁX\`.\n\nExemplo: \`10-30\``);
+        // Deletar "Processando..." e enviar próximo passo
+        try { await ctx.telegram.deleteMessage(ctx.chat.id, processingMsg.message_id); } catch (e) { }
+
+        const sent = await ctx.reply(`✅ ${type} recebido e processado!\n\nAgora, defina o **intervalo de tempo** (delay) em segundos no formato \`MÍN-MÁX\`.\n\nExemplo: \`10-30\``);
+        session.last_ui_id = sent.message_id;
+        await syncSession(ctx, session);
     } catch (e) {
         log(`[ERR MEDIA] ${e.message}`);
         ctx.reply("❌ Falha ao processar arquivo. Tente novamente.");
