@@ -137,7 +137,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.55-UI";
+const SERVER_VERSION = "1.1.56-UI";
 
 async function safeEdit(ctx, text, extra = {}) {
     const session = await getSession(ctx.chat.id);
@@ -831,6 +831,18 @@ async function showInstances(ctx) {
         msg += `🔹 **${inst.name}**\n🆔 \`${inst.id}\`\n📡 Status: ${status}\n\n`;
         buttons.push([Markup.button.callback(`⚙️ Gerenciar ${inst.name}`, `manage_${inst.id}`)]);
     }
+
+    const isVip = await checkVip(ctx.chat.id);
+    const config = await getSystemConfig();
+    const isAdminUser = isAdmin(ctx.chat.id, config);
+
+    // Botão de Nova Conexão visível para quem pode criar
+    if (isAdminUser || (isVip && session.whatsapp.instances.length < config.limits.vip.instances)) {
+        buttons.push([Markup.button.callback("➕ Conectar Novo Número", "cmd_conectar")]);
+    } else if (!isVip && !isAdminUser) {
+        buttons.push([Markup.button.callback("💎 Assinar para Conectar", "cmd_planos_menu")]);
+    }
+
     buttons.push([Markup.button.callback("🔙 Voltar", "start")]);
     const extra = { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) };
 
@@ -878,6 +890,11 @@ async function showVipStatus(ctx) {
 bot.action("cmd_conectar", async (ctx) => {
     safeAnswer(ctx);
     return startConnection(ctx);
+});
+
+bot.action("cmd_instancias_menu", async (ctx) => {
+    safeAnswer(ctx);
+    return showInstances(ctx);
 });
 
 bot.action("cmd_instancias", async (ctx) => {
