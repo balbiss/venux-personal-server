@@ -121,7 +121,6 @@ async function getSystemConfig() {
         referralDays: 7,
         adminChatId: null, // ID do dono
         limits: {
-            free: { instances: 1, brokers: 1 },
             vip: { instances: 5, brokers: 10 }
         }
     };
@@ -138,7 +137,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "V1.1.44-UI";
+const SERVER_VERSION = "V1.1.45-UI";
 
 async function safeEdit(ctx, text, extra = {}) {
     const session = await getSession(ctx.chat.id);
@@ -450,11 +449,24 @@ bot.start(async (ctx) => {
         `O sistema definitivo para automação de WhatsApp com IA e Rodízio de Leads.\n\n` +
         `👇 *Escolha uma opção no menu abaixo:*`;
 
+    if (!isVip && !isAdmin(ctx.chat.id, config)) {
+        const promoMsg = `👋 *Olá, ${userFirstName}! Bem-vindo ao Venux SaaS* 🚀\n\n` +
+            `Para começar a automatizar seu WhatsApp com IA, Disparos e Rodízio de Leads, você precisa de uma assinatura ativa.\n\n` +
+            `💎 *Plano Mensal:* R$ ${config.planPrice.toFixed(2)}\n\n` +
+            `✅ Acesso ilimitado às ferramentas\n` +
+            `✅ Suporte prioritário\n\n` +
+            `👇 *Assine agora via Pix para liberar seu acesso:*`;
+        return await safeEdit(ctx, promoMsg, Markup.inlineKeyboard([
+            [Markup.button.callback("💎 Assinar Agora (Pix)", "gen_pix_mensal")],
+            [Markup.button.callback("👤 Suporte / Ajuda", "cmd_suporte")]
+        ]));
+    }
+
     const buttons = [
         [Markup.button.callback("🚀 Minhas Instâncias", "cmd_instancias_menu")],
         [Markup.button.callback("📢 Disparo em Massa", "cmd_shortcuts_disparos"), Markup.button.callback("👥 Rodízio de Leads", "cmd_shortcuts_rodizio")],
         [Markup.button.callback("🔔 Follow-ups / Agenda", "cmd_shortcuts_followups")],
-        [Markup.button.callback(isVip ? "💎 Área VIP (Ativa)" : "💎 Assinar Premium", "cmd_planos_menu"), Markup.button.callback("👤 Suporte / Ajuda", "cmd_suporte")]
+        [Markup.button.callback("💎 Seu Plano (Ativo)", "cmd_planos_menu"), Markup.button.callback("👤 Suporte / Ajuda", "cmd_suporte")]
     ];
 
     if (isAdmin(ctx.chat.id, config)) {
@@ -566,12 +578,12 @@ bot.action("cmd_planos_menu", async (ctx) => {
     safeAnswer(ctx);
     const isVip = await checkVip(ctx.chat.id);
     const config = await getSystemConfig();
-    const limits = isVip ? config.limits.vip : config.limits.free;
+    const limits = config.limits.vip;
 
     const text = `💎 *Informações do Plano*\n\n` +
-        `📊 *Seu Status:* ${isVip ? "✅ VIP PRO" : "🆓 Gratuito"}\n` +
+        `📊 *Seu Status:* ${isVip ? "✅ ASSINATURA ATIVA" : "❌ AGUARDANDO PAGAMENTO"}\n` +
         `💰 *Valor:* R$ ${config.planPrice.toFixed(2)}/mês\n\n` +
-        `🛠️ *Seus Limites Atuais:*\n` +
+        `🛠️ *Limites do Plano:*\n` +
         `📱 Instâncias: ${limits.instances}\n` +
         `👤 Corretores: ${limits.brokers}\n`;
 
@@ -679,10 +691,17 @@ async function showInstances(ctx) {
 async function startConnection(ctx) {
     const session = await getSession(ctx.chat.id);
     const isVip = await checkVip(ctx.chat.id);
-    if (!isVip && session.whatsapp.instances.length >= session.whatsapp.maxInstances) {
-        return ctx.reply("❌ Limite de 1 instância no plano gratuito atingido.", {
-            ...Markup.inlineKeyboard([[Markup.button.callback("💎 Ativar Plano Pro", "gen_pix_mensal")]])
+    const config = await getSystemConfig();
+    const isAdminUser = isAdmin(ctx.chat.id, config);
+
+    if (!isVip && !isAdminUser) {
+        return ctx.reply("❌ Você precisa de uma assinatura VIP ativa para conectar instâncias.", {
+            ...Markup.inlineKeyboard([[Markup.button.callback("💎 Gerar Pix", "gen_pix_mensal")]])
         });
+    }
+
+    if (!isAdminUser && session.whatsapp.instances.length >= config.limits.vip.instances) {
+        return ctx.reply(`❌ Limite de ${config.limits.vip.instances} instâncias atingido.`);
     }
     ctx.reply("🔗 *Nova Conexão*\n\nDigite um **Nome** para identificar esta instância:");
     session.stage = "WA_WAITING_NAME";
