@@ -138,7 +138,40 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.41-UI";
+const SERVER_VERSION = "1.1.43-UI";
+
+async function safeEdit(ctx, text, extra = {}) {
+    const session = await getSession(ctx.chat.id);
+
+    // Função para limpar menu anterior se existir
+    const killOld = async () => {
+        if (session.last_menu_id) {
+            try { await ctx.telegram.deleteMessage(ctx.chat.id, session.last_menu_id); } catch (e) { }
+            session.last_menu_id = null;
+        }
+    };
+
+    if (ctx.callbackQuery) {
+        try {
+            await ctx.editMessageText(text, { parse_mode: "Markdown", ...extra });
+            // Se editou a mensagem atual, esse ID continua sendo o nosso last_menu_id ativo
+            session.last_menu_id = ctx.callbackQuery.message.message_id;
+            await syncSession(ctx, session);
+        } catch (e) {
+            // Se falhou ao editar (ex: mensagem expirou), apaga e manda nova
+            await killOld();
+            const sent = await ctx.reply(text, { parse_mode: "Markdown", ...extra });
+            session.last_menu_id = sent.message_id;
+            await syncSession(ctx, session);
+        }
+    } else {
+        // Se é um comando (/start), mata o menu antigo e manda novo
+        await killOld();
+        const sent = await ctx.reply(text, { parse_mode: "Markdown", ...extra });
+        session.last_menu_id = sent.message_id;
+        await syncSession(ctx, session);
+    }
+}
 
 function log(msg) {
     const logMsg = `[BOT LOG] [V${SERVER_VERSION}] ${new Date().toLocaleTimeString()} - ${msg}`;
@@ -335,11 +368,7 @@ async function renderAdminPanel(ctx) {
         [Markup.button.callback("🔙 Voltar", "start")]
     ];
 
-    if (ctx.updateType === "callback_query") {
-        await ctx.editMessageText(text, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
-    } else {
-        await ctx.reply(text, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
-    }
+    await safeEdit(ctx, text, Markup.inlineKeyboard(buttons));
 }
 
 bot.command("admin", async (ctx) => {
@@ -432,15 +461,7 @@ bot.start(async (ctx) => {
         buttons.push([Markup.button.callback("👑 Painel Admin", "cmd_admin_panel")]);
     }
 
-    if (ctx.callbackQuery) {
-        try {
-            await ctx.editMessageText(welcomeMsg, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
-        } catch (e) {
-            await ctx.reply(welcomeMsg, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
-        }
-    } else {
-        await ctx.reply(welcomeMsg, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
-    }
+    await safeEdit(ctx, welcomeMsg, Markup.inlineKeyboard(buttons));
 });
 
 // --- Menu Handlers ---
@@ -537,7 +558,8 @@ bot.action("start", async (ctx) => {
         [Markup.button.callback(isVip ? "💎 Área VIP (Ativa)" : "💎 Assinar Premium", "cmd_planos_menu"), Markup.button.callback("👤 Suporte / Ajuda", "cmd_suporte")]
     ];
     if (isAdmin(ctx.chat.id, config)) buttons.push([Markup.button.callback("👑 Painel Admin", "cmd_admin_panel")]);
-    ctx.reply(welcomeMsg, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
+
+    await safeEdit(ctx, welcomeMsg, Markup.inlineKeyboard(buttons));
 });
 
 bot.action("cmd_planos_menu", async (ctx) => {
@@ -599,7 +621,7 @@ bot.command("disparos", async (ctx) => {
     if (session.whatsapp.instances.length === 0) return ctx.reply("❌ Você não tem nenhuma instância conectada.");
     const buttons = session.whatsapp.instances.map(inst => [Markup.button.callback(`📢 Campanhas: ${inst.name}`, `wa_mass_init_${inst.id}`)]);
     buttons.push([Markup.button.callback("🔙 Voltar", "start")]);
-    ctx.reply("📢 *Módulo de Disparos em Massa*\n\nEscolha uma instância:", { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
+    await safeEdit(ctx, "📢 *Módulo de Disparos em Massa*\n\nEscolha uma instância:", Markup.inlineKeyboard(buttons));
 });
 
 bot.command("rodizio", async (ctx) => {
@@ -644,7 +666,14 @@ async function showInstances(ctx) {
         buttons.push([Markup.button.callback(`⚙️ Gerenciar ${inst.name}`, `manage_${inst.id}`)]);
     }
     buttons.push([Markup.button.callback("🔙 Voltar", "start")]);
-    ctx.reply(msg, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
+    const extra = { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) };
+
+    if (ctx.callbackQuery) {
+        try { await ctx.editMessageText(msg, extra); }
+        catch (e) { await ctx.reply(msg, extra); }
+    } else {
+        await ctx.reply(msg, extra);
+    }
 }
 
 async function startConnection(ctx) {
@@ -722,15 +751,7 @@ async function renderManageMenu(ctx, id) {
 
     let title = isOnline ? `✅ *Painel da Instância: ${id}*\n📱 *Número:* \`${phone}\`` : `🛠️ *Painel da Instância: ${id}*`;
 
-    if (ctx.callbackQuery) {
-        try {
-            await ctx.editMessageText(title, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
-        } catch (e) {
-            await ctx.reply(title, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
-        }
-    } else {
-        await ctx.reply(title, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
-    }
+    await safeEdit(ctx, title, Markup.inlineKeyboard(buttons));
 }
 
 bot.action(/^manage_(.+)$/, async (ctx) => {
@@ -753,13 +774,12 @@ bot.action(/^wa_api_(.+)$/, async (ctx) => {
         `⚠️ *Segurança:* Este token permite apenas o controle desta instância específica. Nunca compartilhe seu token de administrador global.\n\n` +
         `💡 *Dica no n8n:* Use o nó *HTTP Request* e adicione um Header chamado \`token\` com o valor do seu token acima.`;
 
-    ctx.reply(message, {
-        parse_mode: "Markdown",
-        ...Markup.inlineKeyboard([
-            [Markup.button.callback("📜 Ver Endpoints de Mensagem", `wa_endpoints_${id}`)],
-            [Markup.button.callback("🔙 Voltar", `wa_api_${id}`)]
-        ])
-    });
+    const buttons = [
+        [Markup.button.callback("📜 Ver Endpoints de Mensagem", `wa_endpoints_${id}`)],
+        [Markup.button.callback("🔙 Voltar", `manage_${id}`)]
+    ];
+
+    await safeEdit(ctx, message, Markup.inlineKeyboard(buttons));
 });
 
 // Handler para listar endpoints de mensagem
@@ -802,14 +822,21 @@ bot.action(/^wa_mass_init_(.+)$/, async (ctx) => {
     session.stage = `WA_WAITING_MASS_CONTACTS_${id}`;
     await syncSession(ctx, session);
 
-    ctx.reply("🚀 *Configuração de Disparo em Massa*\n\nO que deseja fazer?", {
+    const text = "🚀 *Configuração de Disparo em Massa*\n\nO que deseja fazer?";
+    const extra = {
         parse_mode: "Markdown",
         ...Markup.inlineKeyboard([
             [Markup.button.callback("🆕 Novo Disparo", `wa_mass_new_start_${id}`)],
             [Markup.button.callback("📂 Campanhas Pausadas / Pendentes", `wa_mass_list_paused_${id}`)],
             [Markup.button.callback("🔙 Voltar", `manage_${id}`)]
         ])
-    });
+    };
+
+    if (ctx.callbackQuery) {
+        try { await ctx.editMessageText(text, extra); } catch (e) { await ctx.reply(text, extra); }
+    } else {
+        await ctx.reply(text, extra);
+    }
 });
 
 bot.action(/^wa_mass_new_start_(.+)$/, async (ctx) => {
@@ -832,7 +859,9 @@ bot.action(/^wa_mass_list_paused_(.+)$/, async (ctx) => {
         .limit(10);
 
     if (error || !data || data.length === 0) {
-        return ctx.reply("❌ Nenhuma campanha pausada ou pendente encontrada para esta instância.");
+        const errMsg = "❌ Nenhuma campanha pausada ou pendente encontrada.";
+        if (ctx.callbackQuery) return ctx.editMessageText(errMsg, Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar", `wa_mass_init_${instId}`)]]));
+        return ctx.reply(errMsg);
     }
 
     let msg = "📂 *Campanhas Encontradas:*\n\n";
@@ -848,7 +877,7 @@ bot.action(/^wa_mass_list_paused_(.+)$/, async (ctx) => {
 
     buttons.push([Markup.button.callback("🔙 Voltar", `wa_mass_init_${instId}`)]);
 
-    ctx.editMessageText(msg, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
+    await safeEdit(ctx, msg, Markup.inlineKeyboard(buttons));
 });
 
 bot.action(/^wa_mass_resume_db_(.+)$/, async (ctx) => {
@@ -1227,11 +1256,7 @@ async function renderFollowupMenu(ctx, instId) {
         [Markup.button.callback("🔙 Voltar", `wa_ai_menu_${instId}`)]
     ];
 
-    if (ctx.updateType === "callback_query") {
-        await ctx.editMessageText(text, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
-    } else {
-        await ctx.reply(text, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
-    }
+    await safeEdit(ctx, text, Markup.inlineKeyboard(buttons));
 }
 
 bot.action(/^wa_ai_followup_menu_(.+)$/, async (ctx) => {
@@ -1295,7 +1320,7 @@ bot.action(/^wa_fu_set_msgs_(.+)$/, async (ctx) => {
         (current ? `📌 *Mensagens Atuais:* \n_${current}_` : "");
     const buttons = current ? [[Markup.button.callback(`✅ Manter Atual`, `wa_ai_keep_fu_msgs_${id}`)]] : [];
 
-    ctx.reply(msg, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
+    await safeEdit(ctx, msg, Markup.inlineKeyboard(buttons));
 });
 
 // Handler para relatório detalhado
@@ -1320,7 +1345,7 @@ bot.action(/^wa_report_(.+)$/, async (ctx) => {
 
     reportMsg += `\n💡 *Dica:* Para iniciar um novo disparo, volte ao menu da instância e selecione "🚀 Disparo em Massa".`;
 
-    ctx.editMessageText(reportMsg, {
+    await safeEdit(ctx, reportMsg, {
         parse_mode: "Markdown",
         ...Markup.inlineKeyboard([
             [Markup.button.callback("🔙 Voltar ao Menu", `manage_${instId}`)]
@@ -1415,7 +1440,8 @@ bot.action(/^wa_pair_(.+)$/, async (ctx) => {
     session.stage = `WA_WAITING_PAIR_PHONE_${id}`;
     await syncSession(ctx, session);
 
-    ctx.reply("🔢 *Pareamento por Código*\n\nPor favor, digite o seu **número do WhatsApp** (com DDD e DDI) para que o sistema envie a notificação para o seu celular.\n\nExemplo: `5511999998888`", { parse_mode: "Markdown" });
+    const msg = "🔢 *Pareamento por Código*\n\nPor favor, digite o seu **número do WhatsApp** (com DDD e DDI) para que o sistema envie a notificação para o seu celular.\n\nExemplo: `5511999998888`";
+    await safeEdit(ctx, msg, null);
 });
 
 // Opção "Link Público" removida.
@@ -1440,11 +1466,7 @@ async function renderWebhookMenu(ctx, id) {
     }
     buttons.push([Markup.button.callback("🔙 Voltar", `manage_${id}`)]);
 
-    if (ctx.updateType === "callback_query") {
-        await ctx.editMessageText(text, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
-    } else {
-        await ctx.reply(text, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
-    }
+    await safeEdit(ctx, text, Markup.inlineKeyboard(buttons));
 }
 
 bot.action(/^wa_web_(.+)$/, async (ctx) => {
@@ -1462,7 +1484,13 @@ bot.action(/^wa_set_web_(.+)$/, async (ctx) => {
     const session = await getSession(ctx.chat.id);
     session.stage = `WA_WAITING_WEBHOOK_URL_${id}`;
     await syncSession(ctx, session);
-    ctx.reply("🔗 Por favor, envie a URL do novo webhook (ex: https://meusite.com/webhook):");
+
+    const msg = "🔗 Por favor, envie a **URL** do novo webhook (ex: https://meusite.com/webhook):";
+    const sent = await ctx.editMessageText(msg, { parse_mode: "Markdown" }).catch(() => ctx.reply(msg, { parse_mode: "Markdown" }));
+    if (sent && sent.message_id) {
+        session.last_ui_id = sent.message_id;
+        await syncSession(ctx, session);
+    }
 });
 
 bot.action(/^wa_del_web_(.+)$/, async (ctx) => {
@@ -1695,7 +1723,9 @@ async function triggerRealEstateWizard(ctx, instId, step) {
             (current ? `\n\n📌 *Valor Atual:* _${current}_` : "");
         const buttons = current ? [[Markup.button.callback(`✅ Manter Atual`, `wa_ai_keep_re_${s.field}_${instId}`)]] : [];
 
-        await ctx.reply(msg, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
+        const sent = await ctx.reply(msg, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
+        session.last_ui_id = sent.message_id;
+        await syncSession(ctx, session);
     } else {
         const styles = [
             [Markup.button.callback("😊 Amigável e com Emojis", `wa_ai_re_style_${instId}_amigavel`)],
@@ -1703,7 +1733,9 @@ async function triggerRealEstateWizard(ctx, instId, step) {
             [Markup.button.callback("🎯 Direto e Persuasivo", `wa_ai_re_style_${instId}_direto`)],
             [Markup.button.callback("😎 Descontraído", `wa_ai_re_style_${instId}_descontraido`)]
         ];
-        ctx.reply("🎭 *Passo 8/9: Estilo de Conversa*\n\nComo a IA deve falar com os clientes?", Markup.inlineKeyboard(styles));
+        const sent = await ctx.reply("🎭 *Passo 8/9: Estilo de Conversa*\n\nComo a IA deve falar com os clientes?", Markup.inlineKeyboard(styles));
+        session.last_ui_id = sent.message_id;
+        await syncSession(ctx, session);
     }
 }
 
@@ -1732,14 +1764,18 @@ async function triggerMedicalWizard(ctx, instId, step) {
             (current ? `\n\n📌 *Valor Atual:* _${current}_` : "");
         const buttons = current ? [[Markup.button.callback(`✅ Manter Atual`, `wa_ai_keep_mc_${s.field}_${instId}`)]] : [];
 
-        await ctx.reply(msg, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
+        const sent = await ctx.reply(msg, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
+        session.last_ui_id = sent.message_id;
+        await syncSession(ctx, session);
     } else {
         const styles = [
             [Markup.button.callback("🤝 Acolhedor e Humano", `wa_ai_re_style_${instId}_amigavel`)],
             [Markup.button.callback("💼 Clínico e Profissional", `wa_ai_re_style_${instId}_formal`)],
             [Markup.button.callback("⚡ Rápido e Eficiente", `wa_ai_re_style_${instId}_direto`)]
         ];
-        ctx.reply("🎭 *Passo 8/8: Estilo de Conversa*\n\nComo a IA deve se portar no atendimento?", Markup.inlineKeyboard(styles));
+        const sent = await ctx.reply("🎭 *Passo 8/8: Estilo de Conversa*\n\nComo a IA deve se portar no atendimento?", Markup.inlineKeyboard(styles));
+        session.last_ui_id = sent.message_id;
+        await syncSession(ctx, session);
     }
 }
 
@@ -1767,14 +1803,18 @@ async function triggerGenericWizard(ctx, instId, step) {
             (current ? `\n\n📌 *Valor Atual:* _${current}_` : "");
         const buttons = current ? [[Markup.button.callback(`✅ Manter Atual`, `wa_ai_keep_gn_${s.field}_${instId}`)]] : [];
 
-        await ctx.reply(msg, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
+        const sent = await ctx.reply(msg, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
+        session.last_ui_id = sent.message_id;
+        await syncSession(ctx, session);
     } else {
         const styles = [
             [Markup.button.callback("😊 Amigável", `wa_ai_re_style_${instId}_amigavel`)],
             [Markup.button.callback("💼 Sério", `wa_ai_re_style_${instId}_formal`)],
             [Markup.button.callback("😎 Descontraído", `wa_ai_re_style_${instId}_descontraido`)]
         ];
-        ctx.reply("🎭 *Passo 7/7: Estilo Final*\n\nEscolha o jeito que a IA falará:", Markup.inlineKeyboard(styles));
+        const sent = await ctx.reply("🎭 *Passo 7/7: Estilo Final*\n\nEscolha o jeito que a IA falará:", Markup.inlineKeyboard(styles));
+        session.last_ui_id = sent.message_id;
+        await syncSession(ctx, session);
     }
 }
 
@@ -2123,11 +2163,7 @@ async function renderBrokersMenu(ctx, instId) {
         [Markup.button.callback("🔙 Voltar", `manage_${instId}`)]
     ];
 
-    if (ctx.updateType === "callback_query") {
-        await ctx.editMessageText(text, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
-    } else {
-        await ctx.reply(text, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
-    }
+    await safeEdit(ctx, text, Markup.inlineKeyboard(buttons));
 }
 
 bot.action(/^wa_brokers_menu_(.+)$/, async (ctx) => {
@@ -2409,6 +2445,13 @@ bot.on("text", async (ctx) => {
     if (ctx.message.text.startsWith("/")) return;
     const session = await getSession(ctx.chat.id);
 
+    // Função de limpeza de mensagens para manter o chat limpo
+    const cleanup = async () => {
+        try { if (session.last_ui_id) await ctx.telegram.deleteMessage(ctx.chat.id, session.last_ui_id); } catch (e) { }
+        try { await ctx.deleteMessage(); } catch (e) { }
+        session.last_ui_id = null;
+    };
+
     // --- ADMIN STAGES ---
     if (session.stage && session.stage.startsWith("ADMIN_WAIT_")) {
         const config = await getSystemConfig();
@@ -2479,6 +2522,7 @@ bot.on("text", async (ctx) => {
     }
 
     if (session.stage === "WA_WAITING_NAME") {
+        await cleanup();
         const config = await getSystemConfig();
         const isVip = await checkVip(ctx.chat.id);
         const limit = isVip ? config.limits.vip.instances : config.limits.free.instances;
@@ -2504,7 +2548,7 @@ bot.on("text", async (ctx) => {
             // Auto-configurar webhook próprio para notificações de conexão
             await callWuzapi("/webhook", "POST", { webhook: WEBHOOK_URL, events: ["All"] }, id);
 
-            ctx.reply(`✅ Instância *${name}* criada!`, {
+            const sent = await ctx.reply(`✅ Instância *${name}* criada!`, {
                 parse_mode: "Markdown",
                 ...Markup.inlineKeyboard([
                     [Markup.button.callback("📷 QR Code", `wa_qr_${id}`)],
@@ -2512,29 +2556,36 @@ bot.on("text", async (ctx) => {
                     [Markup.button.callback("📱 Minhas Instâncias", "cmd_instancias")]
                 ])
             });
+            session.last_ui_id = sent.message_id;
+            await syncSession(ctx, session);
         } else {
             ctx.reply(`❌ Erro ao criar na API: ${res.error || "Tente novamente mais tarde"}`);
         }
 
     } else if (session.stage && session.stage.startsWith("WA_WIZ_NAME_")) {
+        await cleanup();
         const instId = session.stage.replace("WA_WIZ_NAME_", "");
         if (!await checkOwnership(ctx, instId)) return;
         session.wiz_data = { name: ctx.message.text.trim() };
         session.stage = `WA_WIZ_PRODUCT_${instId}`;
         await syncSession(ctx, session);
-        try { ctx.deleteMessage(); } catch (e) { } // Limpar resposta do usuário
-        ctx.reply("📦 *Passo 2/3: Produto/Serviço*\n\nLegal! Agora me conte: o que você vende ou qual serviço sua empresa oferece?", { parse_mode: "Markdown" });
+        const sent = await ctx.reply("📦 *Passo 2/3: Produto/Serviço*\n\nLegal! Agora me conte: o que você vende ou qual serviço sua empresa oferece?", { parse_mode: "Markdown" });
+        session.last_ui_id = sent.message_id;
+        await syncSession(ctx, session);
 
     } else if (session.stage && session.stage.startsWith("WA_WIZ_PRODUCT_")) {
+        await cleanup();
         const instId = session.stage.replace("WA_WIZ_PRODUCT_", "");
         if (!await checkOwnership(ctx, instId)) return;
         session.wiz_data.product = ctx.message.text.trim();
         session.stage = `WA_WIZ_GOAL_${instId}`;
         await syncSession(ctx, session);
-        try { ctx.deleteMessage(); } catch (e) { } // Limpar resposta do usuário
-        ctx.reply("🎯 *Passo 3/3: Objetivo*\n\nQual o objetivo principal deste WhatsApp? (Ex: Tirar dúvidas, agendar consultoria, vender produtos, suporte técnico)", { parse_mode: "Markdown" });
+        const sent = await ctx.reply("🎯 *Passo 3/3: Objetivo*\n\nQual o objetivo principal deste WhatsApp? (Ex: Tirar dúvidas, agendar consultoria, vender produtos, suporte técnico)", { parse_mode: "Markdown" });
+        session.last_ui_id = sent.message_id;
+        await syncSession(ctx, session);
 
     } else if (session.stage && session.stage.startsWith("WA_WIZ_GOAL_")) {
+        await cleanup();
         const instId = session.stage.replace("WA_WIZ_GOAL_", "");
         if (!await checkOwnership(ctx, instId)) return;
         const goal = ctx.message.text.trim();
@@ -2606,6 +2657,7 @@ bot.on("text", async (ctx) => {
             await renderBrokersMenu(ctx, instId);
         }
     } else if (session.stage && session.stage.startsWith("WA_AI_CONF_RE_COMPANY_")) {
+        await cleanup();
         const instId = session.stage.replace("WA_AI_CONF_RE_COMPANY_", "");
         const inst = await checkOwnership(ctx, instId);
         if (!inst) return;
@@ -2614,6 +2666,7 @@ bot.on("text", async (ctx) => {
             await triggerRealEstateWizard(ctx, instId, 2);
         }
     } else if (session.stage && session.stage.startsWith("WA_AI_CONF_RE_GREETING_")) {
+        await cleanup();
         const instId = session.stage.replace("WA_AI_CONF_RE_GREETING_", "");
         const inst = await checkOwnership(ctx, instId);
         if (!inst) return;
@@ -2622,6 +2675,7 @@ bot.on("text", async (ctx) => {
             await triggerRealEstateWizard(ctx, instId, 3);
         }
     } else if (session.stage && session.stage.startsWith("WA_AI_CONF_RE_ADDRESS_")) {
+        await cleanup();
         const instId = session.stage.replace("WA_AI_CONF_RE_ADDRESS_", "");
         const inst = await checkOwnership(ctx, instId);
         if (!inst) return;
@@ -2630,6 +2684,7 @@ bot.on("text", async (ctx) => {
             await triggerRealEstateWizard(ctx, instId, 4);
         }
     } else if (session.stage && session.stage.startsWith("WA_AI_CONF_RE_PRODUCT_")) {
+        await cleanup();
         const instId = session.stage.replace("WA_AI_CONF_RE_PRODUCT_", "");
         const inst = await checkOwnership(ctx, instId);
         if (!inst) return;
@@ -2638,6 +2693,7 @@ bot.on("text", async (ctx) => {
             await triggerRealEstateWizard(ctx, instId, 5);
         }
     } else if (session.stage && session.stage.startsWith("WA_AI_CONF_RE_FUNNEL_")) {
+        await cleanup();
         const instId = session.stage.replace("WA_AI_CONF_RE_FUNNEL_", "");
         const inst = await checkOwnership(ctx, instId);
         if (!inst) return;
@@ -2646,6 +2702,7 @@ bot.on("text", async (ctx) => {
             await triggerRealEstateWizard(ctx, instId, 6);
         }
     } else if (session.stage && session.stage.startsWith("WA_AI_CONF_RE_BIO_")) {
+        await cleanup();
         const instId = session.stage.replace("WA_AI_CONF_RE_BIO_", "");
         const inst = await checkOwnership(ctx, instId);
         if (!inst) return;
@@ -2654,6 +2711,7 @@ bot.on("text", async (ctx) => {
             await triggerRealEstateWizard(ctx, instId, 7);
         }
     } else if (session.stage && session.stage.startsWith("WA_AI_CONF_MC_COMPANY_")) {
+        await cleanup();
         const instId = session.stage.replace("WA_AI_CONF_MC_COMPANY_", "");
         const inst = await checkOwnership(ctx, instId);
         if (!inst) return;
@@ -2662,6 +2720,7 @@ bot.on("text", async (ctx) => {
             await triggerMedicalWizard(ctx, instId, 2);
         }
     } else if (session.stage && session.stage.startsWith("WA_AI_CONF_MC_SPECIALTIES_")) {
+        await cleanup();
         const instId = session.stage.replace("WA_AI_CONF_MC_SPECIALTIES_", "");
         const inst = await checkOwnership(ctx, instId);
         if (!inst) return;
@@ -2670,6 +2729,7 @@ bot.on("text", async (ctx) => {
             await triggerMedicalWizard(ctx, instId, 3);
         }
     } else if (session.stage && session.stage.startsWith("WA_AI_CONF_MC_PLANS_")) {
+        await cleanup();
         const instId = session.stage.replace("WA_AI_CONF_MC_PLANS_", "");
         const inst = await checkOwnership(ctx, instId);
         if (!inst) return;
@@ -2678,6 +2738,7 @@ bot.on("text", async (ctx) => {
             await triggerMedicalWizard(ctx, instId, 4);
         }
     } else if (session.stage && session.stage.startsWith("WA_AI_CONF_MC_BOOKING_")) {
+        await cleanup();
         const instId = session.stage.replace("WA_AI_CONF_MC_BOOKING_", "");
         const inst = await checkOwnership(ctx, instId);
         if (!inst) return;
@@ -2686,6 +2747,7 @@ bot.on("text", async (ctx) => {
             await triggerMedicalWizard(ctx, instId, 5);
         }
     } else if (session.stage && session.stage.startsWith("WA_AI_CONF_MC_ADDRESS_")) {
+        await cleanup();
         const instId = session.stage.replace("WA_AI_CONF_MC_ADDRESS_", "");
         const inst = await checkOwnership(ctx, instId);
         if (!inst) return;
@@ -2694,6 +2756,7 @@ bot.on("text", async (ctx) => {
             await triggerMedicalWizard(ctx, instId, 6);
         }
     } else if (session.stage && session.stage.startsWith("WA_AI_CONF_MC_GREETING_")) {
+        await cleanup();
         const instId = session.stage.replace("WA_AI_CONF_MC_GREETING_", "");
         const inst = await checkOwnership(ctx, instId);
         if (!inst) return;
@@ -2702,6 +2765,7 @@ bot.on("text", async (ctx) => {
             await triggerMedicalWizard(ctx, instId, 7);
         }
     } else if (session.stage && session.stage.startsWith("WA_AI_CONF_MC_BIO_")) {
+        await cleanup();
         const instId = session.stage.replace("WA_AI_CONF_MC_BIO_", "");
         const inst = await checkOwnership(ctx, instId);
         if (!inst) return;
@@ -2712,6 +2776,7 @@ bot.on("text", async (ctx) => {
 
         // --- GENERIC WIZARD ---
     } else if (session.stage && session.stage.startsWith("WA_AI_CONF_GN_COMPANY_")) {
+        await cleanup();
         const instId = session.stage.replace("WA_AI_CONF_GN_COMPANY_", "");
         const inst = await checkOwnership(ctx, instId);
         if (!inst) return;
@@ -2720,6 +2785,7 @@ bot.on("text", async (ctx) => {
             await triggerGenericWizard(ctx, instId, 2);
         }
     } else if (session.stage && session.stage.startsWith("WA_AI_CONF_GN_GOAL_")) {
+        await cleanup();
         const instId = session.stage.replace("WA_AI_CONF_GN_GOAL_", "");
         const inst = await checkOwnership(ctx, instId);
         if (!inst) return;
@@ -2728,6 +2794,7 @@ bot.on("text", async (ctx) => {
             await triggerGenericWizard(ctx, instId, 3);
         }
     } else if (session.stage && session.stage.startsWith("WA_AI_CONF_GN_PRODUCTS_")) {
+        await cleanup();
         const instId = session.stage.replace("WA_AI_CONF_GN_PRODUCTS_", "");
         const inst = await checkOwnership(ctx, instId);
         if (!inst) return;
@@ -2761,6 +2828,7 @@ bot.on("text", async (ctx) => {
         }
 
     } else if (session.stage && session.stage.startsWith("WA_AI_CONF_RE_RULES_")) {
+        await cleanup();
         const instId = session.stage.replace("WA_AI_CONF_RE_RULES_", "");
         const inst = await checkOwnership(ctx, instId);
         if (!inst) return;
@@ -2775,9 +2843,12 @@ bot.on("text", async (ctx) => {
                 [Markup.button.callback("🎯 Direto e Persuasivo", `wa_ai_re_style_${instId}_direto`)],
                 [Markup.button.callback("😎 Descontraído", `wa_ai_re_style_${instId}_descontraido`)]
             ];
-            ctx.reply("🎭 *Passo 8/9: Estilo de Conversa*\n\nEscolha como a IA deve falar:", Markup.inlineKeyboard(styles));
+            const sent = await ctx.reply("🎭 *Passo 8/9: Estilo de Conversa*\n\nEscolha como a IA deve falar:", Markup.inlineKeyboard(styles));
+            session.last_ui_id = sent.message_id;
+            await syncSession(ctx, session);
         }
     } else if (session.stage && session.stage.startsWith("WA_AI_RESUME_TIME_VAL_")) {
+        await cleanup();
         const instId = session.stage.replace("WA_AI_RESUME_TIME_VAL_", "");
         const inst = await checkOwnership(ctx, instId);
         if (!inst) return;
@@ -2786,13 +2857,16 @@ bot.on("text", async (ctx) => {
 
         inst.auto_resume_hours = val;
         await syncSession(ctx, session);
-        ctx.reply(`✅ *Tempo Atualizado:* A IA voltará a atender após **${val}h** de silêncio humano.`);
+        const sent = await ctx.reply(`✅ *Tempo Atualizado:* A IA voltará a atender após **${val}h** de silêncio humano.`);
+        session.last_ui_id = sent.message_id;
+        await syncSession(ctx, session);
         await renderAiMenu(ctx, instId);
         session.stage = "READY";
         await syncSession(ctx, session);
         return;
 
     } else if (session.stage && session.stage.startsWith("WA_WAITING_MASS_CONTACTS_")) {
+        await cleanup();
         const instId = session.stage.replace("WA_WAITING_MASS_CONTACTS_", "");
         if (!await checkOwnership(ctx, instId)) return;
 
@@ -2810,9 +2884,6 @@ bot.on("text", async (ctx) => {
         session.mass_contacts = contacts;
         session.stage = `WA_WAITING_MASS_MSG_${instId}`;
         await syncSession(ctx, session);
-
-        // Limpar lista de números enviada
-        try { await ctx.deleteMessage(); } catch (e) { }
 
         const prompt = `✅ *${contacts.length} contatos recebidos.*\n\n` +
             `Agora, envie o **conteúdo** que deseja disparar. Você pode enviar:\n\n` +
