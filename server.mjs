@@ -1513,14 +1513,15 @@ ESTRATÉGIA DE CONDUÇÃO:
 4. PACIÊNCIA: Faça EXATAMENTE UMA pergunta por mensagem.
 
 # FLUXO DE ATENDIMENTO (FUNIL)
+${inst.niche === 'real_estate' ? `
 1. Identificar se quer Comprar ou Alugar. (Se ele já disse 'quero comprar', pule para o passo 2). (Se ele já disse 'quero comprar um ap', pule direto para o passo 2).
 2. Identificar Localização desejada.
 3. Identificar Faixa de Preço/Renda.
-4. Agendar conversa com corretor.
+4. Agendar conversa com corretor.` :
             inst.niche === 'medical_clinic' ? `
     1. Identificar a necessidade / especialidade.
-2. Verificar convênio(${ data.plans || 'diversos' }).
-3. Direcionar para agendamento: ${ data.booking_link || 'solicite suporte' }.` :
+2. Verificar convênio(${data.plans || 'diversos'}).
+3. Direcionar para agendamento: ${data.booking_link || 'solicite suporte'}.` :
                 `1. Qualificar a necessidade geral.
 2. Apresentar solução / serviço.
 3. Coletar contato / agendar.`}
