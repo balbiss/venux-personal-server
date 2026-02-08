@@ -138,7 +138,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.40-UI";
+const SERVER_VERSION = "1.1.41-UI";
 
 function log(msg) {
     const logMsg = `[BOT LOG] [V${SERVER_VERSION}] ${new Date().toLocaleTimeString()} - ${msg}`;
@@ -432,10 +432,15 @@ bot.start(async (ctx) => {
         buttons.push([Markup.button.callback("👑 Painel Admin", "cmd_admin_panel")]);
     }
 
-    ctx.reply(welcomeMsg, {
-        parse_mode: "Markdown",
-        ...Markup.inlineKeyboard(buttons)
-    });
+    if (ctx.callbackQuery) {
+        try {
+            await ctx.editMessageText(welcomeMsg, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
+        } catch (e) {
+            await ctx.reply(welcomeMsg, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
+        }
+    } else {
+        await ctx.reply(welcomeMsg, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
+    }
 });
 
 // --- Menu Handlers ---
@@ -717,10 +722,15 @@ async function renderManageMenu(ctx, id) {
 
     let title = isOnline ? `✅ *Painel da Instância: ${id}*\n📱 *Número:* \`${phone}\`` : `🛠️ *Painel da Instância: ${id}*`;
 
-    ctx.reply(title, {
-        parse_mode: "Markdown",
-        ...Markup.inlineKeyboard(buttons)
-    });
+    if (ctx.callbackQuery) {
+        try {
+            await ctx.editMessageText(title, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
+        } catch (e) {
+            await ctx.reply(title, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
+        }
+    } else {
+        await ctx.reply(title, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
+    }
 }
 
 bot.action(/^manage_(.+)$/, async (ctx) => {
