@@ -137,7 +137,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "V1.1.51-UI";
+const SERVER_VERSION = "V1.1.52-UI";
 
 async function safeEdit(ctx, text, extra = {}) {
     const session = await getSession(ctx.chat.id);
@@ -2093,17 +2093,20 @@ async function renderAiMenu(ctx, instId) {
 }
 
 bot.action(/^wa_ai_menu_(.+)$/, async (ctx) => {
-    safeAnswer(ctx);
     const id = ctx.match[1];
+    log(`[AI_MENU] Acesso ao menu principal ID: ${id}`);
+    safeAnswer(ctx);
     if (!await checkOwnership(ctx, id)) return;
-    await ensureWebhookSet(id); // Sincroniza ao abrir o menu
+    await ensureWebhookSet(id);
     await renderAiMenu(ctx, id);
 });
 
 bot.action(/^wa_ai_niche_menu_(.+)$/, async (ctx) => {
-    safeAnswer(ctx);
     const id = ctx.match[1];
+    log(`[AI_NICHE] Clique em Mudar Modelo ID: ${id}`);
+    safeAnswer(ctx);
     if (!await checkOwnership(ctx, id)) return;
+
     const text = `🎭 *Modelos de Agente (NICHOS)*\n\n` +
         `Escolha um modelo pré-configurado para sua instância. Isso irá gerar regras e comportamentos automáticos baseados no seu ramo.\n\n` +
         `🏠 **Imobiliária**: Qualificação de leads, tipos de imóvel, rodízio.\n` +
@@ -2207,9 +2210,11 @@ bot.action(/^wa_ai_re_tone_(.+)_(acolhedora|vendedora|consultiva)$/, async (ctx)
 });
 
 bot.action(/^wa_ai_wizard_re_(.+)$/, async (ctx) => {
-    safeAnswer(ctx);
     const id = ctx.match[1];
+    log(`[AI_WIZ_RE] Clique em Configurar Imobiliária ID: ${id}`);
+    safeAnswer(ctx);
     if (!await checkOwnership(ctx, id)) return;
+
     await triggerRealEstateWizard(ctx, id, 1);
 });
 
