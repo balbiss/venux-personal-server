@@ -2047,8 +2047,7 @@ bot.action(/^wa_ai_keep_resume_(.+)$/, async (ctx) => {
     await syncSession(ctx, session);
     await renderAiMenu(ctx, id);
 });
-ctx.reply("🧙‍♂️ *Mágico de Prompt: Passo 1/3*\n\nQual o **NOME** da sua empresa ou do seu negócio?", { parse_mode: "Markdown" });
-});
+
 
 bot.action(/^wa_ai_sync_web_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
