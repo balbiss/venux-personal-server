@@ -9,6 +9,7 @@ import fs from "fs";
 import OpenAI from "openai";
 import cors from "cors";
 import { createClient } from "@supabase/supabase-js";
+import pdf from "pdf-parse/lib/pdf-parse.js";
 
 dotenv.config();
 
@@ -137,7 +138,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.59-UI";
+const SERVER_VERSION = "1.1.60-UI";
 
 async function safeEdit(ctx, text, extra = {}) {
     const session = await getSession(ctx.chat.id);
@@ -1901,10 +1902,12 @@ bot.action(/^wa_toggle_presence_(.+)$/, async (ctx) => {
 function generateSystemPrompt(inst) {
     const userPrompt = inst.ai_prompt || "Você é um assistente virtual prestativo.";
     const humanTopics = inst.ai_human_topics || "Não há temas específicos; tente ajudar o cliente o máximo possível.";
+    const knowledgeBase = inst.ai_knowledge_base ? `\n# BASE DE CONHECIMENTO EXTRA (USE PARA RESPONDER)\n${inst.ai_knowledge_base}\n` : "";
 
     return `
 # OBJETIVO E PERSONA
 ${userPrompt}
+${knowledgeBase}
 
 # MODO HUMANIZADO (HIGH-CONVERSION)
 - Use gírias leves se o tom for amigável.
@@ -1948,6 +1951,7 @@ async function renderAiMenu(ctx, instId) {
         [Markup.button.callback(isEnabled ? "🔴 Desativar IA" : "🟢 Ativar IA", `wa_toggle_ai_${instId}`)],
         [Markup.button.callback("📝 Editar System Prompt", `wa_set_ai_prompt_${instId}`)],
         [Markup.button.callback("🤝 Temas para Humano", `wa_set_ai_human_${instId}`)],
+        [Markup.button.callback("📚 Base de Conhecimento (PDF)", `wa_set_ai_knowledge_${instId}`)],
         [Markup.button.callback("🎭 Modelos de Agente (Presets)", `wa_ai_niche_menu_${instId}`)],
         [Markup.button.callback("⏱️ Tempo de Reativação", `wa_ai_resume_time_${instId}`)],
         [Markup.button.callback("🔔 Follow-ups", `wa_ai_followup_menu_${instId}`)],
@@ -2065,17 +2069,74 @@ bot.action(/^wa_ai_sync_web_(.+)$/, async (ctx) => {
     }
 });
 
-bot.action(/^wa_toggle_ai_(.+)$/, async (ctx) => {
+bot.action(/^wa_set_ai_knowledge_(.+)$/, async (ctx) => {
+    safeAnswer(ctx);
+    const id = ctx.match[1];
+    if (!await checkOwnership(ctx, id)) return;
+    const session = await getSession(ctx.chat.id);
+    session.stage = `WA_WAITING_AI_KNOWLEDGE_${id}`;
+    await syncSession(ctx, session);
+
+    const inst = session.whatsapp.instances.find(i => i.id === id);
+    const hasKnowledge = inst.ai_knowledge_base ? "✅ Já possui uma base ativa." : "❌ Nenhuma base configurada.";
+
+    ctx.reply(`📚 *Base de Conhecimento (PDF)*\n\n${hasKnowledge}\n\nEnvie um arquivo **PDF** agora para treinar o robô com novas informações.\n\n_Dica: Envie tabelas de preços, manuais ou catálogos para respostas precisas._`, {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([[Markup.button.callback("🗑️ Limpar Base Atual", `wa_clear_ai_knowledge_${id}`)]])
+    });
+});
+
+bot.action(/^wa_clear_ai_knowledge_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
     if (!await checkOwnership(ctx, id)) return;
     const session = await getSession(ctx.chat.id);
     const inst = session.whatsapp.instances.find(i => i.id === id);
     if (inst) {
-        inst.ai_enabled = !inst.ai_enabled;
+        inst.ai_knowledge_base = null;
         await syncSession(ctx, session);
-        ctx.answerCbQuery(`IA ${inst.ai_enabled ? "Ativada" : "Desativada"}!`);
+        ctx.reply("🗑️ *Base de conhecimento removida!*");
         await renderAiMenu(ctx, id);
+    }
+});
+
+bot.on('document', async (ctx) => {
+    const session = await getSession(ctx.chat.id);
+    if (!session.stage || !session.stage.startsWith("WA_WAITING_AI_KNOWLEDGE_")) return;
+
+    const instId = session.stage.split("WA_WAITING_AI_KNOWLEDGE_")[1];
+    const doc = ctx.message.document;
+
+    if (doc.mime_type !== 'application/pdf') {
+        return ctx.reply("❌ Por favor, envie apenas arquivos no formato **PDF**.");
+    }
+
+    const loadingMsg = await ctx.reply("⏳ *Lendo e extraindo informações do PDF...*");
+
+    try {
+        const fileLink = await ctx.telegram.getFileLink(doc.file_id);
+        const response = await fetch(fileLink);
+        const buffer = await response.buffer();
+
+        const data = await pdf(buffer);
+        const text = data.text.replace(/\s+/g, ' ').trim();
+
+        if (text.length < 10) {
+            return ctx.editMessageText("⚠️ O PDF parece estar vazio ou não foi possível extrair o texto.");
+        }
+
+        const inst = session.whatsapp.instances.find(i => i.id === instId);
+        if (inst) {
+            inst.ai_knowledge_base = text.substring(0, 15000); // Limite de 15k caracteres para segurança de contexto
+            session.stage = "READY";
+            await syncSession(ctx, session);
+
+            await ctx.telegram.editMessageText(ctx.chat.id, loadingMsg.message_id, null, `✅ *Conhecimento Atualizado!*\n\nExtraímos ${text.length} caracteres do documento. O robô já está pronto para usar essas informações.`);
+            await renderAiMenu(ctx, instId);
+        }
+    } catch (e) {
+        log(`[PDF ERR] ${e.message}`);
+        ctx.editMessageText("❌ Ocorreu um erro ao processar o PDF. Verifique se o arquivo não está protegido por senha.");
     }
 });
 
