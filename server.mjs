@@ -137,7 +137,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.58-UI";
+const SERVER_VERSION = "1.1.59-UI";
 
 async function safeEdit(ctx, text, extra = {}) {
     const session = await getSession(ctx.chat.id);
@@ -1419,7 +1419,17 @@ bot.action(/^wa_set_ai_prompt_(.+)$/, async (ctx) => {
     const session = await getSession(ctx.chat.id);
     session.stage = `WA_WAITING_AI_PROMPT_${id}`;
     await syncSession(ctx, session);
-    ctx.reply("📝 *Definir Instruções da IA*\n\nDigite como o robô deve se comportar e quais informações ele deve usar para atender seus clientes.\n\nExemplo:\n`Você é o assistente da Loja Venux. Seja educado e tire dúvidas sobre nossos preços de planos Pro.`", { parse_mode: "Markdown" });
+    ctx.reply("📝 *System Prompt (Instruções)*\n\nDescreva como o robô deve se comportar e qual o seu objetivo principal.\n\nExemplo:\n`Você é o assistente da Imobiliária X. Seu objetivo é descobrir se o cliente quer comprar ou alugar e em qual região, sendo sempre muito prestativo e educado.`", { parse_mode: "Markdown" });
+});
+
+bot.action(/^wa_set_ai_human_(.+)$/, async (ctx) => {
+    safeAnswer(ctx);
+    const id = ctx.match[1];
+    if (!await checkOwnership(ctx, id)) return;
+    const session = await getSession(ctx.chat.id);
+    session.stage = `WA_WAITING_AI_HUMAN_${id}`;
+    await syncSession(ctx, session);
+    ctx.reply("🤝 *Temas para Transbordo Humano*\n\nListe quais assuntos ou situações a IA deve **parar** de responder e te chamar.\n\nExemplo:\n`Reclamações, negociação de valores, suporte técnico avançado ou quando o cliente expressar urgência crítica.`", { parse_mode: "Markdown" });
 });
 
 // --- Menu de Follow-ups ---
@@ -1889,23 +1899,12 @@ bot.action(/^wa_toggle_presence_(.+)$/, async (ctx) => {
 });
 
 function generateSystemPrompt(inst) {
-    if (!inst.niche || inst.niche === 'legacy' || inst.niche === 'custom') {
-        return inst.ai_prompt || "Você é um assistente virtual prestativo.";
-    }
+    const userPrompt = inst.ai_prompt || "Você é um assistente virtual prestativo.";
+    const humanTopics = inst.ai_human_topics || "Não há temas específicos; tente ajudar o cliente o máximo possível.";
 
-    const data = inst.niche_data || {};
-    const agentName = data.agent_name || (inst.niche === 'medical_clinic' ? 'Dani' : 'Balbis');
-    const company = data.company_name || 'nossa empresa';
-    const strategy = data.rules || 'Seja gentil, use o nome do lead e valide cada resposta antes de prosseguir.';
-
-    // Estrutura Baseada no Modelo de Performance n8n
     return `
-# PERSONA E ESTRATÉGIA
-Você se chama ${agentName}. 
-Você é a assistente virtual da empresa ${company}. 
-
-ESTRATÉGIA DE CONDUÇÃO: 
-"${strategy}"
+# OBJETIVO E PERSONA
+${userPrompt}
 
 # MODO HUMANIZADO (HIGH-CONVERSION)
 - Use gírias leves se o tom for amigável.
@@ -1914,137 +1913,20 @@ ESTRATÉGIA DE CONDUÇÃO:
 
 # REGRAS DE OURO (NUNCA QUEBRE)
 1. SAUDAÇÃO INTELIGENTE: Se apresente apenas na PRIMEIRA mensagem. Se o histórico já mostra que você falou oi, vá direto ao assunto.
-2. ANTI-REPETIÇÃO (CRÍTICO): LEIA O HISTÓRICO. Se o cliente já respondeu (ex: disse "comprar"), NÃO pergunte de novo "quer comprar ou alugar?". Assuma a resposta e avance.
-3. VALIDAÇÃO DE ESTADO: Antes de perguntar, verifique: "O cliente já me disse isso?". Se sim, pule para a próxima pergunta.
-4. PACIÊNCIA: Faça EXATAMENTE UMA pergunta por mensagem.
+2. ANTI-REPETIÇÃO (CRÍTICO): LEIA O HISTÓRICO. Se o cliente já respondeu, NÃO pergunte de novo. Assuma a resposta e avance.
+3. PACIÊNCIA: Faça EXATAMENTE UMA pergunta por mensagem.
 
-# FLUXO DE ATENDIMENTO (FUNIL)
-${inst.niche === 'real_estate' ? `
-1. Identificar se quer Comprar ou Alugar. (Se ele já disse 'quero comprar', pule para o passo 2). (Se ele já disse 'quero comprar um ap', pule direto para o passo 2).
-2. Identificar Localização desejada.
-3. Identificar Faixa de Preço/Renda.
-4. Agendar conversa com corretor.` :
-            inst.niche === 'medical_clinic' ? `
-    1. Identificar a necessidade / especialidade.
-2. Verificar convênio(${data.plans || 'diversos'}).
-3. Direcionar para agendamento: ${data.booking_link || 'solicite suporte'}.` :
-                `1. Qualificar a necessidade geral.
-2. Apresentar solução / serviço.
-3. Coletar contato / agendar.`}
+# TRANSBORDO HUMANO (CRÍTICO)
+Se o cliente falar sobre os seguintes temas, use a tag [TRANSFERIR] imediatamente:
+"${humanTopics}"
+
+# QUALIFICAÇÃO DE LEADS (RODÍZIO)
+Ao identificar que o cliente está pronto ou qualificado conforme seu objetivo, use a tag [QUALIFICADO] no final da resposta para enviá-lo ao corretor/atendente.
 
 # FINALIZAÇÃO
-Ao concluir a qualificação, use a tag [QUALIFICADO].
-Se não souber responder ou pedirem humano, use a tag [TRANSFERIR].
+- Para transbordo humano: use [TRANSFERIR].
+- Para lead qualificado (pronto para venda/rodízio): use [QUALIFICADO].
 `;
-}
-
-// --- Funções Auxiliares do Mágico AI (Wizard) ---
-async function triggerRealEstateWizard(ctx, instId, step) {
-    const session = await getSession(ctx.chat.id);
-    const inst = session.whatsapp.instances.find(i => i.id === instId);
-    if (!inst) return;
-
-    const steps = [
-        { field: 'company_name', label: 'Nome da Imobiliária', icon: '🏢', quest: 'Qual o nome da sua imobiliária?' },
-        { field: 'greeting', label: 'Mensagem de Saudação', icon: '👋', quest: 'Como a IA deve iniciar a conversa?' },
-        { field: 'address', label: 'Endereço/Atuação', icon: '📍', quest: 'Qual o endereço físico ou área que atendem?' },
-        { field: 'products', label: 'O que você vende?', icon: '🏠', quest: 'Descreva os imóveis (Ex: Apartamentos de luxo, MCMV, Locação).' },
-        { field: 'funnel', label: 'Funil de Qualificação', icon: '🎯', quest: 'O que a IA pergunta primeiro? (Ex: Comprar ou Alugar).' },
-        { field: 'bio', label: 'Contexto (Bio)', icon: '📖', quest: 'Quem é você? Uma pequena bio da empresa para a IA saber sua história.' },
-        { field: 'rules', label: 'Regras e Objeções', icon: '🚫', quest: 'Quais as regras proibidas? (Ex: Não aceita permuta, sempre pedir fone).' }
-    ];
-
-    if (step <= steps.length) {
-        const s = steps[step - 1];
-        const current = inst.niche_data?.[s.field];
-        session.stage = `WA_AI_CONF_RE_${s.field.toUpperCase()}_${instId}`;
-        await syncSession(ctx, session);
-
-        const msg = `${s.icon} *Passo ${step}/9: ${s.label}*\n\n${s.quest}` +
-            (current ? `\n\n📌 *Valor Atual:* _${current}_` : "");
-        const buttons = current ? [[Markup.button.callback(`✅ Manter Atual`, `wa_ai_keep_re_${s.field}_${instId}`)]] : [];
-
-        await safeEdit(ctx, msg, Markup.inlineKeyboard(buttons));
-    } else {
-        const styles = [
-            [Markup.button.callback("😊 Amigável e com Emojis", `wa_ai_re_style_${instId}_amigavel`)],
-            [Markup.button.callback("💼 Formal e Profissional", `wa_ai_re_style_${instId}_formal`)],
-            [Markup.button.callback("🎯 Direto e Persuasivo", `wa_ai_re_style_${instId}_direto`)],
-            [Markup.button.callback("😎 Descontraído", `wa_ai_re_style_${instId}_descontraido`)]
-        ];
-        await safeEdit(ctx, "🎭 *Passo 8/9: Estilo de Conversa*\n\nComo a IA deve falar com os clientes?", Markup.inlineKeyboard(styles));
-    }
-}
-
-async function triggerMedicalWizard(ctx, instId, step) {
-    const session = await getSession(ctx.chat.id);
-    const inst = session.whatsapp.instances.find(i => i.id === instId);
-    if (!inst) return;
-
-    const steps = [
-        { field: 'company_name', label: 'Nome da Clínica', icon: '🏥', quest: 'Qual o nome da sua clínica?' },
-        { field: 'specialties', label: 'Especialidades', icon: '🩺', quest: 'Quais especialidades atendem? (Ex: Dentista, Nutricionista).' },
-        { field: 'plans', label: 'Convênios', icon: '💳', quest: 'Aceitam convênios? Quais? (Ex: Unimed, Bradesco).' },
-        { field: 'booking_link', label: 'Link de Agenda', icon: '🔗', quest: 'Qual o link para agendamento online?' },
-        { field: 'address', label: 'Endereço', icon: '📍', quest: 'Qual o endereço da unidade?' },
-        { field: 'greeting', label: 'Saudação', icon: '👋', quest: 'Como a IA deve dar as boas vindas?' },
-        { field: 'bio', label: 'Contexto (Bio)', icon: '📖', quest: 'Defina a personalidade da IA (Ex: Atenciosa, Formal).' }
-    ];
-
-    if (step <= steps.length) {
-        const s = steps[step - 1];
-        const current = inst.niche_data?.[s.field];
-        session.stage = `WA_AI_CONF_MC_${s.field.toUpperCase()}_${instId}`;
-        await syncSession(ctx, session);
-
-        const msg = `${s.icon} *Passo ${step}/8: ${s.label}*\n\n${s.quest}` +
-            (current ? `\n\n📌 *Valor Atual:* _${current}_` : "");
-        const buttons = current ? [[Markup.button.callback(`✅ Manter Atual`, `wa_ai_keep_mc_${s.field}_${instId}`)]] : [];
-
-        await safeEdit(ctx, msg, Markup.inlineKeyboard(buttons));
-    } else {
-        const styles = [
-            [Markup.button.callback("🤝 Acolhedor e Humano", `wa_ai_re_style_${instId}_amigavel`)],
-            [Markup.button.callback("💼 Clínico e Profissional", `wa_ai_re_style_${instId}_formal`)],
-            [Markup.button.callback("⚡ Rápido e Eficiente", `wa_ai_re_style_${instId}_direto`)]
-        ];
-        await safeEdit(ctx, "🎭 *Passo 8/8: Estilo de Conversa*\n\nComo a IA deve se portar no atendimento?", Markup.inlineKeyboard(styles));
-    }
-}
-
-async function triggerGenericWizard(ctx, instId, step) {
-    const session = await getSession(ctx.chat.id);
-    const inst = session.whatsapp.instances.find(i => i.id === instId);
-    if (!inst) return;
-
-    const steps = [
-        { field: 'company_name', label: 'Nome da Empresa', icon: '🏢', quest: 'Qual o nome do seu negócio?' },
-        { field: 'goal', label: 'Objetivo', icon: '🎯', quest: 'Qual o objetivo principal? (Ex: Vender, Tirar dúvidas).' },
-        { field: 'products', label: 'O que você faz?', icon: '📦', quest: 'Descreva seus produtos ou serviços.' },
-        { field: 'rules', label: 'Regras', icon: '🚫', quest: 'O que a IA NÃO pode falar ou fazer?' },
-        { field: 'greeting', label: 'Saudação', icon: '👋', quest: 'Como o robô deve começar o papo?' },
-        { field: 'bio', label: 'Identidade', icon: '🧠', quest: 'Quem é você? (Ex: Assistente virtual da Loja X).' }
-    ];
-
-    if (step <= steps.length) {
-        const s = steps[step - 1];
-        const current = inst.niche_data?.[s.field];
-        session.stage = `WA_AI_CONF_GN_${s.field.toUpperCase()}_${instId}`;
-        await syncSession(ctx, session);
-
-        const msg = `${s.icon} *Passo ${step}/7: ${s.label}*\n\n${s.quest}` +
-            (current ? `\n\n📌 *Valor Atual:* _${current}_` : "");
-        const buttons = current ? [[Markup.button.callback(`✅ Manter Atual`, `wa_ai_keep_gn_${s.field}_${instId}`)]] : [];
-
-        await safeEdit(ctx, msg, Markup.inlineKeyboard(buttons));
-    } else {
-        const styles = [
-            [Markup.button.callback("😊 Amigável", `wa_ai_re_style_${instId}_amigavel`)],
-            [Markup.button.callback("💼 Sério", `wa_ai_re_style_${instId}_formal`)],
-            [Markup.button.callback("😎 Descontraído", `wa_ai_re_style_${instId}_descontraido`)]
-        ];
-        await safeEdit(ctx, "🎭 *Passo 7/7: Estilo Final*\n\nEscolha o jeito que a IA falará:", Markup.inlineKeyboard(styles));
-    }
 }
 
 // --- Módulo AI SDR / Suporte ---
@@ -2054,66 +1936,24 @@ async function renderAiMenu(ctx, instId) {
     if (!inst) return ctx.reply("❌ Instância não encontrada.");
 
     const isEnabled = inst.ai_enabled || false;
-    const isNiche = inst.niche && inst.niche !== 'legacy' && inst.niche !== 'custom';
-
-    let instructionsText = "";
-    if (isNiche) {
-        const data = inst.niche_data || {};
-        const nicheNames = { 'real_estate': '🏠 Imobiliária', 'medical_clinic': '🏥 Clínica Médica', 'generic': '🤖 Agente Genérico' };
-        instructionsText = `🧬 *DNA do Agente (${nicheNames[inst.niche] || inst.niche})*\n\n` +
-            `🏢 *Empresa:* ${data.company_name || '_Não configurado_'}\n` +
-            `📍 *Atuação:* ${data.address || '_Não configurado_'}\n` +
-            `🏠 *Produtos:* ${data.products || '_Não configurado_'}\n` +
-            `🎯 *Funil:* ${data.funnel || 'Padrão'}\n` +
-            `📜 *Regras:* ${data.rules ? (data.rules.substring(0, 40) + "...") : '_Não configurado_'}\n` +
-            `🎭 *Estilo:* ${data.style || 'Amigável'} / ${data.tone || 'Acolhedor'}`;
-    } else {
-        const prompt = inst.ai_prompt || "Nenhuma instrução definida. (A IA agirá de forma genérica)";
-        instructionsText = `📝 *Instruções (Manual):* \n\`${prompt.substring(0, 100)}${prompt.length > 100 ? "..." : ""}\``;
-    }
+    const prompt = inst.ai_prompt || "🤖 Você é um assistente virtual prestativo.";
+    const humanTopics = inst.ai_human_topics || "❌ Nenhum tema definido (IA tentará resolver tudo).";
 
     const text = `🤖 *Configuração de IA SDR (${instId})*\n\n` +
         `🔋 *Status:* ${isEnabled ? "✅ Ativado" : "❌ Desativado"}\n\n` +
-        instructionsText;
+        `📝 *Instruções (System Prompt):*\n\`${prompt.substring(0, 200)}${prompt.length > 200 ? "..." : ""}\`\n\n` +
+        `🤝 *Temas para Humano:* \n_${humanTopics}_`;
 
-    const buttons = [];
-
-    // Linha 1: Ativar/Desativar
-    buttons.push([Markup.button.callback(isEnabled ? "🔴 Desativar IA" : "🟢 Ativar IA", `wa_toggle_ai_${instId}`)]);
-
-    // Linha 2: Nicho (Principal se estiver em modo fábrica)
-    if (isNiche) {
-        let btnLabel = "⚙️ Configurar Perfil";
-        let action = `wa_ai_wizard_re_${instId}`;
-
-        if (inst.niche === 'real_estate') {
-            btnLabel = "⚙️ Configurar Imobiliária";
-            action = `wa_ai_wizard_re_${instId}`;
-        } else if (inst.niche === 'medical_clinic') {
-            btnLabel = "⚙️ Configurar Clínica";
-            action = `wa_ai_wizard_mc_${instId}`;
-        } else if (inst.niche === 'generic') {
-            btnLabel = "⚙️ Configurar Negócio";
-            action = `wa_ai_wizard_gn_${instId}`;
-        }
-        buttons.push([Markup.button.callback(btnLabel, action)]);
-        buttons.push([Markup.button.callback("🎭 Mudar de Modelo (NICHO)", `wa_ai_niche_menu_${instId}`)]);
-    } else {
-        buttons.push([Markup.button.callback("🎭 Modelos de Agente (NICHOS)", `wa_ai_niche_menu_${instId}`)]);
-        buttons.push([Markup.button.callback("📝 Prompt Manual (Custom)", `wa_set_ai_prompt_${instId}`)]);
-    }
-
-    // Linha 3: Extras
-    buttons.push([Markup.button.callback("⏱️ Tempo de Reativação", `wa_ai_resume_time_${instId}`)]);
-
-    // Só mostra assistente se não for nicho (nichos usam o wizard)
-    if (!isNiche) {
-        buttons.push([Markup.button.callback("🧙‍♂️ Mágico de Prompt (Auxílio)", `wa_ai_wiz_man_${instId}`)]);
-    }
-
-    buttons.push([Markup.button.callback("🔔 Follow-ups", `wa_ai_followup_menu_${instId}`)]);
-    buttons.push([Markup.button.callback("🔄 Sincronizar Webhook", `wa_ai_sync_web_${instId}`)]);
-    buttons.push([Markup.button.callback("🔙 Voltar", `manage_${instId}`)]);
+    const buttons = [
+        [Markup.button.callback(isEnabled ? "🔴 Desativar IA" : "🟢 Ativar IA", `wa_toggle_ai_${instId}`)],
+        [Markup.button.callback("📝 Editar System Prompt", `wa_set_ai_prompt_${instId}`)],
+        [Markup.button.callback("🤝 Temas para Humano", `wa_set_ai_human_${instId}`)],
+        [Markup.button.callback("🎭 Modelos de Agente (Presets)", `wa_ai_niche_menu_${instId}`)],
+        [Markup.button.callback("⏱️ Tempo de Reativação", `wa_ai_resume_time_${instId}`)],
+        [Markup.button.callback("🔔 Follow-ups", `wa_ai_followup_menu_${instId}`)],
+        [Markup.button.callback("🔄 Sincronizar Webhook", `wa_ai_sync_web_${instId}`)],
+        [Markup.button.callback("🔙 Voltar", `manage_${instId}`)]
+    ];
 
     if (ctx.updateType === "callback_query") {
         await ctx.editMessageText(text, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
@@ -2153,135 +1993,39 @@ bot.action(/^wa_ai_niche_menu_(.+)$/, async (ctx) => {
 });
 
 bot.action(/^wa_ai_set_niche_(.+)_(real_estate|medical_clinic|generic)$/, async (ctx) => {
-    safeAnswer(ctx);
     const instId = ctx.match[1];
-    if (!await checkOwnership(ctx, instId)) return;
     const niche = ctx.match[2];
-    log(`[NICHE] Usuário tentou setar nicho: ${niche} para instância: ${instId}`);
+    safeAnswer(ctx);
+    if (!await checkOwnership(ctx, instId)) return;
 
     const session = await getSession(ctx.chat.id);
     const inst = session.whatsapp.instances.find(i => i.id === instId);
 
     if (inst) {
+        const presets = {
+            'real_estate': {
+                prompt: "Você é um corretor de imóveis especializado em qualificação. Seu objetivo é descobrir se o cliente deseja comprar ou alugar, qual o tipo de imóvel (casa/apto) e em qual região. Seja persuasivo mas amigável.",
+                human: "Negociação de comissão, problemas com chaves, reclamações diretas ou dúvidas jurídicas sobre contratos."
+            },
+            'medical_clinic': {
+                prompt: "Você é a assistente de uma clínica médica. Seu objetivo é identificar qual a especialidade que o paciente busca e se ele possui convênio. Seja empática e profissional.",
+                human: "Casos de emergência, cancelamento de cirurgias, dúvidas técnicas sobre diagnósticos ou reclamações de atendimento."
+            },
+            'generic': {
+                prompt: "Você é um assistente virtual inteligente. Seu objetivo é entender a necessidade do cliente, apresentar nossos produtos e coletar o contato dele para fechamento.",
+                human: "Reclamações, pedidos de reembolso, dúvidas complexas que não estão no seu conhecimento ou tom agressivo do cliente."
+            }
+        };
+
+        const config = presets[niche];
+        inst.ai_prompt = config.prompt;
+        inst.ai_human_topics = config.human;
         inst.niche = niche;
-        // Inicializa dados padrão se não existirem
-        if (!inst.niche_data) inst.niche_data = {};
 
         await syncSession(ctx, session);
-        ctx.answerCbQuery(`✅ Modelo ${niche} ativado!`).catch(() => { });
-
-        const msg = `✅ *Perfil ${niche.toUpperCase()} Ativado!*\n\n` +
-            `A IA agora seguirá as regras automáticas deste nicho.\n\n` +
-            `👉 *O que fazer agora?* Você precisa configurar as informações da sua empresa para que a IA saiba o que responder.`;
-
-        const btn = niche === 'real_estate' ? "⚙️ Configurar Imobiliária" : "⚙️ Configurar Perfil";
-
-        await ctx.editMessageText(msg, {
-            parse_mode: "Markdown",
-            ...Markup.inlineKeyboard([
-                [Markup.button.callback(btn, `wa_ai_wizard_re_${instId}`)],
-                [Markup.button.callback("⚙️ Resetar Perfil", `wa_ai_set_niche_${instId}_${niche}`)],
-                [Markup.button.callback("🔙 Voltar", `wa_ai_menu_${instId}`)]
-            ])
-        });
+        ctx.reply(`✅ *Modelo (${niche}) aplicado com sucesso!*\n\nVocê pode editar o prompt e os temas no menu de IA se desejar.`);
+        await renderAiMenu(ctx, instId);
     }
-});
-
-bot.action(/^wa_ai_re_style_(.+)_(amigavel|formal|direto|descontraido)$/, async (ctx) => {
-    safeAnswer(ctx);
-    const instId = ctx.match[1];
-    if (!await checkOwnership(ctx, instId)) return;
-    const styleVal = ctx.match[2];
-    const session = await getSession(ctx.chat.id);
-    const inst = session.whatsapp.instances.find(i => i.id === instId);
-
-    if (inst) {
-        const styleMap = {
-            'amigavel': 'Amigável e com Emojis',
-            'formal': 'Formal e Profissional',
-            'direto': 'Direto e Persuasivo',
-            'descontraido': 'Descontraído'
-        };
-        inst.niche_data.style = styleMap[styleVal];
-        await syncSession(ctx, session);
-
-        const tones = [
-            [Markup.button.callback("🤝 Acolhedora", `wa_ai_re_tone_${instId}_acolhedora`)],
-            [Markup.button.callback("💰 Vendedora", `wa_ai_re_tone_${instId}_vendedora`)],
-            [Markup.button.callback("🧠 Consultiva", `wa_ai_re_tone_${instId}_consultiva`)]
-        ];
-        ctx.editMessageText("🗣️ *Passo 9/9: Tom de Voz*\n\nComo a IA deve se posicionar?", { parse_mode: "Markdown", ...Markup.inlineKeyboard(tones) });
-    }
-});
-
-bot.action(/^wa_ai_re_tone_(.+)_(acolhedora|vendedora|consultiva)$/, async (ctx) => {
-    safeAnswer(ctx);
-    const instId = ctx.match[1];
-    if (!await checkOwnership(ctx, instId)) return;
-    const toneVal = ctx.match[2];
-    const session = await getSession(ctx.chat.id);
-    const inst = session.whatsapp.instances.find(i => i.id === instId);
-
-    if (inst) {
-        const toneMap = {
-            'acolhedora': 'Acolhedora',
-            'vendedora': 'Vendedora',
-            'consultiva': 'Consultiva'
-        };
-        inst.niche_data.tone = toneMap[toneVal];
-        await syncSession(ctx, session);
-
-        await ctx.editMessageText("🎉 *Configuração Concluída!*\n\nSua IA de Imobiliária foi calibrada com sucesso.\n\n" +
-            "A partir de agora, ela usará todas as informações fornecidas (Nome, Regras, Tom) para atender seus clientes de forma profissional.", {
-            parse_mode: "Markdown",
-            ...Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar ao Menu", `wa_ai_menu_${instId}`)]])
-        });
-    }
-});
-
-bot.action(/^wa_ai_wizard_re_(.+)$/, async (ctx) => {
-    const id = ctx.match[1];
-    log(`[AI_WIZ_RE] Clique em Configurar Imobiliária ID: ${id}`);
-    safeAnswer(ctx);
-    if (!await checkOwnership(ctx, id)) return;
-
-    await triggerRealEstateWizard(ctx, id, 1);
-});
-
-bot.action(/^wa_ai_wizard_mc_(.+)$/, async (ctx) => {
-    safeAnswer(ctx);
-    const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
-    await triggerMedicalWizard(ctx, id, 1);
-});
-
-bot.action(/^wa_ai_wizard_gn_(.+)$/, async (ctx) => {
-    safeAnswer(ctx);
-    const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
-    await triggerGenericWizard(ctx, id, 1);
-});
-
-// Handler genérico para "Manter Atual" (Regex corrigida para evitar quebra em campos com _)
-bot.action(/^wa_ai_keep_(re|mc|gn)_([^_]+(?:_[^_]+)*)_([^_]+_[^_]+_[^_]+)$/, async (ctx) => {
-    safeAnswer(ctx);
-    const niche = ctx.match[1];
-    const field = ctx.match[2];
-    const instId = ctx.match[3];
-
-    // Mapeamento de ordem para avançar
-    const order = {
-        're': ['company_name', 'greeting', 'address', 'products', 'funnel', 'bio', 'rules'],
-        'mc': ['company_name', 'specialties', 'plans', 'booking_link', 'address', 'greeting', 'bio'],
-        'gn': ['company_name', 'goal', 'products', 'rules', 'greeting', 'bio']
-    };
-
-    const currentIdx = order[niche].indexOf(field);
-    const nextStep = currentIdx + 2; // 1-indexed e próximo
-
-    if (niche === 're') await triggerRealEstateWizard(ctx, instId, nextStep);
-    else if (niche === 'mc') await triggerMedicalWizard(ctx, instId, nextStep);
-    else if (niche === 'gn') await triggerGenericWizard(ctx, instId, nextStep);
 });
 
 bot.action(/^wa_ai_keep_fu_(hours|max|msgs)_(.+)$/, async (ctx) => {
@@ -2303,16 +2047,7 @@ bot.action(/^wa_ai_keep_resume_(.+)$/, async (ctx) => {
     await syncSession(ctx, session);
     await renderAiMenu(ctx, id);
 });
-
-bot.action(/^wa_ai_wiz_man_(.+)$/, async (ctx) => {
-    safeAnswer(ctx);
-    const id = ctx.match[1];
-    log(`[WIZ_MANUAL] Iniciando assistente manual para ID: ${id}`);
-    if (!await checkOwnership(ctx, id)) return;
-    const session = await getSession(ctx.chat.id);
-    session.stage = `WA_WIZ_NAME_${id}`;
-    await syncSession(ctx, session);
-    ctx.reply("🧙‍♂️ *Mágico de Prompt: Passo 1/3*\n\nQual o **NOME** da sua empresa ou do seu negócio?", { parse_mode: "Markdown" });
+ctx.reply("🧙‍♂️ *Mágico de Prompt: Passo 1/3*\n\nQual o **NOME** da sua empresa ou do seu negócio?", { parse_mode: "Markdown" });
 });
 
 bot.action(/^wa_ai_sync_web_(.+)$/, async (ctx) => {
@@ -3496,6 +3231,18 @@ bot.on("text", async (ctx) => {
             await syncSession(ctx, session);
             ctx.reply(`✅ **${msgs.length} mensagens** de follow-up salvas.`);
             await renderFollowupMenu(ctx, instId);
+        }
+    } else if (session.stage && session.stage.startsWith("WA_WAITING_AI_HUMAN_")) {
+        const instId = session.stage.replace("WA_WAITING_AI_HUMAN_", "");
+        if (!await checkOwnership(ctx, instId)) return;
+        const topics = ctx.message.text.trim();
+        const inst = session.whatsapp.instances.find(i => i.id === instId);
+        if (inst) {
+            inst.ai_human_topics = topics;
+            session.stage = "READY";
+            await syncSession(ctx, session);
+            ctx.reply("✅ *Temas de transbordo humano salvos!*");
+            await renderAiMenu(ctx, instId);
         }
     }
 });
