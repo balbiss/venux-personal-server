@@ -137,7 +137,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.57-UI";
+const SERVER_VERSION = "1.1.58-UI";
 
 async function safeEdit(ctx, text, extra = {}) {
     const session = await getSession(ctx.chat.id);
@@ -2675,22 +2675,23 @@ bot.action(/^wa_del_web_(.+)$/, async (ctx) => {
     }
 });
 
-ctx.answerCbQuery("⏳ Gerando Pix...");
-const loadingMsg = await ctx.reply("⏳ Gerando seu pagamento Pix...");
-try {
-    const config = await getSystemConfig();
-    const res = await createSyncPayPix(ctx.chat.id, config.planPrice, ctx.from.first_name);
-    try { await ctx.telegram.deleteMessage(ctx.chat.id, loadingMsg.message_id); } catch (e) { }
-    if (res.pix_code) {
-        const qr = await QRCode.toBuffer(res.pix_code);
-        await ctx.replyWithPhoto({ source: qr }, { caption: `💎 *Plano Pro*\n\nPIX:\n\`${res.pix_code}\``, parse_mode: "Markdown" });
-    } else {
-        ctx.reply("❌ Erro ao gerar pagamento. Tente novamente em instantes.");
+bot.action("gen_pix_mensal", async (ctx) => {
+    ctx.answerCbQuery("⏳ Gerando Pix...");
+    const loadingMsg = await ctx.reply("⏳ Gerando seu pagamento Pix...");
+    try {
+        const config = await getSystemConfig();
+        const res = await createSyncPayPix(ctx.chat.id, config.planPrice, ctx.from.first_name);
+        try { await ctx.telegram.deleteMessage(ctx.chat.id, loadingMsg.message_id); } catch (e) { }
+        if (res.pix_code) {
+            const qr = await QRCode.toBuffer(res.pix_code);
+            await ctx.replyWithPhoto({ source: qr }, { caption: `💎 *Plano Pro*\n\nPIX:\n\`${res.pix_code}\``, parse_mode: "Markdown" });
+        } else {
+            ctx.reply("❌ Erro ao gerar pagamento. Tente novamente em instantes.");
+        }
+    } catch (e) {
+        log(`[PIX_HANDLER_ERR] ${e.message}`);
+        ctx.reply("❌ Erro inesperado ao gerar pagamento.");
     }
-} catch (e) {
-    log(`[PIX_HANDLER_ERR] ${e.message}`);
-    ctx.reply("❌ Erro inesperado ao gerar pagamento.");
-}
 });
 
 bot.on("text", async (ctx) => {
