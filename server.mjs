@@ -9,7 +9,7 @@ import fs from "fs";
 import OpenAI from "openai";
 import cors from "cors";
 import { createClient } from "@supabase/supabase-js";
-import pdf from "pdf-parse/lib/pdf-parse.js";
+import { PDFParse } from "pdf-parse";
 
 dotenv.config();
 
@@ -138,7 +138,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.60-UI";
+const SERVER_VERSION = "1.1.61-UI";
 
 async function safeEdit(ctx, text, extra = {}) {
     const session = await getSession(ctx.chat.id);
@@ -2118,7 +2118,8 @@ bot.on('document', async (ctx) => {
         const response = await fetch(fileLink);
         const buffer = await response.buffer();
 
-        const data = await pdf(buffer);
+        const parser = new PDFParse({ data: buffer });
+        const data = await parser.getText();
         const text = data.text.replace(/\s+/g, ' ').trim();
 
         if (text.length < 10) {
