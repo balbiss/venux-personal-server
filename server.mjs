@@ -138,7 +138,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.34-PRO";
+const SERVER_VERSION = "1.1.38-PRO";
 
 function log(msg) {
     const logMsg = `[BOT LOG] [V${SERVER_VERSION}] ${new Date().toLocaleTimeString()} - ${msg}`;
@@ -791,7 +791,82 @@ bot.action(/^wa_mass_init_(.+)$/, async (ctx) => {
 
     session.stage = `WA_WAITING_MASS_CONTACTS_${id}`;
     await syncSession(ctx, session);
-    ctx.reply("🚀 *Configuração de Disparo em Massa*\n\nPor favor, envie a **lista de números** (um por linha).\n\n📝 *Formatos Aceitos:*\n1. Apenas Número: `5511999998888`\n2. Nome e Número: `João Silva; 5511999998888`\n\n💡 *Dica:* Usar o nome permite personalizar a mensagem com `{{nome}}`.", { parse_mode: "Markdown" });
+
+    ctx.reply("🚀 *Configuração de Disparo em Massa*\n\nO que deseja fazer?", {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([
+            [Markup.button.callback("🆕 Novo Disparo", `wa_mass_new_start_${id}`)],
+            [Markup.button.callback("📂 Campanhas Pausadas / Pendentes", `wa_mass_list_paused_${id}`)],
+            [Markup.button.callback("🔙 Voltar", `manage_${id}`)]
+        ])
+    });
+});
+
+bot.action(/^wa_mass_new_start_(.+)$/, async (ctx) => {
+    safeAnswer(ctx);
+    const id = ctx.match[1];
+    if (!await checkOwnership(ctx, id)) return;
+    ctx.editMessageText("📝 *Novo Disparo*\n\nPor favor, envie a **lista de números** (um por linha).\n\nFormatos:\n`5511999998888` ou `Nome;5511999998888`", { parse_mode: "Markdown" });
+});
+
+bot.action(/^wa_mass_list_paused_(.+)$/, async (ctx) => {
+    safeAnswer(ctx);
+    const instId = ctx.match[1];
+    if (!await checkOwnership(ctx, instId)) return;
+
+    const { data, error } = await supabase
+        .from('scheduled_campaigns')
+        .select('*')
+        .eq('inst_id', instId)
+        .in('status', ['PAUSED', 'PENDING'])
+        .limit(10);
+
+    if (error || !data || data.length === 0) {
+        return ctx.reply("❌ Nenhuma campanha pausada ou pendente encontrada para esta instância.");
+    }
+
+    let msg = "📂 *Campanhas Encontradas:*\n\n";
+    const buttons = [];
+
+    data.forEach((camp, idx) => {
+        const info = camp.campaign_data;
+        const进度 = info.currentIndex || 0;
+        const total = info.total || 0;
+        msg += `${idx + 1}. Progresso: ${进度}/${total}\nStatus: ${camp.status}\n\n`;
+        buttons.push([Markup.button.callback(`▶️ Retomar Campanha ${idx + 1}`, `wa_mass_resume_db_${camp.id}`)]);
+    });
+
+    buttons.push([Markup.button.callback("🔙 Voltar", `wa_mass_init_${instId}`)]);
+
+    ctx.editMessageText(msg, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
+});
+
+bot.action(/^wa_mass_resume_db_(.+)$/, async (ctx) => {
+    safeAnswer(ctx);
+    const dbId = ctx.match[1];
+
+    const { data, error } = await supabase
+        .from('scheduled_campaigns')
+        .select('*')
+        .eq('id', dbId)
+        .single();
+
+    if (error || !data) return ctx.reply("❌ Campanha não encontrada ou erro no banco.");
+    if (!await checkOwnership(ctx, data.inst_id)) return;
+
+    const camp = {
+        ...data.campaign_data,
+        dbId: data.id,
+        status: 'RUNNING'
+    };
+
+    activeCampaigns.set(ctx.chat.id, camp);
+
+    // Marcar como RUNNING no banco
+    await supabase.from('scheduled_campaigns').update({ status: 'RUNNING' }).eq('id', dbId);
+
+    ctx.reply(`▶️ Retomando disparo ${dbId} a partir do contato ${camp.currentIndex + 1}...`);
+    runCampaign(ctx.chat.id, data.inst_id);
 });
 
 bot.action("wa_stop_mass", async (ctx) => {
@@ -912,14 +987,28 @@ async function runCampaign(chatId, instId) {
             }
         }
 
-        // Progresso
+        // Progresso e Persistência (Salvar no banco a cada 5 disparos)
         if ((i + 1) % 5 === 0 || (i + 1) === campaign.total) {
             if (campaign.lastMsgId) {
                 try { await bot.telegram.deleteMessage(chatId, campaign.lastMsgId); } catch (e) { }
             }
-            const lastMsg = `📊 *Progresso: ${i + 1}/${campaign.total}*\n✅ Sucesso: ${campaign.current}\n🚀 Instância: \`${instId}\``;
 
-            // Só mostrar botões se NÃO for o último
+            // Se for campanha persistente, salvar progresso no banco
+            if (campaign.dbId) {
+                const updateData = {
+                    campaign_data: {
+                        ...campaign,
+                        currentIndex: i + 1,
+                        current: campaign.current,
+                        lastMsgId: null, // Não salvar ID da msg do bot
+                        successNumbers: campaign.successNumbers,
+                        failedNumbers: campaign.failedNumbers
+                    }
+                };
+                await supabase.from('scheduled_campaigns').update(updateData).eq('id', campaign.dbId);
+            }
+
+            const lastMsg = `📊 *Progresso: ${i + 1}/${campaign.total}*\n✅ Sucesso: ${campaign.current}\n🚀 Instância: \`${instId}\``;
             const isLast = (i + 1) === campaign.total;
             const buttons = isLast ? [] : [[Markup.button.callback("⏸️ Pausar", "wa_pause_mass"), Markup.button.callback("⏹️ Parar", "wa_stop_mass")]];
 
@@ -958,6 +1047,11 @@ async function runCampaign(chatId, instId) {
         };
         await saveSession(chatId, session);
 
+        // Marcar como COMPLETED no banco se for uma campanha persistente
+        if (campaign.dbId) {
+            await supabase.from('scheduled_campaigns').update({ status: 'COMPLETED' }).eq('id', campaign.dbId);
+        }
+
         if (campaign.lastMsgId) {
             try { await bot.telegram.deleteMessage(chatId, campaign.lastMsgId); } catch (e) { }
             campaign.lastMsgId = null;
@@ -984,8 +1078,15 @@ async function runCampaign(chatId, instId) {
 bot.action("wa_pause_mass", async (ctx) => {
     safeAnswer(ctx);
     if (activeCampaigns.has(ctx.chat.id)) {
-        activeCampaigns.get(ctx.chat.id).status = 'PAUSED';
-        ctx.reply("⏳ Pausando disparo... aguarde a mensagem de confirmação.");
+        const camp = activeCampaigns.get(ctx.chat.id);
+        camp.status = 'PAUSED';
+
+        // Atualizar status no banco
+        if (camp.dbId) {
+            await supabase.from('scheduled_campaigns').update({ status: 'PAUSED' }).eq('id', camp.dbId);
+        }
+
+        ctx.reply("⏳ Pausando disparo... o progresso será salvo para que você possa continuar depois.");
     }
 });
 
@@ -1017,7 +1118,7 @@ bot.action(/^wa_mass_now_(.+)$/, async (ctx) => {
     const camp = {
         instId,
         contacts: session.mass_contacts,
-        message: session.mass_msgs[0], // Fallback para compatibilidade se algo falhar
+        message: session.mass_msgs[0],
         messages: session.mass_msgs,
         mediaType: session.mass_media_type,
         mediaUrl: session.mass_media_url,
@@ -1034,7 +1135,23 @@ bot.action(/^wa_mass_now_(.+)$/, async (ctx) => {
         failedNumbers: []
     };
 
+    // Criar registro na tabela de campanhas agendadas com agendamento imediato (status PENDING/RUNNING)
+    const { data, error } = await supabase.from('scheduled_campaigns').insert({
+        chat_id: String(ctx.chat.id),
+        inst_id: instId,
+        scheduled_for: new Date().toISOString(),
+        campaign_data: camp,
+        status: 'RUNNING'
+    }).select().single();
+
+    if (error) {
+        log(`[PERSIST ERR] ${error.message}`);
+        return ctx.reply("❌ Erro ao iniciar persistência da campanha. O disparo continuará apenas em memória.");
+    }
+
+    camp.dbId = data.id;
     activeCampaigns.set(ctx.chat.id, camp);
+
     session.stage = "READY";
     await syncSession(ctx, session);
 
@@ -2735,7 +2852,11 @@ bot.on("text", async (ctx) => {
         const [_, d, m, y, h, min] = match;
         const scheduledFor = new Date(y, m - 1, d, h, min);
 
-        if (isNaN(scheduledFor.getTime()) || scheduledFor < new Date()) {
+        // Permitir um buffer de 5 minutos para evitar erro de "passado" por atraso de execução ou fuso
+        const now = new Date();
+        now.setMinutes(now.getMinutes() - 5);
+
+        if (isNaN(scheduledFor.getTime()) || scheduledFor < now) {
             return ctx.reply("❌ Data inválida ou no passado. Tente novamente.");
         }
 
