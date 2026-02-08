@@ -138,7 +138,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.43-UI";
+const SERVER_VERSION = "V1.1.44-UI";
 
 async function safeEdit(ctx, text, extra = {}) {
     const session = await getSession(ctx.chat.id);
@@ -1723,9 +1723,7 @@ async function triggerRealEstateWizard(ctx, instId, step) {
             (current ? `\n\n📌 *Valor Atual:* _${current}_` : "");
         const buttons = current ? [[Markup.button.callback(`✅ Manter Atual`, `wa_ai_keep_re_${s.field}_${instId}`)]] : [];
 
-        const sent = await ctx.reply(msg, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
-        session.last_ui_id = sent.message_id;
-        await syncSession(ctx, session);
+        await safeEdit(ctx, msg, Markup.inlineKeyboard(buttons));
     } else {
         const styles = [
             [Markup.button.callback("😊 Amigável e com Emojis", `wa_ai_re_style_${instId}_amigavel`)],
@@ -1733,9 +1731,7 @@ async function triggerRealEstateWizard(ctx, instId, step) {
             [Markup.button.callback("🎯 Direto e Persuasivo", `wa_ai_re_style_${instId}_direto`)],
             [Markup.button.callback("😎 Descontraído", `wa_ai_re_style_${instId}_descontraido`)]
         ];
-        const sent = await ctx.reply("🎭 *Passo 8/9: Estilo de Conversa*\n\nComo a IA deve falar com os clientes?", Markup.inlineKeyboard(styles));
-        session.last_ui_id = sent.message_id;
-        await syncSession(ctx, session);
+        await safeEdit(ctx, "🎭 *Passo 8/9: Estilo de Conversa*\n\nComo a IA deve falar com os clientes?", Markup.inlineKeyboard(styles));
     }
 }
 
@@ -1764,18 +1760,14 @@ async function triggerMedicalWizard(ctx, instId, step) {
             (current ? `\n\n📌 *Valor Atual:* _${current}_` : "");
         const buttons = current ? [[Markup.button.callback(`✅ Manter Atual`, `wa_ai_keep_mc_${s.field}_${instId}`)]] : [];
 
-        const sent = await ctx.reply(msg, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
-        session.last_ui_id = sent.message_id;
-        await syncSession(ctx, session);
+        await safeEdit(ctx, msg, Markup.inlineKeyboard(buttons));
     } else {
         const styles = [
             [Markup.button.callback("🤝 Acolhedor e Humano", `wa_ai_re_style_${instId}_amigavel`)],
             [Markup.button.callback("💼 Clínico e Profissional", `wa_ai_re_style_${instId}_formal`)],
             [Markup.button.callback("⚡ Rápido e Eficiente", `wa_ai_re_style_${instId}_direto`)]
         ];
-        const sent = await ctx.reply("🎭 *Passo 8/8: Estilo de Conversa*\n\nComo a IA deve se portar no atendimento?", Markup.inlineKeyboard(styles));
-        session.last_ui_id = sent.message_id;
-        await syncSession(ctx, session);
+        await safeEdit(ctx, "🎭 *Passo 8/8: Estilo de Conversa*\n\nComo a IA deve se portar no atendimento?", Markup.inlineKeyboard(styles));
     }
 }
 
@@ -1803,18 +1795,14 @@ async function triggerGenericWizard(ctx, instId, step) {
             (current ? `\n\n📌 *Valor Atual:* _${current}_` : "");
         const buttons = current ? [[Markup.button.callback(`✅ Manter Atual`, `wa_ai_keep_gn_${s.field}_${instId}`)]] : [];
 
-        const sent = await ctx.reply(msg, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
-        session.last_ui_id = sent.message_id;
-        await syncSession(ctx, session);
+        await safeEdit(ctx, msg, Markup.inlineKeyboard(buttons));
     } else {
         const styles = [
             [Markup.button.callback("😊 Amigável", `wa_ai_re_style_${instId}_amigavel`)],
             [Markup.button.callback("💼 Sério", `wa_ai_re_style_${instId}_formal`)],
             [Markup.button.callback("😎 Descontraído", `wa_ai_re_style_${instId}_descontraido`)]
         ];
-        const sent = await ctx.reply("🎭 *Passo 7/7: Estilo Final*\n\nEscolha o jeito que a IA falará:", Markup.inlineKeyboard(styles));
-        session.last_ui_id = sent.message_id;
-        await syncSession(ctx, session);
+        await safeEdit(ctx, "🎭 *Passo 7/7: Estilo Final*\n\nEscolha o jeito que a IA falará:", Markup.inlineKeyboard(styles));
     }
 }
 
@@ -2028,8 +2016,8 @@ bot.action(/^wa_ai_wizard_gn_(.+)$/, async (ctx) => {
     await triggerGenericWizard(ctx, id, 1);
 });
 
-// Handler genérico para "Manter Atual"
-bot.action(/^wa_ai_keep_(re|mc|gn)_(.+)_(.+)$/, async (ctx) => {
+// Handler genérico para "Manter Atual" (Regex corrigida para evitar quebra em campos com _)
+bot.action(/^wa_ai_keep_(re|mc|gn)_([^_]+(?:_[^_]+)*)_([^_]+_[^_]+_[^_]+)$/, async (ctx) => {
     safeAnswer(ctx);
     const niche = ctx.match[1];
     const field = ctx.match[2];
@@ -2447,9 +2435,9 @@ bot.on("text", async (ctx) => {
 
     // Função de limpeza de mensagens para manter o chat limpo
     const cleanup = async () => {
-        try { if (session.last_ui_id) await ctx.telegram.deleteMessage(ctx.chat.id, session.last_ui_id); } catch (e) { }
+        try { if (session.last_menu_id) await ctx.telegram.deleteMessage(ctx.chat.id, session.last_menu_id); } catch (e) { }
         try { await ctx.deleteMessage(); } catch (e) { }
-        session.last_ui_id = null;
+        session.last_menu_id = null;
     };
 
     // --- ADMIN STAGES ---
@@ -2803,6 +2791,7 @@ bot.on("text", async (ctx) => {
             await triggerGenericWizard(ctx, instId, 4);
         }
     } else if (session.stage && session.stage.startsWith("WA_AI_CONF_GN_RULES_")) {
+        await cleanup();
         const instId = session.stage.replace("WA_AI_CONF_GN_RULES_", "");
         const inst = await checkOwnership(ctx, instId);
         if (!inst) return;
