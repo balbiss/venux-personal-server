@@ -137,7 +137,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "V1.1.48-UI";
+const SERVER_VERSION = "V1.1.49-UI";
 
 async function safeEdit(ctx, text, extra = {}) {
     const session = await getSession(ctx.chat.id);
@@ -359,10 +359,9 @@ async function renderAdminPanel(ctx) {
         `💎 *Limite Instâncias VIP:* ${config.limits.vip.instances}\n` +
         `🤝 *Corretores:* Liberados (Ilimitados)\n`;
 
-    const buttons = [
-        [Markup.button.callback("📢 Broadcast (Msg em Massa)", "admin_broadcast")],
+    [Markup.button.callback("📢 Broadcast (Msg em Massa)", "admin_broadcast")],
         [Markup.button.callback("💰 Alterar Preço", "admin_price")],
-        [Markup.button.callback("💎 Ajustar Limite Instâncias", "admin_limit_vip")],
+        [Markup.button.callback("💎 Ajustar Limite Instâncias", "admin_limit_vip"), Markup.button.callback("👥 Gerenciar Usuários", "admin_users_menu")],
         [Markup.button.callback("👤 Ativar VIP Manual", "admin_vip_manual")],
         [Markup.button.callback("🔙 Voltar", "start")]
     ];
@@ -430,6 +429,94 @@ bot.action("admin_limit_vip", async (ctx) => {
     session.stage = "ADMIN_WAIT_LIMIT_VIP";
     await syncSession(ctx, session);
     ctx.reply("💎 *Limite de Instâncias VIP*\n\nDigite apenas o número máximo de instâncias que um usuário PRO pode ter (ex: 5):", { parse_mode: "Markdown" });
+});
+
+// --- User Management Handlers ---
+bot.action("admin_users_menu", async (ctx) => {
+    safeAnswer(ctx);
+    const config = await getSystemConfig();
+    if (!isAdmin(ctx.chat.id, config)) return;
+
+    // Contagem rápida
+    const { count } = await supabase.from('bot_sessions').select('*', { count: 'exact', head: true });
+
+    const text = `👥 *Gerenciar Usuários*\n\n` +
+        `Total de Usuários: **${count || 0}**\n\n` +
+        `Selecione uma opção:`;
+
+    const buttons = [
+        [Markup.button.callback("🔍 Buscar por ID (ChatID)", "admin_search_user")],
+        [Markup.button.callback("🔙 Voltar", "cmd_admin_panel")]
+    ];
+
+    await safeEdit(ctx, text, Markup.inlineKeyboard(buttons));
+});
+
+bot.action("admin_search_user", async (ctx) => {
+    safeAnswer(ctx);
+    const session = await getSession(ctx.chat.id);
+    session.stage = "ADMIN_WAIT_USER_SEARCH";
+    await syncSession(ctx, session);
+    ctx.reply("🔍 *Buscar Usuário*\n\nDigite o **Chat ID** do usuário que deseja gerenciar:", { parse_mode: "Markdown" });
+});
+
+async function renderUserDetails(ctx, targetChatId) {
+    const s = await getSession(targetChatId);
+    if (!s) return ctx.reply("❌ Usuário não encontrado.");
+
+    const isVip = s.isVip;
+    const expiry = s.subscriptionExpiry ? new Date(s.subscriptionExpiry).toLocaleDateString('pt-BR') : "N/A";
+    const blocked = s.blocked || false;
+
+    const text = `👤 *Detalhes do Usuário*\n\n` +
+        `🆔 ID: \`${targetChatId}\`\n` +
+        `👤 Nome: ${s.firstName || "Desconhecido"}\n` +
+        `💎 VIP: ${isVip ? "SIM" : "NÃO"}\n` +
+        `📅 Expira em: ${expiry}\n` +
+        `🚫 Bloqueado: ${blocked ? "SIM" : "NÃO"}\n` +
+        `🤖 Instâncias: ${s.whatsapp?.instances?.length || 0}`;
+
+    const buttons = [
+        [Markup.button.callback(isVip ? "❌ Remover VIP" : "💎 Dar VIP (30 dias)", `admin_toggle_vip_${targetChatId}`)],
+        [Markup.button.callback(blocked ? "✅ Desbloquear" : "🚫 Bloquear Acesso", `admin_toggle_block_${targetChatId}`)],
+        [Markup.button.callback("🔙 Voltar", "admin_search_user")]
+    ];
+
+    await ctx.reply(text, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
+}
+
+// Handlers dinâmicos para ações de usuário
+bot.action(/^admin_toggle_vip_(.+)$/, async (ctx) => {
+    safeAnswer(ctx);
+    const targetId = ctx.match[1];
+    const s = await getSession(targetId);
+
+    s.isVip = !s.isVip;
+    if (s.isVip) {
+        const exp = new Date(); exp.setDate(exp.getDate() + 30);
+        s.subscriptionExpiry = exp.toISOString();
+    } else {
+        s.subscriptionExpiry = null;
+    }
+
+    await saveSession(targetId, s);
+    try {
+        if (s.isVip) await bot.telegram.sendMessage(targetId, "💎 *Parabéns!* Seu plano VIP foi ativado pelo administrador.");
+        else await bot.telegram.sendMessage(targetId, "⚠️ *Atenção:* Seu plano VIP foi revogado.");
+    } catch (e) { }
+
+    await renderUserDetails(ctx, targetId);
+});
+
+bot.action(/^admin_toggle_block_(.+)$/, async (ctx) => {
+    safeAnswer(ctx);
+    const targetId = ctx.match[1];
+    const s = await getSession(targetId);
+
+    s.blocked = !s.blocked;
+    await saveSession(targetId, s);
+
+    await renderUserDetails(ctx, targetId);
 });
 
 bot.action("admin_vip_manual", async (ctx) => {
@@ -2510,6 +2597,16 @@ bot.on("text", async (ctx) => {
             session.stage = "READY";
             await syncSession(ctx, session);
             return renderAdminPanel(ctx);
+        }
+
+        if (session.stage === "ADMIN_WAIT_USER_SEARCH") {
+            const targetId = ctx.message.text.trim();
+            // Validar se é número (opcional, mas bom pois ids são numéricos)
+            if (!/^\d+$/.test(targetId)) return ctx.reply("❌ ID inválido. Digite apenas números.");
+
+            session.stage = "READY";
+            await syncSession(ctx, session);
+            return renderUserDetails(ctx, targetId);
         }
         await syncSession(ctx, session);
         return renderAdminPanel(ctx);
