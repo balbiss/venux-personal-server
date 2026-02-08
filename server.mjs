@@ -138,7 +138,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.61-UI";
+const SERVER_VERSION = "1.1.62-UI";
 
 async function safeEdit(ctx, text, extra = {}) {
     const session = await getSession(ctx.chat.id);
@@ -740,7 +740,7 @@ bot.action("cmd_planos_menu", async (ctx) => {
         `💰 *Valor:* R$ ${config.planPrice.toFixed(2)}/mês\n\n` +
         `🛠️ *Limites do Plano:*\n` +
         `📱 Instâncias: ${limits.instances}\n` +
-        `👤 Corretores: ${limits.brokers}\n`;
+        `👤 Corretores: Ilimitado\n`;
 
     const buttons = [];
     if (!isVip) buttons.push([Markup.button.callback("💎 Assinar Agora (Pix)", "gen_pix_mensal")]);
