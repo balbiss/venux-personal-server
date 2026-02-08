@@ -2673,7 +2673,17 @@ bot.on("text", async (ctx) => {
         session.mass_contacts = contacts;
         session.stage = `WA_WAITING_MASS_MSG_${instId}`;
         await syncSession(ctx, session);
-        ctx.reply(`✅ ${contacts.length} contatos recebidos.\n\nAgora, envie a **mensagem** que deseja disparar.\n\n💡 *Anti-Spam:* Você pode enviar várias variações da mensagem separadas por \`;;;\` (três pontos e vírgula). O sistema escolherá uma aleatória para cada contato.\n\n💡 *Personalização:* Use \`{{nome}}\` para inserir o nome do contato.\n\nExemplo: \`Oi {{nome}}!;;;Olá, como vai?;;;Fala {{nome}}!\``);
+
+        const prompt = `✅ *${contacts.length} contatos recebidos.*\n\n` +
+            `Agora, envie o **conteúdo** que deseja disparar. Você pode enviar:\n\n` +
+            `📝 *Apenas Texto:* Digite e envie normalmente.\n` +
+            `🖼️ *Foto / Vídeo / Documento:* Envie o arquivo. A legenda será usada como a mensagem.\n` +
+            `🎙️ *Áudio / Voz:* Envie o arquivo de áudio ou grave uma nota de voz.\n\n` +
+            `💡 *Anti-Spam:* Envie várias variações separadas por \`;;;\` (na legenda ou no texto).\n` +
+            `💡 *Personalização:* Use \`{{nome}}\` para o nome do contato.\n\n` +
+            `*Exemplo:* \`Oi {{nome}}!;;;Olá, como vai?;;;Fala {{nome}}!\``;
+
+        ctx.reply(prompt, { parse_mode: "Markdown" });
 
     } else if (session.stage && session.stage.startsWith("WA_WAITING_MASS_MSG_")) {
         const instId = session.stage.replace("WA_WAITING_MASS_MSG_", "");
@@ -2935,7 +2945,9 @@ async function handleMassMedia(ctx, type, fileId, caption, fileName, fileSize) {
 }
 
 bot.on("photo", ctx => handleMassMedia(ctx, 'photo', ctx.message.photo[ctx.message.photo.length - 1].file_id, ctx.message.caption, null, ctx.message.photo[ctx.message.photo.length - 1].file_size));
+bot.on("video", ctx => handleMassMedia(ctx, 'video', ctx.message.video.file_id, ctx.message.caption, ctx.message.video.file_name, ctx.message.video.file_size));
 bot.on("audio", ctx => handleMassMedia(ctx, 'audio', ctx.message.audio.file_id, ctx.message.caption, ctx.message.audio.file_name, ctx.message.audio.file_size));
+bot.on("voice", ctx => handleMassMedia(ctx, 'audio', ctx.message.voice.file_id, ctx.message.caption, "audio.ogg", ctx.message.voice.file_size));
 bot.on("document", ctx => handleMassMedia(ctx, 'document', ctx.message.document.file_id, ctx.message.caption, ctx.message.document.file_name, ctx.message.document.file_size));
 
 // -- Server Endpoints --
