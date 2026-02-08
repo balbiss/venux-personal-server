@@ -138,7 +138,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.38-PRO";
+const SERVER_VERSION = "1.1.39-FIX";
 
 function log(msg) {
     const logMsg = `[BOT LOG] [V${SERVER_VERSION}] ${new Date().toLocaleTimeString()} - ${msg}`;
@@ -2852,12 +2852,16 @@ bot.on("text", async (ctx) => {
         const [_, d, m, y, h, min] = match;
         const scheduledFor = new Date(y, m - 1, d, h, min);
 
-        // Permitir um buffer de 5 minutos para evitar erro de "passado" por atraso de execução ou fuso
         const now = new Date();
-        now.setMinutes(now.getMinutes() - 5);
+        const serverTimeStr = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        const serverDateStr = now.toLocaleDateString('pt-BR');
 
-        if (isNaN(scheduledFor.getTime()) || scheduledFor < now) {
-            return ctx.reply("❌ Data inválida ou no passado. Tente novamente.");
+        // Buffer de 4 horas para lidar com disparidade UTC (Servidor) vs BRT (Usuário)
+        const bufferNow = new Date();
+        bufferNow.setHours(bufferNow.getHours() - 4);
+
+        if (isNaN(scheduledFor.getTime()) || scheduledFor < bufferNow) {
+            return ctx.reply(`❌ *Data no passado!*\n\nHora no Servidor: \`${serverDateStr} ${serverTimeStr}\`\nSua entrada: \`${dateStr}\`\n\nPor favor, envie um horário futuro baseado no relógio do servidor acima.`, { parse_mode: "Markdown" });
         }
 
         const campaignData = {
