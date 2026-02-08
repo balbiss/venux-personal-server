@@ -137,7 +137,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "V1.1.52-UI";
+const SERVER_VERSION = "1.1.53-UI";
 
 async function safeEdit(ctx, text, extra = {}) {
     const session = await getSession(ctx.chat.id);
@@ -2078,7 +2078,7 @@ async function renderAiMenu(ctx, instId) {
 
     // Só mostra assistente se não for nicho (nichos usam o wizard)
     if (!isNiche) {
-        buttons.push([Markup.button.callback("🧙‍♂️ Mágico de Prompt (Auxílio)", `wa_ai_wizard_${instId}`)]);
+        buttons.push([Markup.button.callback("🧙‍♂️ Mágico de Prompt (Auxílio)", `wa_ai_wiz_man_${instId}`)]);
     }
 
     buttons.push([Markup.button.callback("🔔 Follow-ups", `wa_ai_followup_menu_${instId}`)]);
@@ -2274,9 +2274,10 @@ bot.action(/^wa_ai_keep_resume_(.+)$/, async (ctx) => {
     await renderAiMenu(ctx, id);
 });
 
-bot.action(/^wa_ai_wizard_(.+)$/, async (ctx) => {
+bot.action(/^wa_ai_wiz_man_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
+    log(`[WIZ_MANUAL] Iniciando assistente manual para ID: ${id}`);
     if (!await checkOwnership(ctx, id)) return;
     const session = await getSession(ctx.chat.id);
     session.stage = `WA_WIZ_NAME_${id}`;
