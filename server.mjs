@@ -137,7 +137,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "V1.1.47-UI";
+const SERVER_VERSION = "V1.1.48-UI";
 
 async function safeEdit(ctx, text, extra = {}) {
     const session = await getSession(ctx.chat.id);
@@ -2313,7 +2313,13 @@ async function distributeLead(tgChatId, leadJid, instId, leadName, summary) {
             `📱 *WhatsApp:* ${leadJid.split('@')[0]}\n\n` +
             `📝 *Resumo da IA:* \n${summary}\n\n` +
             `🔔 *Instância:* ${instId}\n` +
-            `👉 *Ação:* Esse lead foi atribuído a VOCÊ e a IA foi pausada. Assuma o papo agora!`;
+            `👉 *Ação:* Lead qualificado e entregue. A IA foi encerrada para este contato.`;
+
+        // Marcar como TRANSFERRED para parar a IA para sempre
+        await supabase.from("ai_leads_tracking")
+            .update({ status: "TRANSFERRED", last_interaction: new Date().toISOString() })
+            .eq("instance_id", instId)
+            .eq("remote_jid", leadJid);
 
         await callWuzapi("/chat/send/text", "POST", { Phone: broker.phone, Body: msg }, instId);
 
@@ -3495,7 +3501,9 @@ async function checkAiFollowups() {
         const { data: tracking, error } = await supabase
             .from("ai_leads_tracking")
             .select("*")
-            .lt("nudge_count", 5); // limite de segurança
+            .lt("nudge_count", 5) // limite de segurança
+            .neq("status", "TRANSFERRED")   // 🛑 Não incomodar leads já entregues
+            .neq("status", "HUMAN_ACTIVE"); // 🛑 Não incomodar leads em atendimento humano
 
         if (error) return;
 
