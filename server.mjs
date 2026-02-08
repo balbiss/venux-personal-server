@@ -121,7 +121,7 @@ async function getSystemConfig() {
         referralDays: 7,
         adminChatId: null, // ID do dono
         limits: {
-            vip: { instances: 5, brokers: 10 }
+            vip: { instances: 5 }
         }
     };
     await saveSession('SYSTEM_CONFIG', defaultConfig);
@@ -137,7 +137,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "V1.1.45-UI";
+const SERVER_VERSION = "V1.1.46-UI";
 
 async function safeEdit(ctx, text, extra = {}) {
     const session = await getSession(ctx.chat.id);
@@ -356,13 +356,13 @@ async function renderAdminPanel(ctx) {
     const text = `👑 *Painel Admin SaaS*\n\n` +
         `👥 *Usuários:* ${count || 0}\n` +
         `💰 *Preço Atual:* R$ ${config.planPrice.toFixed(2)}\n` +
-        `🔒 *Limites Free:* ${config.limits.free.instances} Inst. / ${config.limits.free.brokers} Corr.\n` +
-        `💎 *Limites VIP:* ${config.limits.vip.instances} Inst. / ${config.limits.vip.brokers} Corr.\n`;
+        `💎 *Limite Instâncias VIP:* ${config.limits.vip.instances}\n` +
+        `🤝 *Corretores:* Liberados (Ilimitados)\n`;
 
     const buttons = [
         [Markup.button.callback("📢 Broadcast (Msg em Massa)", "admin_broadcast")],
         [Markup.button.callback("💰 Alterar Preço", "admin_price")],
-        [Markup.button.callback("⚙️ Limites Free", "admin_limit_free"), Markup.button.callback("💎 Limites VIP", "admin_limit_vip")],
+        [Markup.button.callback("💎 Ajustar Limite Instâncias", "admin_limit_vip")],
         [Markup.button.callback("👤 Ativar VIP Manual", "admin_vip_manual")],
         [Markup.button.callback("🔙 Voltar", "start")]
     ];
@@ -429,7 +429,7 @@ bot.action("admin_limit_vip", async (ctx) => {
     const session = await getSession(ctx.chat.id);
     session.stage = "ADMIN_WAIT_LIMIT_VIP";
     await syncSession(ctx, session);
-    ctx.reply("💎 *Limites VIP*\n\nDigite no formato: `INSTANCIAS,CORRETORES` (ex: 5,10):", { parse_mode: "Markdown" });
+    ctx.reply("💎 *Limite de Instâncias VIP*\n\nDigite apenas o número máximo de instâncias que um usuário PRO pode ter (ex: 5):", { parse_mode: "Markdown" });
 });
 
 bot.action("admin_vip_manual", async (ctx) => {
@@ -2493,645 +2493,627 @@ bot.on("text", async (ctx) => {
             return renderAdminPanel(ctx);
         }
 
-        if (session.stage === "ADMIN_WAIT_LIMIT_FREE" || session.stage === "ADMIN_WAIT_LIMIT_VIP") {
-            const parts2 = ctx.message.text.split(",");
-            if (parts2.length !== 2) return ctx.reply("❌ Formato inválido. Use: INSTANCIAS,CORRETORES (ex: 1,1)");
+        if (session.stage === "ADMIN_WAIT_LIMIT_VIP") {
+            const insts = parseInt(ctx.message.text.trim());
+            if (isNaN(insts)) return ctx.reply("❌ Digite um número válido.");
 
-            const insts = parseInt(parts2[0].trim());
-            const brks = parseInt(parts2[1].trim());
-
-            if (session.stage === "ADMIN_WAIT_LIMIT_FREE") {
-                config.limits.free = { instances: insts, brokers: brks };
-            } else {
-                config.limits.vip = { instances: insts, brokers: brks };
-            }
+            config.limits.vip.instances = insts;
             await saveSystemConfig(config);
-            ctx.reply(`✅ Limites atualizados!`);
+            ctx.reply(`✅ Limite de instâncias VIP atualizado para **${insts}**.`);
             session.stage = "READY";
             await syncSession(ctx, session);
             return renderAdminPanel(ctx);
         }
-
-        if (session.stage === "ADMIN_WAIT_VIP_MANUAL") {
-            const targetId = ctx.message.text.trim();
-            const s = await getSession(targetId);
-            s.isVip = !s.isVip;
-            if (s.isVip) {
-                const exp = new Date(); exp.setDate(exp.getDate() + 30);
-                s.subscriptionExpiry = exp.toISOString();
-            }
-            await saveSession(targetId, s);
-            ctx.reply(`✅ Usuário \`${targetId}\` agora é: **${s.isVip ? "VIP" : "FREE"}**`);
-            session.stage = "READY";
-            await syncSession(ctx, session);
-            return renderAdminPanel(ctx);
-        }
+        await syncSession(ctx, session);
+        return renderAdminPanel(ctx);
     }
+
+    if (session.stage === "ADMIN_WAIT_VIP_MANUAL") {
+        const targetId = ctx.message.text.trim();
+        const s = await getSession(targetId);
+        s.isVip = !s.isVip;
+        if (s.isVip) {
+            const exp = new Date(); exp.setDate(exp.getDate() + 30);
+            s.subscriptionExpiry = exp.toISOString();
+        }
+        await saveSession(targetId, s);
+        ctx.reply(`✅ Usuário \`${targetId}\` agora é: **${s.isVip ? "VIP" : "FREE"}**`);
+        session.stage = "READY";
+        await syncSession(ctx, session);
+        return renderAdminPanel(ctx);
+    }
+}
 
     if (session.stage === "WA_WAITING_NAME") {
-        await cleanup();
-        const config = await getSystemConfig();
-        const isVip = await checkVip(ctx.chat.id);
-        const limit = isVip ? config.limits.vip.instances : config.limits.free.instances;
-        const current = session.whatsapp.instances.length;
+    await cleanup();
+    const config = await getSystemConfig();
+    const isVip = await checkVip(ctx.chat.id);
+    const limit = config.limits.vip.instances;
+    const current = session.whatsapp.instances.length;
 
-        if (current >= limit) {
-            return ctx.reply(`⚠️ *Limite de Instâncias Atingido!*\n\nSeu plano (${isVip ? "VIP" : "Free"}) permite apenas **${limit}** instâncias.\n\nUse /admin se for o dono, ou assine o VIP.`, {
-                parse_mode: "Markdown",
-                ...Markup.inlineKeyboard([[Markup.button.callback("💎 Ver Planos", "cmd_planos_menu")]])
-            });
-        }
-
-        const name = ctx.message.text.trim().substring(0, 30);
-        const id = `wa_${ctx.chat.id}_${Date.now().toString().slice(-4)}`;
-        // WUZAPI: create user (admin)
-        const res = await callWuzapi("/admin/users", "POST", { name: id, token: id });
-
-        if (res.success) {
-            session.whatsapp.instances.push({ id, name, status: "CONNECTING" });
-            session.stage = "READY";
-            await syncSession(ctx, session);
-
-            // Auto-configurar webhook próprio para notificações de conexão
-            await callWuzapi("/webhook", "POST", { webhook: WEBHOOK_URL, events: ["All"] }, id);
-
-            const sent = await ctx.reply(`✅ Instância *${name}* criada!`, {
-                parse_mode: "Markdown",
-                ...Markup.inlineKeyboard([
-                    [Markup.button.callback("📷 QR Code", `wa_qr_${id}`)],
-                    [Markup.button.callback("🔢 Conectar por Código", `wa_pair_${id}`)],
-                    [Markup.button.callback("📱 Minhas Instâncias", "cmd_instancias")]
-                ])
-            });
-            session.last_ui_id = sent.message_id;
-            await syncSession(ctx, session);
-        } else {
-            ctx.reply(`❌ Erro ao criar na API: ${res.error || "Tente novamente mais tarde"}`);
-        }
-
-    } else if (session.stage && session.stage.startsWith("WA_WIZ_NAME_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_WIZ_NAME_", "");
-        if (!await checkOwnership(ctx, instId)) return;
-        session.wiz_data = { name: ctx.message.text.trim() };
-        session.stage = `WA_WIZ_PRODUCT_${instId}`;
-        await syncSession(ctx, session);
-        const sent = await ctx.reply("📦 *Passo 2/3: Produto/Serviço*\n\nLegal! Agora me conte: o que você vende ou qual serviço sua empresa oferece?", { parse_mode: "Markdown" });
-        session.last_ui_id = sent.message_id;
-        await syncSession(ctx, session);
-
-    } else if (session.stage && session.stage.startsWith("WA_WIZ_PRODUCT_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_WIZ_PRODUCT_", "");
-        if (!await checkOwnership(ctx, instId)) return;
-        session.wiz_data.product = ctx.message.text.trim();
-        session.stage = `WA_WIZ_GOAL_${instId}`;
-        await syncSession(ctx, session);
-        const sent = await ctx.reply("🎯 *Passo 3/3: Objetivo*\n\nQual o objetivo principal deste WhatsApp? (Ex: Tirar dúvidas, agendar consultoria, vender produtos, suporte técnico)", { parse_mode: "Markdown" });
-        session.last_ui_id = sent.message_id;
-        await syncSession(ctx, session);
-
-    } else if (session.stage && session.stage.startsWith("WA_WIZ_GOAL_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_WIZ_GOAL_", "");
-        if (!await checkOwnership(ctx, instId)) return;
-        const goal = ctx.message.text.trim();
-        const { name, product } = session.wiz_data;
-
-        const generatedPrompt = `Você é o assistente virtual da empresa ${name}. ` +
-            `Seu foco principal é ${product}. ` +
-            `Seu objetivo no atendimento é ${goal}. ` +
-            `Sempre use um tom profissional, amigável e prestativo. ` +
-            `Responda de forma clara e objetiva.`;
-
-        // Salvar na instância
-        const inst = session.whatsapp.instances.find(i => i.id === instId);
-        if (inst) {
-            inst.ai_prompt = generatedPrompt;
-            inst.ai_enabled = true; // Ativar por padrão ao usar o mágico
-            await syncSession(ctx, session);
-        }
-        try { ctx.deleteMessage(); } catch (e) { } // Limpar resposta do usuário
-        session.stage = "READY";
-        delete session.wiz_data;
-        await syncSession(ctx, session);
-        ctx.reply("✨ *Configuração Concluída!*\n\nSeu prompt foi gerado e a IA foi ativada automaticamente.\n\n" +
-            `📝 *Prompt Gerado:* \n\`${generatedPrompt}\``, { parse_mode: "Markdown" });
-        await renderAiMenu(ctx, instId);
-    } else if (session.stage && session.stage.startsWith("WA_BROKER_WAIT_NAME_")) {
-        const instId = session.stage.replace("WA_BROKER_WAIT_NAME_", "");
-        if (!await checkOwnership(ctx, instId)) return;
-        const config = await getSystemConfig();
-        const isVip = await checkVip(ctx.chat.id);
-        const limit = isVip ? config.limits.vip.brokers : config.limits.free.brokers;
-
-        const { count } = await supabase.from('real_estate_brokers')
-            .select('*', { count: 'exact', head: true })
-            .eq('tg_chat_id', String(ctx.chat.id));
-
-        if ((count || 0) >= limit) {
-            return ctx.reply(`⚠️ *Limite de Corretores Atingido!*\n\nSeu plano (${isVip ? "VIP" : "Free"}) permite apenas **${limit}** corretores.\n\nUse /admin se for o dono, ou assine o VIP.`, {
-                parse_mode: "Markdown",
-                ...Markup.inlineKeyboard([[Markup.button.callback("💎 Ver Planos", "cmd_planos_menu")]])
-            });
-        }
-
-        const name = ctx.message.text.trim();
-        session.tempBroker = { name };
-        session.stage = `WA_BROKER_WAIT_PHONE_${instId}`;
-        await syncSession(ctx, session);
-        return ctx.reply(`Ótimo! Agora digite o **WHATSAPP** do corretor ${name} (ex: 5511999999999):`);
-
-    } else if (session.stage && session.stage.startsWith("WA_BROKER_WAIT_PHONE_")) {
-        const instId = session.stage.replace("WA_BROKER_WAIT_PHONE_", "");
-        if (!await checkOwnership(ctx, instId)) return;
-        let phone = ctx.message.text.trim().replace(/\D/g, "");
-        if (!phone.includes("@")) phone += "@s.whatsapp.net";
-
-        const { error } = await supabase.from("real_estate_brokers").insert({
-            name: session.tempBroker.name,
-            phone: phone,
-            tg_chat_id: String(ctx.chat.id)
+    if (current >= limit) {
+        return ctx.reply(`⚠️ *Limite de Instâncias Atingido!*\n\nSeu plano permite apenas **${limit}** instâncias.\n\nFale com o suporte ou use /admin se for o dono.`, {
+            parse_mode: "Markdown",
+            ...Markup.inlineKeyboard([[Markup.button.callback("💎 Ver Planos", "cmd_planos_menu")]])
         });
+    }
 
-        if (error) {
-            ctx.reply("❌ Erro ao salvar corretor.");
-        } else {
-            ctx.reply(`✅ Corretor **${session.tempBroker.name}** cadastrado!`);
-            session.stage = "READY";
-            delete session.tempBroker;
-            await syncSession(ctx, session);
-            await renderBrokersMenu(ctx, instId);
-        }
-    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_RE_COMPANY_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_AI_CONF_RE_COMPANY_", "");
-        const inst = await checkOwnership(ctx, instId);
-        if (!inst) return;
-        if (inst) {
-            inst.niche_data.company_name = ctx.message.text.trim();
-            await triggerRealEstateWizard(ctx, instId, 2);
-        }
-    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_RE_GREETING_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_AI_CONF_RE_GREETING_", "");
-        const inst = await checkOwnership(ctx, instId);
-        if (!inst) return;
-        if (inst) {
-            inst.niche_data.greeting = ctx.message.text.trim();
-            await triggerRealEstateWizard(ctx, instId, 3);
-        }
-    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_RE_ADDRESS_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_AI_CONF_RE_ADDRESS_", "");
-        const inst = await checkOwnership(ctx, instId);
-        if (!inst) return;
-        if (inst) {
-            inst.niche_data.address = ctx.message.text.trim();
-            await triggerRealEstateWizard(ctx, instId, 4);
-        }
-    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_RE_PRODUCT_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_AI_CONF_RE_PRODUCT_", "");
-        const inst = await checkOwnership(ctx, instId);
-        if (!inst) return;
-        if (inst) {
-            inst.niche_data.products = ctx.message.text.trim();
-            await triggerRealEstateWizard(ctx, instId, 5);
-        }
-    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_RE_FUNNEL_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_AI_CONF_RE_FUNNEL_", "");
-        const inst = await checkOwnership(ctx, instId);
-        if (!inst) return;
-        if (inst) {
-            inst.niche_data.funnel = ctx.message.text.trim();
-            await triggerRealEstateWizard(ctx, instId, 6);
-        }
-    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_RE_BIO_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_AI_CONF_RE_BIO_", "");
-        const inst = await checkOwnership(ctx, instId);
-        if (!inst) return;
-        if (inst) {
-            inst.niche_data.bio = ctx.message.text.trim();
-            await triggerRealEstateWizard(ctx, instId, 7);
-        }
-    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_MC_COMPANY_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_AI_CONF_MC_COMPANY_", "");
-        const inst = await checkOwnership(ctx, instId);
-        if (!inst) return;
-        if (inst) {
-            inst.niche_data.company_name = ctx.message.text.trim();
-            await triggerMedicalWizard(ctx, instId, 2);
-        }
-    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_MC_SPECIALTIES_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_AI_CONF_MC_SPECIALTIES_", "");
-        const inst = await checkOwnership(ctx, instId);
-        if (!inst) return;
-        if (inst) {
-            inst.niche_data.specialties = ctx.message.text.trim();
-            await triggerMedicalWizard(ctx, instId, 3);
-        }
-    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_MC_PLANS_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_AI_CONF_MC_PLANS_", "");
-        const inst = await checkOwnership(ctx, instId);
-        if (!inst) return;
-        if (inst) {
-            inst.niche_data.plans = ctx.message.text.trim();
-            await triggerMedicalWizard(ctx, instId, 4);
-        }
-    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_MC_BOOKING_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_AI_CONF_MC_BOOKING_", "");
-        const inst = await checkOwnership(ctx, instId);
-        if (!inst) return;
-        if (inst) {
-            inst.niche_data.booking_link = ctx.message.text.trim();
-            await triggerMedicalWizard(ctx, instId, 5);
-        }
-    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_MC_ADDRESS_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_AI_CONF_MC_ADDRESS_", "");
-        const inst = await checkOwnership(ctx, instId);
-        if (!inst) return;
-        if (inst) {
-            inst.niche_data.address = ctx.message.text.trim();
-            await triggerMedicalWizard(ctx, instId, 6);
-        }
-    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_MC_GREETING_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_AI_CONF_MC_GREETING_", "");
-        const inst = await checkOwnership(ctx, instId);
-        if (!inst) return;
-        if (inst) {
-            inst.niche_data.greeting = ctx.message.text.trim();
-            await triggerMedicalWizard(ctx, instId, 7);
-        }
-    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_MC_BIO_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_AI_CONF_MC_BIO_", "");
-        const inst = await checkOwnership(ctx, instId);
-        if (!inst) return;
-        if (inst) {
-            inst.niche_data.bio = ctx.message.text.trim();
-            await triggerMedicalWizard(ctx, instId, 8);
-        }
+    const name = ctx.message.text.trim().substring(0, 30);
+    const id = `wa_${ctx.chat.id}_${Date.now().toString().slice(-4)}`;
+    // WUZAPI: create user (admin)
+    const res = await callWuzapi("/admin/users", "POST", { name: id, token: id });
 
-        // --- GENERIC WIZARD ---
-    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_GN_COMPANY_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_AI_CONF_GN_COMPANY_", "");
-        const inst = await checkOwnership(ctx, instId);
-        if (!inst) return;
-        if (inst) {
-            inst.niche_data.company_name = ctx.message.text.trim();
-            await triggerGenericWizard(ctx, instId, 2);
-        }
-    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_GN_GOAL_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_AI_CONF_GN_GOAL_", "");
-        const inst = await checkOwnership(ctx, instId);
-        if (!inst) return;
-        if (inst) {
-            inst.niche_data.goal = ctx.message.text.trim();
-            await triggerGenericWizard(ctx, instId, 3);
-        }
-    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_GN_PRODUCTS_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_AI_CONF_GN_PRODUCTS_", "");
-        const inst = await checkOwnership(ctx, instId);
-        if (!inst) return;
-        if (inst) {
-            inst.niche_data.products = ctx.message.text.trim();
-            await triggerGenericWizard(ctx, instId, 4);
-        }
-    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_GN_RULES_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_AI_CONF_GN_RULES_", "");
-        const inst = await checkOwnership(ctx, instId);
-        if (!inst) return;
-        if (inst) {
-            inst.niche_data.rules = ctx.message.text.trim();
-            await triggerGenericWizard(ctx, instId, 5);
-        }
-    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_GN_GREETING_")) {
-        const instId = session.stage.replace("WA_AI_CONF_GN_GREETING_", "");
-        const inst = await checkOwnership(ctx, instId);
-        if (!inst) return;
-        if (inst) {
-            inst.niche_data.greeting = ctx.message.text.trim();
-            await triggerGenericWizard(ctx, instId, 6);
-        }
-    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_GN_BIO_")) {
-        const instId = session.stage.replace("WA_AI_CONF_GN_BIO_", "");
-        const inst = await checkOwnership(ctx, instId);
-        if (!inst) return;
-        if (inst) {
-            inst.niche_data.bio = ctx.message.text.trim();
-            await triggerGenericWizard(ctx, instId, 7);
-        }
-
-    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_RE_RULES_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_AI_CONF_RE_RULES_", "");
-        const inst = await checkOwnership(ctx, instId);
-        if (!inst) return;
-        if (inst) {
-            inst.niche_data.rules = ctx.message.text.trim();
-            session.stage = "READY";
-            await syncSession(ctx, session);
-
-            const styles = [
-                [Markup.button.callback("😊 Amigável e com Emojis", `wa_ai_re_style_${instId}_amigavel`)],
-                [Markup.button.callback("💼 Formal e Profissional", `wa_ai_re_style_${instId}_formal`)],
-                [Markup.button.callback("🎯 Direto e Persuasivo", `wa_ai_re_style_${instId}_direto`)],
-                [Markup.button.callback("😎 Descontraído", `wa_ai_re_style_${instId}_descontraido`)]
-            ];
-            const sent = await ctx.reply("🎭 *Passo 8/9: Estilo de Conversa*\n\nEscolha como a IA deve falar:", Markup.inlineKeyboard(styles));
-            session.last_ui_id = sent.message_id;
-            await syncSession(ctx, session);
-        }
-    } else if (session.stage && session.stage.startsWith("WA_AI_RESUME_TIME_VAL_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_AI_RESUME_TIME_VAL_", "");
-        const inst = await checkOwnership(ctx, instId);
-        if (!inst) return;
-        const val = parseFloat(ctx.message.text.trim().replace(",", "."));
-        if (isNaN(val) || val < 0.1) return ctx.reply("❌ Valor inválido. Use um número (ex: 0.5 para 30 min, 2 para 2 horas).");
-
-        inst.auto_resume_hours = val;
-        await syncSession(ctx, session);
-        const sent = await ctx.reply(`✅ *Tempo Atualizado:* A IA voltará a atender após **${val}h** de silêncio humano.`);
-        session.last_ui_id = sent.message_id;
-        await syncSession(ctx, session);
-        await renderAiMenu(ctx, instId);
+    if (res.success) {
+        session.whatsapp.instances.push({ id, name, status: "CONNECTING" });
         session.stage = "READY";
         await syncSession(ctx, session);
-        return;
 
-    } else if (session.stage && session.stage.startsWith("WA_WAITING_MASS_CONTACTS_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_WAITING_MASS_CONTACTS_", "");
-        if (!await checkOwnership(ctx, instId)) return;
+        // Auto-configurar webhook próprio para notificações de conexão
+        await callWuzapi("/webhook", "POST", { webhook: WEBHOOK_URL, events: ["All"] }, id);
 
-        const lines = ctx.message.text.split("\n").map(n => n.trim()).filter(n => n.length > 5);
-        const contacts = lines.map(line => {
-            if (line.includes(";")) {
-                const [name, phone] = line.split(";").map(p => p.trim());
-                return { name, phone: phone.replace(/\D/g, "") };
-            }
-            return { name: null, phone: line.replace(/\D/g, "") };
-        }).filter(c => c.phone.length >= 8);
-
-        if (contacts.length === 0) return ctx.reply("❌ Nenhum número válido encontrado.\n\nEnvie um por linha no formato `Telefone` ou `Nome;Telefone`.");
-
-        session.mass_contacts = contacts;
-        session.stage = `WA_WAITING_MASS_MSG_${instId}`;
-        await syncSession(ctx, session);
-
-        const prompt = `✅ *${contacts.length} contatos recebidos.*\n\n` +
-            `Agora, envie o **conteúdo** que deseja disparar. Você pode enviar:\n\n` +
-            `📝 *Apenas Texto:* Digite e envie normalmente.\n` +
-            `🖼️ *Foto / Vídeo / Documento:* Envie o arquivo. A legenda será usada como a mensagem.\n` +
-            `🎙️ *Áudio / Voz:* Envie o arquivo de áudio ou grave uma nota de voz.\n\n` +
-            `💡 *Anti-Spam:* Envie várias variações separadas por \`;;;\` (na legenda ou no texto).\n` +
-            `💡 *Personalização:* Use \`{{nome}}\` para o nome do contato.\n\n` +
-            `*Exemplo:* \`Oi {{nome}}!;;;Olá, como vai?;;;Fala {{nome}}!\``;
-
-        const sent = await ctx.reply(prompt, { parse_mode: "Markdown" });
-        session.last_ui_id = sent.message_id;
-        await syncSession(ctx, session);
-
-    } else if (session.stage && session.stage.startsWith("WA_WAITING_MASS_MSG_")) {
-        const instId = session.stage.replace("WA_WAITING_MASS_MSG_", "");
-        if (!await checkOwnership(ctx, instId)) return;
-
-        const rawMsg = ctx.message.text || "";
-        const variations = rawMsg.split(";;;").map(v => v.trim()).filter(v => v.length > 0);
-
-        session.mass_msgs = variations.length > 0 ? variations : [rawMsg];
-        session.mass_media_type = 'text';
-        session.stage = `WA_WAITING_MASS_DELAY_${instId}`;
-
-        // Limpar prompt anterior e msg enviada
-        if (session.last_ui_id) try { await ctx.telegram.deleteMessage(ctx.chat.id, session.last_ui_id); } catch (e) { }
-        try { await ctx.deleteMessage(); } catch (e) { }
-
-        const sent = await ctx.reply(`📝 ${session.mass_msgs.length} variações de mensagem salvas.\n\nAgora, defina o **intervalo de tempo** (delay) em segundos no formato \`MÍN-MÁX\`.\n\nExemplo: \`10-30\`.`);
-        session.last_ui_id = sent.message_id;
-        await syncSession(ctx, session);
-
-    } else if (session.stage && session.stage.startsWith("WA_WAITING_MASS_DELAY_")) {
-        const instId = session.stage.replace("WA_WAITING_MASS_DELAY_", "");
-        if (!await checkOwnership(ctx, instId)) return;
-        const parts = ctx.message.text.split("-");
-        const min = parseInt(parts[0]);
-        const max = parseInt(parts[1]);
-
-        if (isNaN(min) || isNaN(max) || min < 1) {
-            return ctx.reply("❌ Formato inválido. Use algo como `10-30`.");
-        }
-
-        session.temp_mass_min = min;
-        session.temp_mass_max = max;
-        await syncSession(ctx, session);
-
-        ctx.reply("🕒 *Quando deseja realizar o disparo?*", {
+        const sent = await ctx.reply(`✅ Instância *${name}* criada!`, {
             parse_mode: "Markdown",
             ...Markup.inlineKeyboard([
-                [Markup.button.callback("🚀 Enviar Agora", `wa_mass_now_${instId}`)],
-                [Markup.button.callback("📅 Agendar para depois", `wa_mass_sched_${instId}`)]
+                [Markup.button.callback("📷 QR Code", `wa_qr_${id}`)],
+                [Markup.button.callback("🔢 Conectar por Código", `wa_pair_${id}`)],
+                [Markup.button.callback("📱 Minhas Instâncias", "cmd_instancias")]
             ])
         });
-
-    } else if (session.stage && session.stage.startsWith("WA_WAITING_MASS_SCHEDULE_")) {
-        const instId = session.stage.replace("WA_WAITING_MASS_SCHEDULE_", "");
-        if (!await checkOwnership(ctx, instId)) return;
-        const dateStr = ctx.message.text.trim();
-
-        // Regex simples para DD/MM/AAAA HH:MM
-        const reg = /^(\d{2})\/(\d{2})\/(\d{4}) (\d{2}):(\d{2})$/;
-        const match = dateStr.match(reg);
-
-        if (!match) return ctx.reply("❌ Formato inválido. Use `DD/MM/AAAA HH:MM`.");
-
-        const [_, d, m, y, h, min] = match;
-        const scheduledFor = new Date(y, m - 1, d, h, min);
-
-        const now = new Date();
-        const serverTimeStr = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-        const serverDateStr = now.toLocaleDateString('pt-BR');
-
-        // Buffer de 4 horas para lidar com disparidade UTC (Servidor) vs BRT (Usuário)
-        const bufferNow = new Date();
-        bufferNow.setHours(bufferNow.getHours() - 4);
-
-        if (isNaN(scheduledFor.getTime()) || scheduledFor < bufferNow) {
-            return ctx.reply(`❌ *Data no passado!*\n\nHora no Servidor: \`${serverDateStr} ${serverTimeStr}\`\nSua entrada: \`${dateStr}\`\n\nPor favor, envie um horário futuro baseado no relógio do servidor acima.`, { parse_mode: "Markdown" });
-        }
-
-        const campaignData = {
-            contacts: session.mass_contacts,
-            messages: session.mass_msgs,
-            message: session.mass_msgs[0],
-            mediaType: session.mass_media_type,
-            mediaUrl: session.mass_media_url,
-            mediaData: session.mass_media_data,
-            fileName: session.mass_file_name,
-            minDelay: session.temp_mass_min,
-            maxDelay: session.temp_mass_max
-        };
-
-        const { error } = await supabase
-            .from('scheduled_campaigns')
-            .insert({
-                chat_id: String(ctx.chat.id),
-                inst_id: instId,
-                scheduled_for: scheduledFor.toISOString(),
-                campaign_data: campaignData,
-                status: 'PENDING'
-            });
-
-        if (error) {
-            log(`[SCHED ERR] ${error.message}`);
-            return ctx.reply("❌ Erro ao salvar agendamento no banco.");
-        }
-
-        session.stage = "READY";
+        session.last_ui_id = sent.message_id;
         await syncSession(ctx, session);
-
-        ctx.reply(`✅ *Disparo Agendado!*\n\n📅 Data: \`${dateStr}\`\n🚀 Instância: \`${instId}\`\n\nO sistema iniciará o envio automaticamente no horário marcado.`);
-
-    } else if (session.stage && session.stage.startsWith("WA_WAITING_PAIR_PHONE_")) {
-        const instId = session.stage.replace("WA_WAITING_PAIR_PHONE_", "");
-        if (!await checkOwnership(ctx, instId)) return;
-        const rawPhone = ctx.message.text.trim();
-        const phone = rawPhone.replace(/\D/g, ""); // Limpa qualquer caractere não numérico
-
-        if (phone.length < 10) {
-            return ctx.reply("❌ Número inválido. Por favor, envie o número com DDD e DDI (ex: 5511999998888).");
-        }
-
-        session.stage = "READY";
-        await syncSession(ctx, session);
-        ctx.reply("⏳ Solicitando código e disparando notificação...");
-
-        // Garante webhook para o aviso de sucesso chegar
-        await ensureWebhookSet(instId);
-
-        // Inicia polling proativo
-        startConnectionPolling(ctx.chat.id, instId);
-
-        // WUZAPI: connect first
-        await callWuzapi("/session/connect", "POST", { Immediate: true }, instId);
-        await new Promise(r => setTimeout(r, 1000));
-
-        // Envia o número LIMPO para disparar o Push Notification
-        const res = await callWuzapi("/session/pairphone", "POST", { Phone: phone }, instId);
-
-        if (res.success && res.data && res.data.LinkingCode) {
-            ctx.reply(`🔢 *Código de Pareamento:* \`${res.data.LinkingCode}\`\n\nConfira seu celular agora! Toque na notificação do WhatsApp e digite o código acima.`, {
-                parse_mode: "Markdown"
-            });
-        } else {
-            ctx.reply("❌ Erro ao gerar código. Tente usar o **QR Code**.");
-        }
-
-    } else if (session.stage && session.stage.startsWith("WA_WAITING_WEBHOOK_URL_")) {
-        const instId = session.stage.replace("WA_WAITING_WEBHOOK_URL_", "");
-        if (!await checkOwnership(ctx, instId)) return;
-        const url = ctx.message.text.trim();
-        session.stage = "READY";
-        await syncSession(ctx, session);
-
-        // Obter o UUID interno via status de sessão para garantir persistência no Admin
-        const statusRes = await callWuzapi("/session/status", "GET", null, instId);
-        const uuid = statusRes?.data?.id;
-
-        // 1. Configurar via endpoint padrão (Array)
-        const robustPayload = {
-            webhook: url,
-            WebhookURL: url,
-            events: ["All"],
-            subscribe: ["All"],
-            Active: true,
-            active: true
-        };
-        const res = await callWuzapi("/webhook", "PUT", robustPayload, instId);
-
-        if (uuid) {
-            const adminPayload = {
-                webhook: url,
-                events: "All",
-                subscribe: "All",
-                Active: true
-            };
-            await callWuzapi(`/admin/users/${uuid}`, "PUT", adminPayload);
-        }
-
-        if (res.success) {
-            ctx.reply("✅ URL do Webhook salva!");
-            await renderWebhookMenu(ctx, instId);
-        } else {
-            ctx.reply("❌ Erro ao configurar a URL do webhook na API.");
-        }
-    } else if (session.stage && session.stage.startsWith("WA_WAITING_AI_PROMPT_")) {
-        const instId = session.stage.replace("WA_WAITING_AI_PROMPT_", "");
-        const inst = await checkOwnership(ctx, instId);
-        if (!inst) return;
-        const prompt = ctx.message.text.trim();
-        inst.ai_prompt = prompt;
-        session.stage = "READY";
-        await syncSession(ctx, session);
-        ctx.reply("✅ *Instruções da IA salvas com sucesso!*", { parse_mode: "Markdown" });
-        await renderAiMenu(ctx, instId);
-    } else if (session.stage && session.stage.startsWith("WA_WAITING_FU_HOURS_")) {
-        const instId = session.stage.replace("WA_WAITING_FU_HOURS_", "");
-        if (!await checkOwnership(ctx, instId)) return;
-        const val = parseInt(ctx.message.text);
-        if (isNaN(val)) return ctx.reply("⚠️ Por favor, envie um número válido.");
-
-        const inst = session.whatsapp.instances.find(i => i.id === instId);
-        if (inst) {
-            inst.fu_hours = val;
-            session.stage = "READY";
-            await syncSession(ctx, session);
-            ctx.reply(`✅ Tempo de espera definido para **${val} horas**.`);
-            await renderFollowupMenu(ctx, instId);
-        }
-    } else if (session.stage && session.stage.startsWith("WA_WAITING_FU_MAX_")) {
-        const instId = session.stage.replace("WA_WAITING_FU_MAX_", "");
-        if (!await checkOwnership(ctx, instId)) return;
-        const val = parseInt(ctx.message.text);
-        if (isNaN(val)) return ctx.reply("⚠️ Por favor, envie um número válido.");
-
-        const inst = session.whatsapp.instances.find(i => i.id === instId);
-        if (inst) {
-            inst.fu_max = val;
-            session.stage = "READY";
-            await syncSession(ctx, session);
-            ctx.reply(`✅ Máximo de lembretes definido para **${val}**.`);
-            await renderFollowupMenu(ctx, instId);
-        }
-    } else if (session.stage && session.stage.startsWith("WA_WAITING_FU_MSGS_")) {
-        const instId = session.stage.replace("WA_WAITING_FU_MSGS_", "");
-        if (!await checkOwnership(ctx, instId)) return;
-        const msgs = ctx.message.text.split(";").map(m => m.trim()).filter(m => m.length > 0);
-        if (msgs.length === 0) return ctx.reply("⚠️ Nenhuma mensagem válida detectada. Use `;` para separar.");
-
-        const inst = session.whatsapp.instances.find(i => i.id === instId);
-        if (inst) {
-            inst.fu_msgs = msgs;
-            session.stage = "READY";
-            await syncSession(ctx, session);
-            ctx.reply(`✅ **${msgs.length} mensagens** de follow-up salvas.`);
-            await renderFollowupMenu(ctx, instId);
-        }
+    } else {
+        ctx.reply(`❌ Erro ao criar na API: ${res.error || "Tente novamente mais tarde"}`);
     }
+
+} else if (session.stage && session.stage.startsWith("WA_WIZ_NAME_")) {
+    await cleanup();
+    const instId = session.stage.replace("WA_WIZ_NAME_", "");
+    if (!await checkOwnership(ctx, instId)) return;
+    session.wiz_data = { name: ctx.message.text.trim() };
+    session.stage = `WA_WIZ_PRODUCT_${instId}`;
+    await syncSession(ctx, session);
+    const sent = await ctx.reply("📦 *Passo 2/3: Produto/Serviço*\n\nLegal! Agora me conte: o que você vende ou qual serviço sua empresa oferece?", { parse_mode: "Markdown" });
+    session.last_ui_id = sent.message_id;
+    await syncSession(ctx, session);
+
+} else if (session.stage && session.stage.startsWith("WA_WIZ_PRODUCT_")) {
+    await cleanup();
+    const instId = session.stage.replace("WA_WIZ_PRODUCT_", "");
+    if (!await checkOwnership(ctx, instId)) return;
+    session.wiz_data.product = ctx.message.text.trim();
+    session.stage = `WA_WIZ_GOAL_${instId}`;
+    await syncSession(ctx, session);
+    const sent = await ctx.reply("🎯 *Passo 3/3: Objetivo*\n\nQual o objetivo principal deste WhatsApp? (Ex: Tirar dúvidas, agendar consultoria, vender produtos, suporte técnico)", { parse_mode: "Markdown" });
+    session.last_ui_id = sent.message_id;
+    await syncSession(ctx, session);
+
+} else if (session.stage && session.stage.startsWith("WA_WIZ_GOAL_")) {
+    await cleanup();
+    const instId = session.stage.replace("WA_WIZ_GOAL_", "");
+    if (!await checkOwnership(ctx, instId)) return;
+    const goal = ctx.message.text.trim();
+    const { name, product } = session.wiz_data;
+
+    const generatedPrompt = `Você é o assistente virtual da empresa ${name}. ` +
+        `Seu foco principal é ${product}. ` +
+        `Seu objetivo no atendimento é ${goal}. ` +
+        `Sempre use um tom profissional, amigável e prestativo. ` +
+        `Responda de forma clara e objetiva.`;
+
+    // Salvar na instância
+    const inst = session.whatsapp.instances.find(i => i.id === instId);
+    if (inst) {
+        inst.ai_prompt = generatedPrompt;
+        inst.ai_enabled = true; // Ativar por padrão ao usar o mágico
+        await syncSession(ctx, session);
+    }
+    try { ctx.deleteMessage(); } catch (e) { } // Limpar resposta do usuário
+    session.stage = "READY";
+    delete session.wiz_data;
+    await syncSession(ctx, session);
+    ctx.reply("✨ *Configuração Concluída!*\n\nSeu prompt foi gerado e a IA foi ativada automaticamente.\n\n" +
+        `📝 *Prompt Gerado:* \n\`${generatedPrompt}\``, { parse_mode: "Markdown" });
+    await renderAiMenu(ctx, instId);
+} else if (session.stage && session.stage.startsWith("WA_BROKER_WAIT_NAME_")) {
+    const instId = session.stage.replace("WA_BROKER_WAIT_NAME_", "");
+    if (!await checkOwnership(ctx, instId)) return;
+    // Limite de corretores removido (Liberado)
+    const name = ctx.message.text.trim();
+    session.tempBroker = { name };
+    session.stage = `WA_BROKER_WAIT_PHONE_${instId}`;
+    await syncSession(ctx, session);
+    return ctx.reply(`Ótimo! Agora digite o **WHATSAPP** do corretor ${name} (ex: 5511999999999):`);
+
+} else if (session.stage && session.stage.startsWith("WA_BROKER_WAIT_PHONE_")) {
+    const instId = session.stage.replace("WA_BROKER_WAIT_PHONE_", "");
+    if (!await checkOwnership(ctx, instId)) return;
+    let phone = ctx.message.text.trim().replace(/\D/g, "");
+    if (!phone.includes("@")) phone += "@s.whatsapp.net";
+
+    const { error } = await supabase.from("real_estate_brokers").insert({
+        name: session.tempBroker.name,
+        phone: phone,
+        tg_chat_id: String(ctx.chat.id)
+    });
+
+    if (error) {
+        ctx.reply("❌ Erro ao salvar corretor.");
+    } else {
+        ctx.reply(`✅ Corretor **${session.tempBroker.name}** cadastrado!`);
+        session.stage = "READY";
+        delete session.tempBroker;
+        await syncSession(ctx, session);
+        await renderBrokersMenu(ctx, instId);
+    }
+} else if (session.stage && session.stage.startsWith("WA_AI_CONF_RE_COMPANY_")) {
+    await cleanup();
+    const instId = session.stage.replace("WA_AI_CONF_RE_COMPANY_", "");
+    const inst = await checkOwnership(ctx, instId);
+    if (!inst) return;
+    if (inst) {
+        inst.niche_data.company_name = ctx.message.text.trim();
+        await triggerRealEstateWizard(ctx, instId, 2);
+    }
+} else if (session.stage && session.stage.startsWith("WA_AI_CONF_RE_GREETING_")) {
+    await cleanup();
+    const instId = session.stage.replace("WA_AI_CONF_RE_GREETING_", "");
+    const inst = await checkOwnership(ctx, instId);
+    if (!inst) return;
+    if (inst) {
+        inst.niche_data.greeting = ctx.message.text.trim();
+        await triggerRealEstateWizard(ctx, instId, 3);
+    }
+} else if (session.stage && session.stage.startsWith("WA_AI_CONF_RE_ADDRESS_")) {
+    await cleanup();
+    const instId = session.stage.replace("WA_AI_CONF_RE_ADDRESS_", "");
+    const inst = await checkOwnership(ctx, instId);
+    if (!inst) return;
+    if (inst) {
+        inst.niche_data.address = ctx.message.text.trim();
+        await triggerRealEstateWizard(ctx, instId, 4);
+    }
+} else if (session.stage && session.stage.startsWith("WA_AI_CONF_RE_PRODUCT_")) {
+    await cleanup();
+    const instId = session.stage.replace("WA_AI_CONF_RE_PRODUCT_", "");
+    const inst = await checkOwnership(ctx, instId);
+    if (!inst) return;
+    if (inst) {
+        inst.niche_data.products = ctx.message.text.trim();
+        await triggerRealEstateWizard(ctx, instId, 5);
+    }
+} else if (session.stage && session.stage.startsWith("WA_AI_CONF_RE_FUNNEL_")) {
+    await cleanup();
+    const instId = session.stage.replace("WA_AI_CONF_RE_FUNNEL_", "");
+    const inst = await checkOwnership(ctx, instId);
+    if (!inst) return;
+    if (inst) {
+        inst.niche_data.funnel = ctx.message.text.trim();
+        await triggerRealEstateWizard(ctx, instId, 6);
+    }
+} else if (session.stage && session.stage.startsWith("WA_AI_CONF_RE_BIO_")) {
+    await cleanup();
+    const instId = session.stage.replace("WA_AI_CONF_RE_BIO_", "");
+    const inst = await checkOwnership(ctx, instId);
+    if (!inst) return;
+    if (inst) {
+        inst.niche_data.bio = ctx.message.text.trim();
+        await triggerRealEstateWizard(ctx, instId, 7);
+    }
+} else if (session.stage && session.stage.startsWith("WA_AI_CONF_MC_COMPANY_")) {
+    await cleanup();
+    const instId = session.stage.replace("WA_AI_CONF_MC_COMPANY_", "");
+    const inst = await checkOwnership(ctx, instId);
+    if (!inst) return;
+    if (inst) {
+        inst.niche_data.company_name = ctx.message.text.trim();
+        await triggerMedicalWizard(ctx, instId, 2);
+    }
+} else if (session.stage && session.stage.startsWith("WA_AI_CONF_MC_SPECIALTIES_")) {
+    await cleanup();
+    const instId = session.stage.replace("WA_AI_CONF_MC_SPECIALTIES_", "");
+    const inst = await checkOwnership(ctx, instId);
+    if (!inst) return;
+    if (inst) {
+        inst.niche_data.specialties = ctx.message.text.trim();
+        await triggerMedicalWizard(ctx, instId, 3);
+    }
+} else if (session.stage && session.stage.startsWith("WA_AI_CONF_MC_PLANS_")) {
+    await cleanup();
+    const instId = session.stage.replace("WA_AI_CONF_MC_PLANS_", "");
+    const inst = await checkOwnership(ctx, instId);
+    if (!inst) return;
+    if (inst) {
+        inst.niche_data.plans = ctx.message.text.trim();
+        await triggerMedicalWizard(ctx, instId, 4);
+    }
+} else if (session.stage && session.stage.startsWith("WA_AI_CONF_MC_BOOKING_")) {
+    await cleanup();
+    const instId = session.stage.replace("WA_AI_CONF_MC_BOOKING_", "");
+    const inst = await checkOwnership(ctx, instId);
+    if (!inst) return;
+    if (inst) {
+        inst.niche_data.booking_link = ctx.message.text.trim();
+        await triggerMedicalWizard(ctx, instId, 5);
+    }
+} else if (session.stage && session.stage.startsWith("WA_AI_CONF_MC_ADDRESS_")) {
+    await cleanup();
+    const instId = session.stage.replace("WA_AI_CONF_MC_ADDRESS_", "");
+    const inst = await checkOwnership(ctx, instId);
+    if (!inst) return;
+    if (inst) {
+        inst.niche_data.address = ctx.message.text.trim();
+        await triggerMedicalWizard(ctx, instId, 6);
+    }
+} else if (session.stage && session.stage.startsWith("WA_AI_CONF_MC_GREETING_")) {
+    await cleanup();
+    const instId = session.stage.replace("WA_AI_CONF_MC_GREETING_", "");
+    const inst = await checkOwnership(ctx, instId);
+    if (!inst) return;
+    if (inst) {
+        inst.niche_data.greeting = ctx.message.text.trim();
+        await triggerMedicalWizard(ctx, instId, 7);
+    }
+} else if (session.stage && session.stage.startsWith("WA_AI_CONF_MC_BIO_")) {
+    await cleanup();
+    const instId = session.stage.replace("WA_AI_CONF_MC_BIO_", "");
+    const inst = await checkOwnership(ctx, instId);
+    if (!inst) return;
+    if (inst) {
+        inst.niche_data.bio = ctx.message.text.trim();
+        await triggerMedicalWizard(ctx, instId, 8);
+    }
+
+    // --- GENERIC WIZARD ---
+} else if (session.stage && session.stage.startsWith("WA_AI_CONF_GN_COMPANY_")) {
+    await cleanup();
+    const instId = session.stage.replace("WA_AI_CONF_GN_COMPANY_", "");
+    const inst = await checkOwnership(ctx, instId);
+    if (!inst) return;
+    if (inst) {
+        inst.niche_data.company_name = ctx.message.text.trim();
+        await triggerGenericWizard(ctx, instId, 2);
+    }
+} else if (session.stage && session.stage.startsWith("WA_AI_CONF_GN_GOAL_")) {
+    await cleanup();
+    const instId = session.stage.replace("WA_AI_CONF_GN_GOAL_", "");
+    const inst = await checkOwnership(ctx, instId);
+    if (!inst) return;
+    if (inst) {
+        inst.niche_data.goal = ctx.message.text.trim();
+        await triggerGenericWizard(ctx, instId, 3);
+    }
+} else if (session.stage && session.stage.startsWith("WA_AI_CONF_GN_PRODUCTS_")) {
+    await cleanup();
+    const instId = session.stage.replace("WA_AI_CONF_GN_PRODUCTS_", "");
+    const inst = await checkOwnership(ctx, instId);
+    if (!inst) return;
+    if (inst) {
+        inst.niche_data.products = ctx.message.text.trim();
+        await triggerGenericWizard(ctx, instId, 4);
+    }
+} else if (session.stage && session.stage.startsWith("WA_AI_CONF_GN_RULES_")) {
+    await cleanup();
+    const instId = session.stage.replace("WA_AI_CONF_GN_RULES_", "");
+    const inst = await checkOwnership(ctx, instId);
+    if (!inst) return;
+    if (inst) {
+        inst.niche_data.rules = ctx.message.text.trim();
+        await triggerGenericWizard(ctx, instId, 5);
+    }
+} else if (session.stage && session.stage.startsWith("WA_AI_CONF_GN_GREETING_")) {
+    const instId = session.stage.replace("WA_AI_CONF_GN_GREETING_", "");
+    const inst = await checkOwnership(ctx, instId);
+    if (!inst) return;
+    if (inst) {
+        inst.niche_data.greeting = ctx.message.text.trim();
+        await triggerGenericWizard(ctx, instId, 6);
+    }
+} else if (session.stage && session.stage.startsWith("WA_AI_CONF_GN_BIO_")) {
+    const instId = session.stage.replace("WA_AI_CONF_GN_BIO_", "");
+    const inst = await checkOwnership(ctx, instId);
+    if (!inst) return;
+    if (inst) {
+        inst.niche_data.bio = ctx.message.text.trim();
+        await triggerGenericWizard(ctx, instId, 7);
+    }
+
+} else if (session.stage && session.stage.startsWith("WA_AI_CONF_RE_RULES_")) {
+    await cleanup();
+    const instId = session.stage.replace("WA_AI_CONF_RE_RULES_", "");
+    const inst = await checkOwnership(ctx, instId);
+    if (!inst) return;
+    if (inst) {
+        inst.niche_data.rules = ctx.message.text.trim();
+        session.stage = "READY";
+        await syncSession(ctx, session);
+
+        const styles = [
+            [Markup.button.callback("😊 Amigável e com Emojis", `wa_ai_re_style_${instId}_amigavel`)],
+            [Markup.button.callback("💼 Formal e Profissional", `wa_ai_re_style_${instId}_formal`)],
+            [Markup.button.callback("🎯 Direto e Persuasivo", `wa_ai_re_style_${instId}_direto`)],
+            [Markup.button.callback("😎 Descontraído", `wa_ai_re_style_${instId}_descontraido`)]
+        ];
+        const sent = await ctx.reply("🎭 *Passo 8/9: Estilo de Conversa*\n\nEscolha como a IA deve falar:", Markup.inlineKeyboard(styles));
+        session.last_ui_id = sent.message_id;
+        await syncSession(ctx, session);
+    }
+} else if (session.stage && session.stage.startsWith("WA_AI_RESUME_TIME_VAL_")) {
+    await cleanup();
+    const instId = session.stage.replace("WA_AI_RESUME_TIME_VAL_", "");
+    const inst = await checkOwnership(ctx, instId);
+    if (!inst) return;
+    const val = parseFloat(ctx.message.text.trim().replace(",", "."));
+    if (isNaN(val) || val < 0.1) return ctx.reply("❌ Valor inválido. Use um número (ex: 0.5 para 30 min, 2 para 2 horas).");
+
+    inst.auto_resume_hours = val;
+    await syncSession(ctx, session);
+    const sent = await ctx.reply(`✅ *Tempo Atualizado:* A IA voltará a atender após **${val}h** de silêncio humano.`);
+    session.last_ui_id = sent.message_id;
+    await syncSession(ctx, session);
+    await renderAiMenu(ctx, instId);
+    session.stage = "READY";
+    await syncSession(ctx, session);
+    return;
+
+} else if (session.stage && session.stage.startsWith("WA_WAITING_MASS_CONTACTS_")) {
+    await cleanup();
+    const instId = session.stage.replace("WA_WAITING_MASS_CONTACTS_", "");
+    if (!await checkOwnership(ctx, instId)) return;
+
+    const lines = ctx.message.text.split("\n").map(n => n.trim()).filter(n => n.length > 5);
+    const contacts = lines.map(line => {
+        if (line.includes(";")) {
+            const [name, phone] = line.split(";").map(p => p.trim());
+            return { name, phone: phone.replace(/\D/g, "") };
+        }
+        return { name: null, phone: line.replace(/\D/g, "") };
+    }).filter(c => c.phone.length >= 8);
+
+    if (contacts.length === 0) return ctx.reply("❌ Nenhum número válido encontrado.\n\nEnvie um por linha no formato `Telefone` ou `Nome;Telefone`.");
+
+    session.mass_contacts = contacts;
+    session.stage = `WA_WAITING_MASS_MSG_${instId}`;
+    await syncSession(ctx, session);
+
+    const prompt = `✅ *${contacts.length} contatos recebidos.*\n\n` +
+        `Agora, envie o **conteúdo** que deseja disparar. Você pode enviar:\n\n` +
+        `📝 *Apenas Texto:* Digite e envie normalmente.\n` +
+        `🖼️ *Foto / Vídeo / Documento:* Envie o arquivo. A legenda será usada como a mensagem.\n` +
+        `🎙️ *Áudio / Voz:* Envie o arquivo de áudio ou grave uma nota de voz.\n\n` +
+        `💡 *Anti-Spam:* Envie várias variações separadas por \`;;;\` (na legenda ou no texto).\n` +
+        `💡 *Personalização:* Use \`{{nome}}\` para o nome do contato.\n\n` +
+        `*Exemplo:* \`Oi {{nome}}!;;;Olá, como vai?;;;Fala {{nome}}!\``;
+
+    const sent = await ctx.reply(prompt, { parse_mode: "Markdown" });
+    session.last_ui_id = sent.message_id;
+    await syncSession(ctx, session);
+
+} else if (session.stage && session.stage.startsWith("WA_WAITING_MASS_MSG_")) {
+    const instId = session.stage.replace("WA_WAITING_MASS_MSG_", "");
+    if (!await checkOwnership(ctx, instId)) return;
+
+    const rawMsg = ctx.message.text || "";
+    const variations = rawMsg.split(";;;").map(v => v.trim()).filter(v => v.length > 0);
+
+    session.mass_msgs = variations.length > 0 ? variations : [rawMsg];
+    session.mass_media_type = 'text';
+    session.stage = `WA_WAITING_MASS_DELAY_${instId}`;
+
+    // Limpar prompt anterior e msg enviada
+    if (session.last_ui_id) try { await ctx.telegram.deleteMessage(ctx.chat.id, session.last_ui_id); } catch (e) { }
+    try { await ctx.deleteMessage(); } catch (e) { }
+
+    const sent = await ctx.reply(`📝 ${session.mass_msgs.length} variações de mensagem salvas.\n\nAgora, defina o **intervalo de tempo** (delay) em segundos no formato \`MÍN-MÁX\`.\n\nExemplo: \`10-30\`.`);
+    session.last_ui_id = sent.message_id;
+    await syncSession(ctx, session);
+
+} else if (session.stage && session.stage.startsWith("WA_WAITING_MASS_DELAY_")) {
+    const instId = session.stage.replace("WA_WAITING_MASS_DELAY_", "");
+    if (!await checkOwnership(ctx, instId)) return;
+    const parts = ctx.message.text.split("-");
+    const min = parseInt(parts[0]);
+    const max = parseInt(parts[1]);
+
+    if (isNaN(min) || isNaN(max) || min < 1) {
+        return ctx.reply("❌ Formato inválido. Use algo como `10-30`.");
+    }
+
+    session.temp_mass_min = min;
+    session.temp_mass_max = max;
+    await syncSession(ctx, session);
+
+    ctx.reply("🕒 *Quando deseja realizar o disparo?*", {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([
+            [Markup.button.callback("🚀 Enviar Agora", `wa_mass_now_${instId}`)],
+            [Markup.button.callback("📅 Agendar para depois", `wa_mass_sched_${instId}`)]
+        ])
+    });
+
+} else if (session.stage && session.stage.startsWith("WA_WAITING_MASS_SCHEDULE_")) {
+    const instId = session.stage.replace("WA_WAITING_MASS_SCHEDULE_", "");
+    if (!await checkOwnership(ctx, instId)) return;
+    const dateStr = ctx.message.text.trim();
+
+    // Regex simples para DD/MM/AAAA HH:MM
+    const reg = /^(\d{2})\/(\d{2})\/(\d{4}) (\d{2}):(\d{2})$/;
+    const match = dateStr.match(reg);
+
+    if (!match) return ctx.reply("❌ Formato inválido. Use `DD/MM/AAAA HH:MM`.");
+
+    const [_, d, m, y, h, min] = match;
+    const scheduledFor = new Date(y, m - 1, d, h, min);
+
+    const now = new Date();
+    const serverTimeStr = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    const serverDateStr = now.toLocaleDateString('pt-BR');
+
+    // Buffer de 4 horas para lidar com disparidade UTC (Servidor) vs BRT (Usuário)
+    const bufferNow = new Date();
+    bufferNow.setHours(bufferNow.getHours() - 4);
+
+    if (isNaN(scheduledFor.getTime()) || scheduledFor < bufferNow) {
+        return ctx.reply(`❌ *Data no passado!*\n\nHora no Servidor: \`${serverDateStr} ${serverTimeStr}\`\nSua entrada: \`${dateStr}\`\n\nPor favor, envie um horário futuro baseado no relógio do servidor acima.`, { parse_mode: "Markdown" });
+    }
+
+    const campaignData = {
+        contacts: session.mass_contacts,
+        messages: session.mass_msgs,
+        message: session.mass_msgs[0],
+        mediaType: session.mass_media_type,
+        mediaUrl: session.mass_media_url,
+        mediaData: session.mass_media_data,
+        fileName: session.mass_file_name,
+        minDelay: session.temp_mass_min,
+        maxDelay: session.temp_mass_max
+    };
+
+    const { error } = await supabase
+        .from('scheduled_campaigns')
+        .insert({
+            chat_id: String(ctx.chat.id),
+            inst_id: instId,
+            scheduled_for: scheduledFor.toISOString(),
+            campaign_data: campaignData,
+            status: 'PENDING'
+        });
+
+    if (error) {
+        log(`[SCHED ERR] ${error.message}`);
+        return ctx.reply("❌ Erro ao salvar agendamento no banco.");
+    }
+
+    session.stage = "READY";
+    await syncSession(ctx, session);
+
+    ctx.reply(`✅ *Disparo Agendado!*\n\n📅 Data: \`${dateStr}\`\n🚀 Instância: \`${instId}\`\n\nO sistema iniciará o envio automaticamente no horário marcado.`);
+
+} else if (session.stage && session.stage.startsWith("WA_WAITING_PAIR_PHONE_")) {
+    const instId = session.stage.replace("WA_WAITING_PAIR_PHONE_", "");
+    if (!await checkOwnership(ctx, instId)) return;
+    const rawPhone = ctx.message.text.trim();
+    const phone = rawPhone.replace(/\D/g, ""); // Limpa qualquer caractere não numérico
+
+    if (phone.length < 10) {
+        return ctx.reply("❌ Número inválido. Por favor, envie o número com DDD e DDI (ex: 5511999998888).");
+    }
+
+    session.stage = "READY";
+    await syncSession(ctx, session);
+    ctx.reply("⏳ Solicitando código e disparando notificação...");
+
+    // Garante webhook para o aviso de sucesso chegar
+    await ensureWebhookSet(instId);
+
+    // Inicia polling proativo
+    startConnectionPolling(ctx.chat.id, instId);
+
+    // WUZAPI: connect first
+    await callWuzapi("/session/connect", "POST", { Immediate: true }, instId);
+    await new Promise(r => setTimeout(r, 1000));
+
+    // Envia o número LIMPO para disparar o Push Notification
+    const res = await callWuzapi("/session/pairphone", "POST", { Phone: phone }, instId);
+
+    if (res.success && res.data && res.data.LinkingCode) {
+        ctx.reply(`🔢 *Código de Pareamento:* \`${res.data.LinkingCode}\`\n\nConfira seu celular agora! Toque na notificação do WhatsApp e digite o código acima.`, {
+            parse_mode: "Markdown"
+        });
+    } else {
+        ctx.reply("❌ Erro ao gerar código. Tente usar o **QR Code**.");
+    }
+
+} else if (session.stage && session.stage.startsWith("WA_WAITING_WEBHOOK_URL_")) {
+    const instId = session.stage.replace("WA_WAITING_WEBHOOK_URL_", "");
+    if (!await checkOwnership(ctx, instId)) return;
+    const url = ctx.message.text.trim();
+    session.stage = "READY";
+    await syncSession(ctx, session);
+
+    // Obter o UUID interno via status de sessão para garantir persistência no Admin
+    const statusRes = await callWuzapi("/session/status", "GET", null, instId);
+    const uuid = statusRes?.data?.id;
+
+    // 1. Configurar via endpoint padrão (Array)
+    const robustPayload = {
+        webhook: url,
+        WebhookURL: url,
+        events: ["All"],
+        subscribe: ["All"],
+        Active: true,
+        active: true
+    };
+    const res = await callWuzapi("/webhook", "PUT", robustPayload, instId);
+
+    if (uuid) {
+        const adminPayload = {
+            webhook: url,
+            events: "All",
+            subscribe: "All",
+            Active: true
+        };
+        await callWuzapi(`/admin/users/${uuid}`, "PUT", adminPayload);
+    }
+
+    if (res.success) {
+        ctx.reply("✅ URL do Webhook salva!");
+        await renderWebhookMenu(ctx, instId);
+    } else {
+        ctx.reply("❌ Erro ao configurar a URL do webhook na API.");
+    }
+} else if (session.stage && session.stage.startsWith("WA_WAITING_AI_PROMPT_")) {
+    const instId = session.stage.replace("WA_WAITING_AI_PROMPT_", "");
+    const inst = await checkOwnership(ctx, instId);
+    if (!inst) return;
+    const prompt = ctx.message.text.trim();
+    inst.ai_prompt = prompt;
+    session.stage = "READY";
+    await syncSession(ctx, session);
+    ctx.reply("✅ *Instruções da IA salvas com sucesso!*", { parse_mode: "Markdown" });
+    await renderAiMenu(ctx, instId);
+} else if (session.stage && session.stage.startsWith("WA_WAITING_FU_HOURS_")) {
+    const instId = session.stage.replace("WA_WAITING_FU_HOURS_", "");
+    if (!await checkOwnership(ctx, instId)) return;
+    const val = parseInt(ctx.message.text);
+    if (isNaN(val)) return ctx.reply("⚠️ Por favor, envie um número válido.");
+
+    const inst = session.whatsapp.instances.find(i => i.id === instId);
+    if (inst) {
+        inst.fu_hours = val;
+        session.stage = "READY";
+        await syncSession(ctx, session);
+        ctx.reply(`✅ Tempo de espera definido para **${val} horas**.`);
+        await renderFollowupMenu(ctx, instId);
+    }
+} else if (session.stage && session.stage.startsWith("WA_WAITING_FU_MAX_")) {
+    const instId = session.stage.replace("WA_WAITING_FU_MAX_", "");
+    if (!await checkOwnership(ctx, instId)) return;
+    const val = parseInt(ctx.message.text);
+    if (isNaN(val)) return ctx.reply("⚠️ Por favor, envie um número válido.");
+
+    const inst = session.whatsapp.instances.find(i => i.id === instId);
+    if (inst) {
+        inst.fu_max = val;
+        session.stage = "READY";
+        await syncSession(ctx, session);
+        ctx.reply(`✅ Máximo de lembretes definido para **${val}**.`);
+        await renderFollowupMenu(ctx, instId);
+    }
+} else if (session.stage && session.stage.startsWith("WA_WAITING_FU_MSGS_")) {
+    const instId = session.stage.replace("WA_WAITING_FU_MSGS_", "");
+    if (!await checkOwnership(ctx, instId)) return;
+    const msgs = ctx.message.text.split(";").map(m => m.trim()).filter(m => m.length > 0);
+    if (msgs.length === 0) return ctx.reply("⚠️ Nenhuma mensagem válida detectada. Use `;` para separar.");
+
+    const inst = session.whatsapp.instances.find(i => i.id === instId);
+    if (inst) {
+        inst.fu_msgs = msgs;
+        session.stage = "READY";
+        await syncSession(ctx, session);
+        ctx.reply(`✅ **${msgs.length} mensagens** de follow-up salvas.`);
+        await renderFollowupMenu(ctx, instId);
+    }
+}
 });
 
 // Helper para processar mídias de massa
