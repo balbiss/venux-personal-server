@@ -137,7 +137,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.53-UI";
+const SERVER_VERSION = "1.1.54-UI";
 
 async function safeEdit(ctx, text, extra = {}) {
     const session = await getSession(ctx.chat.id);
@@ -368,6 +368,10 @@ async function renderAdminPanel(ctx) {
     ];
     await safeEdit(ctx, text, Markup.inlineKeyboard(buttons));
 }
+
+bot.command("id", (ctx) => {
+    ctx.reply(`🆔 *Seu ID:* \`${ctx.chat.id}\``, { parse_mode: "Markdown" });
+});
 
 bot.command("admin", async (ctx) => {
     const config = await getSystemConfig();
