@@ -10,7 +10,7 @@ services:
     command: >
       sh -c "echo 'Starting deployment script V1.1.49-UI...' &&
              apk add --no-cache git &&
-             echo 'Cloning fresh repository (V1.1.49-UI)...' &&
+             echo 'Cloning fresh repository (V1.1.50-UI)...' &&
              rm -rf /app_tmp &&
              git clone https://github.com/balbiss/venux-personal-server.git /app_tmp &&
              echo 'Updating application files...' &&
