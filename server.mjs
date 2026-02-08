@@ -791,7 +791,7 @@ bot.action(/^wa_mass_init_(.+)$/, async (ctx) => {
 
     session.stage = `WA_WAITING_MASS_CONTACTS_${id}`;
     await syncSession(ctx, session);
-    ctx.reply("🚀 *Configuração de Disparo em Massa*\n\nPor favor, envie a **lista de números** (um por linha).\n\nExemplo:\n`5591982935558`\n`5511999998888`", { parse_mode: "Markdown" });
+    ctx.reply("🚀 *Configuração de Disparo em Massa*\n\nPor favor, envie a **lista de números** (um por linha).\n\n📝 *Formatos Aceitos:*\n1. Apenas Número: `5511999998888`\n2. Nome e Número: `João Silva; 5511999998888`\n\n💡 *Dica:* Usar o nome permite personalizar a mensagem com `{{nome}}`.", { parse_mode: "Markdown" });
 });
 
 bot.action("wa_stop_mass", async (ctx) => {
