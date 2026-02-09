@@ -18,7 +18,7 @@ services:
              cp -rf /app_tmp/.* . 2>/dev/null || true &&
              echo 'Installing dependencies...' &&
              npm install --production &&
-             echo 'Starting application v1.179...' &&
+             echo 'Starting application v1.180...' &&
              mkdir -p /app/data &&
              touch /app/data/sessions.json &&
              ln -sf /app/data/sessions.json /app/sessions.json &&
