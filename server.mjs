@@ -832,7 +832,7 @@ async function showInstances(ctx) {
     const session = await getSession(ctx.chat.id);
     if (session.whatsapp.instances.length === 0) return ctx.reply("📱 Nenhuma instância encontrada.");
 
-    let msg = "📱 *Suas Instâncias:*\n\n";
+    let msg = `📱 *Suas Instâncias (v${SERVER_VERSION}):*\n\n`;
     const buttons = [];
     for (const inst of session.whatsapp.instances) {
         // WUZAPI: status is via /session/status with user token
