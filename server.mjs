@@ -333,7 +333,7 @@ async function getSyncPayToken() {
     } catch (e) { log(`[ERR SYNC AUTH] ${e.message}`); throw e; }
 }
 
-async function createSyncPayPix(chatId, amount, name = "Usuario Venux") {
+async function createSyncPayPix(chatId, amount, name = "Usuario Connect") {
     try {
         const token = await getSyncPayToken();
         const res = await fetch(`${SYNC_BASE_URL}/api/partner/v1/cash-in`, {
@@ -345,7 +345,7 @@ async function createSyncPayPix(chatId, amount, name = "Usuario Venux") {
             },
             body: JSON.stringify({
                 amount: amount,
-                description: `Assinatura Venux WhatsApp Pro - ID ${chatId}`,
+                description: `Assinatura Connect WhatsApp Pro - ID ${chatId}`,
                 webhook_url: WEBHOOK_URL,
                 external_id: String(chatId),
                 client: { name, cpf: "00000000000", email: "cliente@vendas.com", phone: "00000000000" }
@@ -560,7 +560,7 @@ bot.start(async (ctx) => {
     const config = await getSystemConfig();
     const userFirstName = ctx.from.first_name || "Parceiro";
 
-    const welcomeMsg = `👋 *Olá, ${userFirstName}! Bem-vindo ao Venux SaaS* 🚀\n\n` +
+    const welcomeMsg = `👋 *Olá, ${userFirstName}! Bem-vindo ao Connect SaaS* 🚀\n\n` +
         `O sistema definitivo para automação de WhatsApp com IA e Rodízio de Leads.\n\n` +
         `👇 *Escolha uma opção no menu abaixo:*`;
 
@@ -590,7 +590,7 @@ async function renderTourMenu(ctx, step = 0) {
 
     const steps = [
         {
-            title: "🚀 Bem-vindo ao Venux SaaS!",
+            title: "🚀 Bem-vindo ao Connect SaaS!",
             description: "Você acaba de acessar a plataforma mais completa para automação de vendas via WhatsApp.\n\nNossa tecnologia permite que você tenha um **SDR Artificial** trabalhando 24h por dia, qualificando leads e fechando negócios enquanto você dorme.",
             btnNext: "Conhecer IAs 🤖"
         },
@@ -736,7 +736,7 @@ bot.action("start", async (ctx) => {
     const isVip = await checkVip(ctx.chat.id);
     const config = await getSystemConfig();
     const userFirstName = ctx.from.first_name || "Parceiro";
-    const welcomeMsg = `👋 *Olá, ${userFirstName}! Bem-vindo ao Venux SaaS* 🚀\n\n` +
+    const welcomeMsg = `👋 *Olá, ${userFirstName}! Bem-vindo ao Connect SaaS* 🚀\n\n` +
         `O sistema definitivo para automação de WhatsApp com IA e Rodízio de Leads.\n\n` +
         `👇 *Escolha uma opção no menu abaixo:*`;
     const buttons = [
@@ -1778,7 +1778,7 @@ async function startConnectionPolling(chatId, instId) {
         if (isFullyLoggedIn) {
             clearInterval(interval);
             activePolls.delete(instId);
-            bot.telegram.sendMessage(chatId, `✅ *WhatsApp Conectado com Sucesso!* \n\nA instância \`${instId}\` agora está online e pronta para uso no Venux.`, { parse_mode: "Markdown" });
+            bot.telegram.sendMessage(chatId, `✅ *WhatsApp Conectado com Sucesso!* \n\nA instância \`${instId}\` agora está online e pronta para uso no Connect.`, { parse_mode: "Markdown" });
         }
     }, 2000);
 
@@ -3698,7 +3698,7 @@ bot.on("voice", async (ctx) => handleMassMedia(ctx, 'audio', ctx.message.voice.f
 bot.on("document", async (ctx) => handleMassMedia(ctx, 'document', ctx.message.document.file_id, ctx.message.caption, ctx.message.document.file_name, ctx.message.document.file_size));
 
 // -- Server Endpoints --
-app.get("/", (req, res) => res.send("Venux Bot Alive"));
+app.get("/", (req, res) => res.send("Connect Bot Alive"));
 
 // Rota para o QR Client White-Label
 app.get("/qr-client", (req, res) => {
