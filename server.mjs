@@ -138,7 +138,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.69-UI";
+const SERVER_VERSION = "1.1.70-UI";
 
 async function safeEdit(ctx, text, extra = {}) {
     const session = await getSession(ctx.chat.id);
@@ -2524,7 +2524,8 @@ async function distributeLead(tgChatId, leadJid, instId, leadName, summary) {
             .eq("instance_id", instId)
             .eq("remote_jid", leadJid);
 
-        await callWuzapi("/chat/send/text", "POST", { Phone: broker.phone, Body: msg }, instId);
+        const brokerJid = broker.phone.includes("@") ? broker.phone : `${broker.phone}@s.whatsapp.net`;
+        await callWuzapi("/chat/send/text", "POST", { Phone: brokerJid, Body: msg }, instId);
 
         // Atualizar índice para o próximo (Corretor vai pro fim da fila)
         session.last_broker_index = (nextIndex + 1) % brokers.length;
