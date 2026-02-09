@@ -252,6 +252,19 @@ async function callWuzapi(endpoint, method = "GET", body = null, userToken = nul
     }
 }
 
+// Helper para normalizar JIDs brasileiros (discrepância do 9º dígito)
+function normalizeJid(jid) {
+    if (!jid || typeof jid !== "string" || !jid.includes("@")) return jid;
+    const [number, server] = jid.split("@");
+    if (server !== "s.whatsapp.net") return jid;
+
+    // Se começa com 55 e tem 13 dígitos, remove o 9 (ex: 5591988887777 -> 559188887777)
+    if (number.startsWith("55") && number.length === 13) {
+        return number.substring(0, 4) + number.substring(5) + "@" + server;
+    }
+    return jid;
+}
+
 async function ensureWebhookSet(id) {
     try {
         const res = await callWuzapi("/webhook", "GET", null, id);
@@ -2555,8 +2568,31 @@ async function distributeLead(tgChatId, leadJid, instId, leadName, summary) {
             .eq("instance_id", instId)
             .eq("chat_id", leadJid); // Consistency: using chat_id instead of remote_jid if possible
 
-        const brokerJid = broker.phone.includes("@") ? broker.phone : `${broker.phone}@s.whatsapp.net`;
-        await callWuzapi("/chat/send/text", "POST", { Phone: brokerJid, Body: msg }, instId);
+        const rawPhone = broker.phone;
+        const cleanPhone = rawPhone.replace(/\D/g, "");
+
+        log(`[RODÍZIO] Validando número do broker no WhatsApp: ${cleanPhone}`);
+        const checkRes = await callWuzapi("/user/check", "POST", { Phone: [cleanPhone] }, instId);
+
+        let finalBrokerJid = null;
+        if (checkRes.success && checkRes.data && checkRes.data.Users && checkRes.data.Users[0].IsInWhatsapp) {
+            finalBrokerJid = checkRes.data.Users[0].JID;
+            log(`[RODÍZIO] JID oficial encontrado: ${finalBrokerJid}`);
+        } else {
+            // Fallback para normalização manual caso o check falhe ou não encontre (para não travar o fluxo)
+            const fallbackJid = cleanPhone.includes("@") ? cleanPhone : `${cleanPhone}@s.whatsapp.net`;
+            finalBrokerJid = normalizeJid(fallbackJid);
+            log(`[RODÍZIO] ⚠️ /user/check falhou ou número não está no WA. Usando fallback: ${finalBrokerJid}`);
+        }
+
+        log(`[RODÍZIO] Enviando zap para broker: ${finalBrokerJid}`);
+        const res = await callWuzapi("/chat/send/text", "POST", { Phone: finalBrokerJid, Body: msg }, instId);
+
+        if (res && (res.success || res.code === 200)) {
+            log(`[RODÍZIO] ✅ Notificação enviada com sucesso para ${broker.name}`);
+        } else {
+            log(`[RODÍZIO] ❌ FALHA ao notificar broker ${broker.name}: ${JSON.stringify(res)}`);
+        }
 
         // Atualizar índice para o próximo (Corretor vai pro fim da fila)
         session.last_broker_index = (nextIndex + 1) % brokers.length;
@@ -3064,19 +3100,38 @@ bot.on("text", async (ctx) => {
     } else if (session.stage && session.stage.startsWith("WA_BROKER_WAIT_PHONE_")) {
         const instId = session.stage.replace("WA_BROKER_WAIT_PHONE_", "");
         if (!await checkOwnership(ctx, instId)) return;
-        let phone = ctx.message.text.trim().replace(/\D/g, "");
-        if (!phone.includes("@")) phone += "@s.whatsapp.net";
+
+        let rawPhone = ctx.message.text.trim().replace(/\D/g, "");
+        if (rawPhone.length < 8) return ctx.reply("❌ Número inválido. Digite um número real (ex: 5511999998888).");
+
+        const loadingMsg = await ctx.reply("⏳ Validando número no WhatsApp...");
+
+        // Chamada ao /user/check para validar e normalizar já no cadastro
+        const checkRes = await callWuzapi("/user/check", "POST", { Phone: [rawPhone] }, instId);
+
+        let finalPhone = rawPhone;
+        if (checkRes.success && checkRes.data && checkRes.data.Users && checkRes.data.Users[0].IsInWhatsapp) {
+            finalPhone = checkRes.data.Users[0].JID;
+            log(`[BROKER_ADD] Número validado via API: ${finalPhone}`);
+        } else {
+            // Se o check falhar ou não achar, aplica o padrão manual mas avisa
+            if (!finalPhone.includes("@")) finalPhone += "@s.whatsapp.net";
+            finalPhone = normalizeJid(finalPhone);
+            ctx.reply("⚠️ Não conseguimos confirmar este número no WhatsApp, mas vou salvá-lo como você digitou.");
+        }
 
         const { error } = await supabase.from("real_estate_brokers").insert({
             name: session.tempBroker.name,
-            phone: phone,
+            phone: finalPhone,
             tg_chat_id: String(ctx.chat.id)
         });
 
+        try { await ctx.telegram.deleteMessage(ctx.chat.id, loadingMsg.message_id); } catch (e) { }
+
         if (error) {
-            ctx.reply("❌ Erro ao salvar corretor.");
+            ctx.reply("❌ Erro ao salvar corretor no banco de dados.");
         } else {
-            ctx.reply(`✅ Corretor **${session.tempBroker.name}** cadastrado!`);
+            ctx.reply(`✅ Corretor **${session.tempBroker.name}** cadastrado com sucesso!`);
             session.stage = "READY";
             delete session.tempBroker;
             await syncSession(ctx, session);
