@@ -1676,6 +1676,10 @@ bot.action(/^wa_fu_set_hours_(.+)$/, async (ctx) => {
     const session = await getSession(ctx.chat.id);
     const inst = await checkOwnership(ctx, id);
     if (!inst) return;
+
+    session.stage = `WA_WAITING_FU_HOURS_${id}`;
+    await syncSession(ctx, session);
+
     const current = inst.fu_hours || 24;
     const label = current < 1 ? Math.round(current * 60) + "m" : current + "h";
     const msg = `⏰ Quanto tempo o robô deve esperar antes de cobrar o lead?\n\n` +
@@ -1693,6 +1697,10 @@ bot.action(/^wa_fu_set_max_(.+)$/, async (ctx) => {
     const session = await getSession(ctx.chat.id);
     const inst = await checkOwnership(ctx, id);
     if (!inst) return;
+
+    session.stage = `WA_WAITING_FU_MAX_${id}`;
+    await syncSession(ctx, session);
+
     const current = inst.fu_max || 1;
     const msg = `🔢 Quantos **lembretes** (cobranças) o robô deve enviar no máximo? (Ex: 3)` +
         (current ? `\n\n📌 *Valor Atual:* _${current}_` : "");
@@ -1708,6 +1716,10 @@ bot.action(/^wa_fu_set_msgs_(.+)$/, async (ctx) => {
     const session = await getSession(ctx.chat.id);
     const inst = await checkOwnership(ctx, id);
     if (!inst) return;
+
+    session.stage = `WA_WAITING_FU_MSGS_${id}`;
+    await syncSession(ctx, session);
+
     const current = (inst.fu_msgs || []).join("; ");
     const msg = `✉️ Envie as mensagens de follow-up separadas por **ponto e vírgula** (;).\n\nExemplo:\n` +
         `\`Oi, tudo bem?;Ainda tem interesse no produto?;Fico no aguardo!\`\n\n` +
@@ -2246,6 +2258,10 @@ bot.action(/^wa_ai_resume_time_(.+)$/, async (ctx) => {
     const session = await getSession(ctx.chat.id);
     const inst = await checkOwnership(ctx, instId);
     if (!inst) return;
+
+    session.stage = `WA_AI_RESUME_TIME_VAL_${instId}`;
+    await syncSession(ctx, session);
+
     const current = inst.auto_resume_hours || 2;
     const msg = `⏱️ *Tempo de Reativação Automática*\n\n` +
         `Digite após quanto tempo de silêncio (inatividade humana) a IA deve voltar a responder esse lead.\n\n` +
