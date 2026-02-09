@@ -121,6 +121,7 @@ async function getSystemConfig() {
         planPrice: 49.90,
         referralDays: 7,
         supportLink: "@ConnectSuporte",
+        tutorialLink: "https://t.me/seu_canal_de_tutoriais",
         adminChatId: null, // ID do dono
         limits: {
             vip: { instances: 5 }
@@ -139,7 +140,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.183";
+const SERVER_VERSION = "1.184";
 
 async function safeEdit(ctx, text, extra = {}) {
     const session = await getSession(ctx.chat.id);
@@ -380,12 +381,13 @@ async function renderAdminPanel(ctx) {
         `💰 *Preço Atual:* R$ ${config.planPrice.toFixed(2)}\n` +
         `💎 *Limite Instâncias VIP:* ${config.limits.vip.instances}\n` +
         `🤝 *Corretores:* Liberados (Ilimitados)\n` +
-        `👤 *Suporte Atual:* \`${config.supportLink || "Não definido"}\`\n`;
+        `👤 *Suporte:* \`${config.supportLink || "Não definido"}\`\n` +
+        `📺 *Tutoriais:* \`${config.tutorialLink || "Não definido"}\`\n`;
 
     const buttons = [
         [Markup.button.callback("📢 Broadcast (Msg em Massa)", "admin_broadcast")],
         [Markup.button.callback("💰 Alterar Preço", "admin_price"), Markup.button.callback("👤 Configurar Suporte", "admin_support")],
-        [Markup.button.callback("💎 Ajustar Limite Instâncias", "admin_limit_vip"), Markup.button.callback("👥 Gerenciar Usuários", "admin_users_menu")],
+        [Markup.button.callback("💎 Ajustar Limite", "admin_limit_vip"), Markup.button.callback("📺 Configurar Tutoriais", "admin_tutorial_link")],
         [Markup.button.callback("👤 Ativar VIP Manual", "admin_vip_manual")],
         [Markup.button.callback("🔙 Voltar", "start")]
     ];
@@ -456,6 +458,14 @@ bot.action("admin_support", async (ctx) => {
     session.stage = "ADMIN_WAIT_SUPPORT";
     await syncSession(ctx, session);
     ctx.reply("👤 *Configurar Suporte*\n\nDigite o novo @username ou Link de Suporte:", { parse_mode: "Markdown" });
+});
+
+bot.action("admin_tutorial_link", async (ctx) => {
+    safeAnswer(ctx);
+    const session = await getSession(ctx.chat.id);
+    session.stage = "ADMIN_WAIT_TUTORIAL";
+    await syncSession(ctx, session);
+    ctx.reply("📺 *Configurar Tutoriais*\n\nDigite o novo Link do Canal/Vídeos:", { parse_mode: "Markdown" });
 });
 
 bot.action("admin_limit_vip", async (ctx) => {
@@ -584,6 +594,10 @@ bot.start(async (ctx) => {
         [Markup.button.callback("🔔 Follow-ups / Agenda", "cmd_shortcuts_followups")],
         [Markup.button.callback("💎 Seu Plano (Ativo)", "cmd_planos_menu"), Markup.button.callback("👤 Suporte / Ajuda", "cmd_suporte")]
     ];
+
+    if (isVip || isAdmin(ctx.chat.id, config)) {
+        buttons.push([Markup.button.callback("📺 Área de Tutoriais", "cmd_tutoriais")]);
+    }
 
     if (isAdmin(ctx.chat.id, config)) {
         buttons.push([Markup.button.callback("👑 Painel Admin", "cmd_admin_panel")]);
@@ -784,6 +798,21 @@ bot.action("cmd_suporte", async (ctx) => {
     safeAnswer(ctx);
     const config = await getSystemConfig();
     ctx.editMessageText(`👤 *Suporte & Ajuda*\n\nPrecisa de ajuda? Entre em contato com o suporte oficial:\n\n👉 ${config.supportLink || "@SeuUsuarioDeSuporte"}`, {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar", "start")]])
+    });
+});
+
+bot.action("cmd_tutoriais", async (ctx) => {
+    safeAnswer(ctx);
+    const isVip = await checkVip(ctx.chat.id);
+    const config = await getSystemConfig();
+
+    if (!isVip && !isAdmin(ctx.chat.id, config)) {
+        return ctx.reply("❌ *Acesso Restrito*\n\nA área de tutoriais é exclusiva para assinantes Pro ativos.", { parse_mode: "Markdown" });
+    }
+
+    ctx.editMessageText(`📺 *Área de Tutoriais Exclusiva*\n\nAcesse nossa central de vídeos para aprender a usar todo o potencial do Connect:\n\n👉 ${config.tutorialLink || "Ainda não configurado"}`, {
         parse_mode: "Markdown",
         ...Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar", "start")]])
     });
@@ -2908,6 +2937,17 @@ bot.on("text", async (ctx) => {
             config.supportLink = link;
             await saveSystemConfig(config);
             ctx.reply(`✅ Link de suporte atualizado para: **${link}**`);
+            session.stage = "READY";
+            await syncSession(ctx, session);
+            return renderAdminPanel(ctx);
+        }
+
+        if (session.stage === "ADMIN_WAIT_TUTORIAL") {
+            const link = ctx.message.text.trim();
+            if (!link) return ctx.reply("❌ Link inválido.");
+            config.tutorialLink = link;
+            await saveSystemConfig(config);
+            ctx.reply(`✅ Link de tutoriais atualizado para: **${link}**`);
             session.stage = "READY";
             await syncSession(ctx, session);
             return renderAdminPanel(ctx);
