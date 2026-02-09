@@ -138,7 +138,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.65-UI";
+const SERVER_VERSION = "1.1.66-UI";
 
 async function safeEdit(ctx, text, extra = {}) {
     const session = await getSession(ctx.chat.id);
@@ -1595,60 +1595,13 @@ async function renderFollowupMenu(ctx, instId) {
         [Markup.button.callback("⏰ Definir Tempo (horas)", `wa_fu_set_hours_${instId}`)],
         [Markup.button.callback("🔢 Definir Qnt. Lembretes", `wa_fu_set_max_${instId}`)],
         [Markup.button.callback("📝 Prompt do Sistema", `wa_ai_prompt_${instId}`)],
-        [Markup.button.callback("🧙 Configurar do Zero (Wizard)", `wa_ai_wizard_${instId}`)],
         [Markup.button.callback("🔙 Voltar", `wa_manage_${instId}`)]
     ];
 
     await safeEdit(ctx, text, Markup.inlineKeyboard(buttons));
 }
 
-// --- AI WIZARD ---
-async function renderAiWizardMenu(ctx, instId) {
-    const text = "🧙 *Configurador de IA*\n\n" +
-        "Para criar um atendimento perfeito, preciso saber: **Qual o nicho do seu negócio?**\n\n" +
-        "Escolha abaixo para iniciar a configuração guiada:";
 
-    const buttons = [
-        [Markup.button.callback("🏠 Imobiliária", `wa_wiz_start_${instId}_imobiliaria`)],
-        [Markup.button.callback("🏥 Clínica Médica", `wa_wiz_start_${instId}_clinica`)],
-        [Markup.button.callback("💼 Negócio Genérico", `wa_wiz_start_${instId}_generico`)],
-        [Markup.button.callback("🔙 Voltar", `wa_ai_menu_${instId}`)]
-    ];
-
-    await safeEdit(ctx, text, Markup.inlineKeyboard(buttons));
-}
-
-bot.action(/^wa_ai_wizard_(.+)$/, async (ctx) => {
-    safeAnswer(ctx);
-    const instId = ctx.match[1];
-    if (!await checkOwnership(ctx, instId)) return;
-    await renderAiWizardMenu(ctx, instId);
-});
-
-bot.action(/^wa_wiz_start_(.+)_(.+)$/, async (ctx) => {
-    safeAnswer(ctx);
-    const instId = ctx.match[1];
-    const niche = ctx.match[2];
-    if (!await checkOwnership(ctx, instId)) return;
-
-    const session = await getSession(ctx.chat.id);
-    session.wiz = { niche, data: {}, step: 0 }; // Inicializa sessão do wizard
-
-    // Inicia o fluxo correto
-    if (niche === 'imobiliaria') {
-        session.stage = `WA_WIZ_IMOB_AGENT_${instId}`;
-        await syncSession(ctx, session);
-        ctx.reply("🏠 *Configuração Imobiliária*\n\n1. Qual será o **Nome do Assistente** (IA)? (ex: Ana, João)", { parse_mode: "Markdown" });
-    } else if (niche === 'clinica') {
-        session.stage = `WA_WIZ_CLIN_AGENT_${instId}`;
-        await syncSession(ctx, session);
-        ctx.reply("🏥 *Configuração Clínica*\n\n1. Qual será o **Nome do Assistente** (IA)?", { parse_mode: "Markdown" });
-    } else {
-        session.stage = `WA_WIZ_GEN_AGENT_${instId}`;
-        await syncSession(ctx, session);
-        ctx.reply("💼 *Configuração Genérica*\n\n1. Qual será o **Nome do Assistente** (IA)?", { parse_mode: "Markdown" });
-    }
-});
 
 bot.action(/^wa_ai_followup_menu_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
@@ -2091,7 +2044,6 @@ async function renderAiMenu(ctx, instId) {
         [Markup.button.callback("📝 Editar System Prompt", `wa_set_ai_prompt_${instId}`)],
         [Markup.button.callback("🤝 Temas para Humano", `wa_set_ai_human_${instId}`)],
         [Markup.button.callback("📚 Base de Conhecimento (PDF)", `wa_set_ai_knowledge_${instId}`)],
-        [Markup.button.callback("🎭 Modelos de Agente (Presets)", `wa_ai_niche_menu_${instId}`)],
         [Markup.button.callback("⏱️ Tempo de Reativação", `wa_ai_resume_time_${instId}`)],
         [Markup.button.callback("🔔 Follow-ups", `wa_ai_followup_menu_${instId}`)],
         [Markup.button.callback("🔄 Sincronizar Webhook", `wa_ai_sync_web_${instId}`)],
@@ -2114,62 +2066,7 @@ bot.action(/^wa_ai_menu_(.+)$/, async (ctx) => {
     await renderAiMenu(ctx, id);
 });
 
-bot.action(/^wa_ai_niche_menu_(.+)$/, async (ctx) => {
-    const id = ctx.match[1];
-    log(`[AI_NICHE] Clique em Mudar Modelo ID: ${id}`);
-    safeAnswer(ctx);
-    if (!await checkOwnership(ctx, id)) return;
 
-    const text = `🎭 *Modelos de Agente (NICHOS)*\n\n` +
-        `Escolha um modelo pré-configurado para sua instância. Isso irá gerar regras e comportamentos automáticos baseados no seu ramo.\n\n` +
-        `🏠 **Imobiliária**: Qualificação de leads, tipos de imóvel, rodízio.\n` +
-        `🏥 **Clínica Médica**: Especialidades, convênios, link de agenda.\n` +
-        `🤖 **Genérico**: Agente inteligente customizável para qualquer negócio.`;
-
-    const buttons = [
-        [Markup.button.callback("🏠 Imobiliária", `wa_ai_set_niche_${id}_real_estate`)],
-        [Markup.button.callback("🏥 Clínica Médica", `wa_ai_set_niche_${id}_medical_clinic`)],
-        [Markup.button.callback("🤖 Agente Genérico", `wa_ai_set_niche_${id}_generic`)],
-        [Markup.button.callback("🔙 Voltar", `wa_ai_menu_${id}`)]
-    ];
-    await ctx.editMessageText(text, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
-});
-
-bot.action(/^wa_ai_set_niche_(.+)_(real_estate|medical_clinic|generic)$/, async (ctx) => {
-    const instId = ctx.match[1];
-    const niche = ctx.match[2];
-    safeAnswer(ctx);
-    if (!await checkOwnership(ctx, instId)) return;
-
-    const session = await getSession(ctx.chat.id);
-    const inst = session.whatsapp.instances.find(i => i.id === instId);
-
-    if (inst) {
-        const presets = {
-            'real_estate': {
-                prompt: "Você é um corretor de imóveis especializado em qualificação. Seu objetivo é descobrir se o cliente deseja comprar ou alugar, qual o tipo de imóvel (casa/apto) e em qual região. Seja persuasivo mas amigável.",
-                human: "Negociação de comissão, problemas com chaves, reclamações diretas ou dúvidas jurídicas sobre contratos."
-            },
-            'medical_clinic': {
-                prompt: "Você é a assistente de uma clínica médica. Seu objetivo é identificar qual a especialidade que o paciente busca e se ele possui convênio. Seja empática e profissional.",
-                human: "Casos de emergência, cancelamento de cirurgias, dúvidas técnicas sobre diagnósticos ou reclamações de atendimento."
-            },
-            'generic': {
-                prompt: "Você é um assistente virtual inteligente. Seu objetivo é entender a necessidade do cliente, apresentar nossos produtos e coletar o contato dele para fechamento.",
-                human: "Reclamações, pedidos de reembolso, dúvidas complexas que não estão no seu conhecimento ou tom agressivo do cliente."
-            }
-        };
-
-        const config = presets[niche];
-        inst.ai_prompt = config.prompt;
-        inst.ai_human_topics = config.human;
-        inst.niche = niche;
-
-        await syncSession(ctx, session);
-        ctx.reply(`✅ *Modelo (${niche}) aplicado com sucesso!*\n\nVocê pode editar o prompt e os temas no menu de IA se desejar.`);
-        await renderAiMenu(ctx, instId);
-    }
-});
 
 bot.action(/^wa_ai_keep_fu_(hours|max|msgs)_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
@@ -3199,107 +3096,7 @@ bot.on("text", async (ctx) => {
             await triggerMedicalWizard(ctx, instId, 4);
         }
     } else if (session.stage && session.stage.startsWith("WA_AI_CONF_MC_BOOKING_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_AI_CONF_MC_BOOKING_", "");
-        const inst = await checkOwnership(ctx, instId);
-        if (!inst) return;
-        if (inst) {
-            inst.niche_data.booking_link = ctx.message.text.trim();
-            await triggerMedicalWizard(ctx, instId, 5);
-        }
-    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_MC_ADDRESS_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_AI_CONF_MC_ADDRESS_", "");
-        const inst = await checkOwnership(ctx, instId);
-        if (!inst) return;
-        if (inst) {
-            inst.niche_data.address = ctx.message.text.trim();
-            await triggerMedicalWizard(ctx, instId, 6);
-        }
-    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_MC_GREETING_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_AI_CONF_MC_GREETING_", "");
-        const inst = await checkOwnership(ctx, instId);
-        if (!inst) return;
-        if (inst) {
-            inst.niche_data.greeting = ctx.message.text.trim();
-            await triggerMedicalWizard(ctx, instId, 7);
-        }
-    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_MC_BIO_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_AI_CONF_MC_BIO_", "");
-        const inst = await checkOwnership(ctx, instId);
-        if (!inst) return;
-        if (inst) {
-            inst.niche_data.bio = ctx.message.text.trim();
-            await triggerMedicalWizard(ctx, instId, 8);
-        }
 
-        // --- GENERIC WIZARD ---
-    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_GN_COMPANY_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_AI_CONF_GN_COMPANY_", "");
-        const inst = await checkOwnership(ctx, instId);
-        if (!inst) return;
-        if (inst) {
-            inst.niche_data.company_name = ctx.message.text.trim();
-            await triggerGenericWizard(ctx, instId, 2);
-        }
-    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_GN_GOAL_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_AI_CONF_GN_GOAL_", "");
-        const inst = await checkOwnership(ctx, instId);
-        if (!inst) return;
-        if (inst) {
-            inst.niche_data.goal = ctx.message.text.trim();
-            await triggerGenericWizard(ctx, instId, 3);
-        }
-    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_GN_PRODUCTS_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_AI_CONF_GN_PRODUCTS_", "");
-        const inst = await checkOwnership(ctx, instId);
-        if (!inst) return;
-        if (inst) {
-            inst.niche_data.products = ctx.message.text.trim();
-            await triggerGenericWizard(ctx, instId, 4);
-        }
-    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_GN_RULES_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_AI_CONF_GN_RULES_", "");
-        const inst = await checkOwnership(ctx, instId);
-        if (!inst) return;
-        if (inst) {
-            inst.niche_data.rules = ctx.message.text.trim();
-            await triggerGenericWizard(ctx, instId, 5);
-        }
-    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_GN_GREETING_")) {
-        const instId = session.stage.replace("WA_AI_CONF_GN_GREETING_", "");
-        const inst = await checkOwnership(ctx, instId);
-        if (!inst) return;
-        if (inst) {
-            inst.niche_data.greeting = ctx.message.text.trim();
-            await triggerGenericWizard(ctx, instId, 6);
-        }
-    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_GN_BIO_")) {
-        const instId = session.stage.replace("WA_AI_CONF_GN_BIO_", "");
-        const inst = await checkOwnership(ctx, instId);
-        if (!inst) return;
-        if (inst) {
-            inst.niche_data.bio = ctx.message.text.trim();
-            await triggerGenericWizard(ctx, instId, 7);
-        }
-    } else if (session.stage && session.stage.startsWith("WA_WIZ_GEN_STRAT_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_WIZ_GEN_STRAT_", "");
-        if (!await checkOwnership(ctx, instId)) return;
-
-        session.wiz.data.instrucao = ctx.message.text.trim();
-        await finishWizard(ctx, instId, session.wiz);
-
-        // --- CONEXÃO COM WIZARD ANTIGO (PRESERVAR) ---
-        session.last_ui_id = sent.message_id;
-        await syncSession(ctx, session);
-    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_RE_RULES_")) {
         await cleanup();
         const instId = session.stage.replace("WA_AI_CONF_RE_RULES_", "");
         const inst = await checkOwnership(ctx, instId);
@@ -4065,109 +3862,7 @@ async function checkAiFollowups() {
     }
 }
 
-// Função auxiliar para finalizar o wizard
-async function finishWizard(ctx, instId, wiz) {
-    const { niche, data } = wiz;
-    let systemPrompt = "";
 
-    if (niche === 'imobiliaria') {
-        systemPrompt = `
-Você é ${data.nome_agente || "o assistente"}, IA da imobiliária ${data.nome_empresa}.
-Seu tom de voz é ${data.tom_voz || "Profissional"}.
-
-CONTEXTO DA EMPRESA:
-- Regiões de Atuação: ${data.regioes}
-- Horário de Atendimento: ${data.horario}
-- Site: ${data.site}
-- Catálogo: ${data.catalogo}
-
-SUA MISSÃO:
-${data.instrucao || "Atender clientes, qualificar leads e agendar visitas."}
-
-RESPOSTA TÉCNICA (SOBRE NÓS):
-"${data.tecnica}"
-
-REGRA DE FOTOS/VÍDEOS:
-${data.regra_fotos}
-
-FLUXO DE ATENDIMENTO:
-1. Saudação inicial: "${data.saudacao}"
-2. Qualificação básica (pergunte nome, interesse em compra/aluguel, tipo de imóvel).
-3. Responda dúvidas com base no contexto.
-
-IMPORTANTE:
-- Não invente imóveis que não estão no catálogo.
-- Seja cortês e objetivo.
-`;
-    } else if (niche === 'clinica') {
-        systemPrompt = `
-Você é ${data.nome_agente || "o assistente"}, IA da clínica ${data.nome_clinica}.
-Especialidades: ${data.especialidades}.
-Tom de voz: ${data.tom_voz || "Profissional"}.
-
-INFORMAÇÕES:
-- Serviços: ${data.servicos}
-- Endereço: ${data.endereco}
-- Horário: ${data.horario}
-- Convênios: ${data.convenios}
-- Telefone: ${data.telefone}
-
-AGENDAMENTO:
-- Link: ${data.link_agendamento}
-
-SUA MISSÃO:
-${data.instrucao || "Tirar dúvidas e direcionar para o agendamento."}
-
-FLUXO:
-1. Saudação: "${data.saudacao}"
-2. Entenda a necessidade do paciente.
-3. Se quiser agendar, envie o link: ${data.link_agendamento}
-
-IMPORTANTE:
-- Em caso de urgência (dor forte, sangramento), oriente buscar um Pronto Socorro imediatamente.
-`;
-    } else { // Genérico
-        systemPrompt = `
-Você é ${data.nome_agente || "o assistente"} da empresa ${data.nome_empresa}.
-Atuamos com: ${data.produtos}.
-Tom de voz: ${data.tom_voz || "Profissional"}.
-
-INFORMAÇÕES:
-- Descrição: ${data.descricao}
-- Horário: ${data.horario}
-- Endereço: ${data.endereco || "Online"}
-
-ESTRATÉGIA:
-${data.instrucao}
-
-FLUXO:
-1. Saudação: "${data.saudacao}"
-2. Responda dúvidas sobre produtos e serviços.
-3. Direcione para o fechamento ou contato humano conforme necessário.
-`;
-    }
-
-    const session = await getSession(ctx.chat.id);
-    const inst = session.whatsapp.instances.find(i => i.id === instId);
-    if (inst) {
-        inst.ai_prompt = systemPrompt.trim();
-        inst.ai_enabled = true;
-        inst.ai_config = wiz; // Salva o JSON estruturado para referência futura
-        await syncSession(ctx, session);
-    }
-
-    session.stage = "READY";
-    delete session.wiz;
-    await syncSession(ctx, session);
-
-    await ctx.reply("✨ *Configuração Concluída com Sucesso!*\n\n" +
-        "A IA foi configurada e ativada.\n\n" +
-        "📝 *Prompt Gerado:* \n" +
-        `\`\`\`\n${systemPrompt.substring(0, 500)}...\n\`\`\``, // Mostra prévia
-        { parse_mode: "Markdown" }
-    );
-    await renderAiMenu(ctx, instId);
-}
 
 // --- Background Worker para Follow-ups do Funil ---
 async function checkFunnelFollowups() {
