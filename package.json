@@ -1,6 +1,6 @@
 {
   "name": "lovable-agent-server",
-  "version": "1.178",
+  "version": "1.179",
   "type": "module",
   "main": "server.mjs",
   "scripts": {
