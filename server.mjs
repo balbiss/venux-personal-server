@@ -138,7 +138,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.73-UI";
+const SERVER_VERSION = "1.1.74-UI";
 
 async function safeEdit(ctx, text, extra = {}) {
     const session = await getSession(ctx.chat.id);
@@ -1564,9 +1564,12 @@ bot.action(/^wa_set_ai_prompt_(.+)$/, async (ctx) => {
     const id = ctx.match[1];
     if (!await checkOwnership(ctx, id)) return;
     const session = await getSession(ctx.chat.id);
+    const inst = session.whatsapp.instances.find(i => i.id === id);
+    const currentPrompt = inst?.ai_prompt || "🤖 Você é um assistente virtual prestativo.";
+
     session.stage = `WA_WAITING_AI_PROMPT_${id}`;
     await syncSession(ctx, session);
-    ctx.reply("📝 *System Prompt (Instruções)*\n\nDescreva como o robô deve se comportar e qual o seu objetivo principal.\n\nExemplo:\n`Você é o assistente da Imobiliária X. Seu objetivo é descobrir se o cliente quer comprar ou alugar e em qual região, sendo sempre muito prestativo e educado.`", { parse_mode: "Markdown" });
+    ctx.reply(`📝 *System Prompt (Instruções)*\n\n📌 *Conteúdo Atual:*\n\`\`\`\n${currentPrompt}\n\`\`\`\n\nPara alterar, envie o novo texto abaixo:`, { parse_mode: "Markdown" });
 });
 
 bot.action(/^wa_set_ai_human_(.+)$/, async (ctx) => {
