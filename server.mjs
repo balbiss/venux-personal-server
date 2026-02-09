@@ -1196,7 +1196,7 @@ bot.action(/^wa_mass_new_start_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
     if (!await checkOwnership(ctx, id)) return;
-    ctx.editMessageText("📝 *Novo Disparo*\n\nPor favor, envie a **lista de números** (um por linha).\n\nFormatos:\n`5511999998888` ou `Nome;5511999998888`", {
+    ctx.editMessageText("📝 *Novo Disparo*\n\nPor favor, envie a **lista de números** (um por linha) ou um **arquivo .txt** com os contatos.\n\nFormatos:\n`5511999998888` ou `Nome;5511999998888`", {
         parse_mode: "Markdown",
         ...Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar", `wa_mass_init_${id}`)]])
     });
@@ -3291,7 +3291,7 @@ bot.on("text", async (ctx) => {
             return { name: null, phone: line.replace(/\D/g, "") };
         }).filter(c => c.phone.length >= 8);
 
-        if (contacts.length === 0) return ctx.reply("❌ Nenhum número válido encontrado.\n\nEnvie um por linha no formato `Telefone` ou `Nome;Telefone`.");
+        if (contacts.length === 0) return ctx.reply("❌ Nenhum número válido encontrado.\n\nEnvie os números (um por linha) no formato `Telefone` ou `Nome;Telefone`.\n\n💡 *Dica:* Você também pode enviar um **arquivo .txt** com a lista de contatos.");
 
         session.mass_contacts = contacts;
         session.stage = `WA_WAITING_MASS_MSG_${instId}`;
