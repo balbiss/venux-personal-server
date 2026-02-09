@@ -1634,7 +1634,7 @@ async function renderFollowupMenu(ctx, instId) {
     const text = `🔔 *Configuração de Follow-ups (${instId})*\n\n` +
         `O robô enviará lembretes automáticos se o lead parar de responder.\n\n` +
         `🔋 *Status:* ${enabled ? "✅ Ativado" : "❌ Desativado"}\n` +
-        `⏰ *Esperar:* \`${hours} horas\`\n` +
+        `⏰ *Esperar:* \`${hours < 1 ? Math.round(hours * 60) + " minutos" : hours + " horas"}\`\n` +
         `🔢 *Máximo de Lembretes:* \`${maxNudges}\`\n` +
         `✉️ *Mensagens:* \n${msgs.map((m, i) => `${i + 1}. ${m}`).join("\n")}`;
 
@@ -1677,8 +1677,10 @@ bot.action(/^wa_fu_set_hours_(.+)$/, async (ctx) => {
     const inst = await checkOwnership(ctx, id);
     if (!inst) return;
     const current = inst.fu_hours || 24;
-    const msg = `⏰ Quantas **horas** o robô deve esperar antes de cobrar o lead? (Apenas números)` +
-        (current ? `\n\n📌 *Valor Atual:* _${current}h_` : "");
+    const label = current < 1 ? Math.round(current * 60) + "m" : current + "h";
+    const msg = `⏰ Quanto tempo o robô deve esperar antes de cobrar o lead?\n\n` +
+        `Exemplos: \`30m\`, \`1h\`, \`2h\`\n\n` +
+        (current ? `📌 *Valor Atual:* _${label}_` : "");
     const buttons = current ? [[Markup.button.callback(`✅ Manter Atual`, `wa_ai_keep_fu_hours_${id}`)]] : [];
 
     ctx.reply(msg, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
@@ -3525,15 +3527,30 @@ bot.on("text", async (ctx) => {
     } else if (session.stage && session.stage.startsWith("WA_WAITING_FU_HOURS_")) {
         const instId = session.stage.replace("WA_WAITING_FU_HOURS_", "");
         if (!await checkOwnership(ctx, instId)) return;
-        const val = parseInt(ctx.message.text);
-        if (isNaN(val)) return ctx.reply("⚠️ Por favor, envie um número válido.");
+        const text = ctx.message.text.toLowerCase().trim();
+        let val = 0;
+        let label = "";
+
+        if (text.endsWith("m")) {
+            let mins = parseFloat(text.replace("m", "").trim());
+            if (isNaN(mins)) return ctx.reply("❌ Digite um tempo válido (ex: 30m ou 1h).");
+            val = mins / 60;
+            label = `${Math.round(mins)} minutos`;
+        } else {
+            let hours = parseFloat(text.replace("h", "").trim());
+            if (isNaN(hours)) return ctx.reply("❌ Digite um tempo válido (ex: 30m ou 1h).");
+            val = hours;
+            label = `${hours} hora(s)`;
+        }
+
+        if (val < 0.01) return ctx.reply("❌ O tempo mínimo é de 1 minuto.");
 
         const inst = session.whatsapp.instances.find(i => i.id === instId);
         if (inst) {
             inst.fu_hours = val;
             session.stage = "READY";
             await syncSession(ctx, session);
-            ctx.reply(`✅ Tempo de espera definido para **${val} horas**.`);
+            ctx.reply(`✅ Tempo de espera definido para **${label}**.`);
             await renderFollowupMenu(ctx, instId);
         }
     } else if (session.stage && session.stage.startsWith("WA_WAITING_FU_MAX_")) {
