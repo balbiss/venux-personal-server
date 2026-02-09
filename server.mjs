@@ -138,7 +138,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.63-UI";
+const SERVER_VERSION = "1.1.64-UI";
 
 async function safeEdit(ctx, text, extra = {}) {
     const session = await getSession(ctx.chat.id);
@@ -1093,124 +1093,7 @@ bot.action(/^wa_funnel_toggle_(.+)$/, async (ctx) => {
     await renderFunnelMenu(ctx, id);
 });
 
-bot.action(/^wa_funnel_set_pres_(.+)$/, async (ctx) => {
-    safeAnswer(ctx);
-    const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
 
-    const session = await getSession(ctx.chat.id);
-    session.stage = `WA_FUNNEL_WAIT_PRES_${id}`;
-    await syncSession(ctx, session);
-
-    ctx.reply("📝 *Mensagem de Apresentação*\n\nDigite a mensagem que o robô enviará primeiro ao lead.\n\nExemplo:\n`Olá! Sou o assistente virtual da Imobiliária X. Para te ajudar melhor, preciso te fazer algumas perguntas rapidinho, ok?`", { parse_mode: "Markdown" });
-});
-
-bot.action(/^wa_funnel_set_action_(.+)$/, async (ctx) => {
-    safeAnswer(ctx);
-    const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
-
-    const text = "🏁 *Definir Ação Final*\n\nO que o robô deve fazer após o lead terminar o funil?";
-    const buttons = [
-        [Markup.button.callback("👤 Transbordo Humano", `wa_funnel_act_${id}_human`)],
-        [Markup.button.callback("👥 Rodízio de Corretores", `wa_funnel_act_${id}_broker_rotation`)],
-        [Markup.button.callback("🔙 Voltar", `wa_funnel_menu_${id}`)]
-    ];
-
-    await safeEdit(ctx, text, Markup.inlineKeyboard(buttons));
-});
-
-bot.action(/^wa_funnel_act_(.+)_(.+)$/, async (ctx) => {
-    safeAnswer(ctx);
-    const id = ctx.match[1];
-    const action = ctx.match[2];
-    if (!await checkOwnership(ctx, id)) return;
-
-    await supabase.from("qualification_funnels")
-        .upsert({ instance_id: id, final_action: action, name: `Funil ${id}` }, { onConflict: "instance_id" });
-
-    ctx.answerCbQuery(`✅ Ação final definida: ${action}`);
-    await renderFunnelMenu(ctx, id);
-});
-
-async function renderFunnelQuestionsMenu(ctx, instId) {
-    const { data: funnel } = await supabase
-        .from("qualification_funnels")
-        .select("*")
-        .eq("instance_id", instId)
-        .maybeSingle();
-
-    const questions = funnel?.questions || [];
-    let text = `❓ *Gerenciar Perguntas (${instId})*\n\n` +
-        `As perguntas serão feitas na ordem abaixo:\n\n`;
-
-    if (questions.length === 0) {
-        text += "_Nenhuma pergunta cadastrada._";
-    } else {
-        questions.forEach((q, i) => {
-            text += `${i + 1}. ${q.text}\n`;
-        });
-    }
-
-    const buttons = [
-        [Markup.button.callback("➕ Adicionar Pergunta", `wa_funnel_add_ques_${instId}`)],
-        [Markup.button.callback("🗑️ Remover Pergunta", `wa_funnel_del_list_${instId}`)],
-        [Markup.button.callback("🔙 Voltar", `wa_funnel_menu_${instId}`)]
-    ];
-
-    await safeEdit(ctx, text, Markup.inlineKeyboard(buttons));
-}
-
-bot.action(/^wa_funnel_questions_(.+)$/, async (ctx) => {
-    safeAnswer(ctx);
-    const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
-    await renderFunnelQuestionsMenu(ctx, id);
-});
-
-bot.action(/^wa_funnel_add_ques_(.+)$/, async (ctx) => {
-    safeAnswer(ctx);
-    const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
-
-    const session = await getSession(ctx.chat.id);
-    session.stage = `WA_FUNNEL_WAIT_QUES_${id}`;
-    await syncSession(ctx, session);
-
-    ctx.reply("❓ *Nova Pergunta*\n\nDigite o texto da pergunta que deseja adicionar ao final da lista:");
-});
-
-bot.action(/^wa_funnel_del_list_(.+)$/, async (ctx) => {
-    safeAnswer(ctx);
-    const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
-
-    const { data: funnel } = await supabase.from("qualification_funnels").select("questions").eq("instance_id", id).maybeSingle();
-    const questions = funnel?.questions || [];
-
-    if (questions.length === 0) return ctx.answerCbQuery("❌ Nenhuma pergunta para remover.");
-
-    const buttons = questions.map((q, i) => [Markup.button.callback(`❌ ${i + 1}. ${q.text.substring(0, 20)}...`, `wa_funnel_confirm_del_ques_${id}_${i}`)]);
-    buttons.push([Markup.button.callback("🔙 Voltar", `wa_funnel_questions_${id}`)]);
-
-    ctx.editMessageText("Escolha a pergunta para **remover**:", Markup.inlineKeyboard(buttons));
-});
-
-bot.action(/^wa_funnel_confirm_del_ques_(.+)_(.+)$/, async (ctx) => {
-    safeAnswer(ctx);
-    const instId = ctx.match[1];
-    const index = parseInt(ctx.match[2]);
-    if (!await checkOwnership(ctx, instId)) return;
-
-    const { data: funnel } = await supabase.from("qualification_funnels").select("*").eq("instance_id", instId).maybeSingle();
-    let questions = funnel?.questions || [];
-    questions.splice(index, 1);
-
-    await supabase.from("qualification_funnels").update({ questions }).eq("id", funnel.id);
-
-    ctx.answerCbQuery("✅ Pergunta removida!");
-    await renderFunnelQuestionsMenu(ctx, instId);
-});
 
 // --- Módulo de Disparo em Massa ---
 const activeCampaigns = new Map();
