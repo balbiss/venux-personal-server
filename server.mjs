@@ -1000,32 +1000,59 @@ bot.action(/^wa_endpoints_(.+)$/, async (ctx) => {
 
 
 // --- Módulo de Funil de Qualificação (Sem IA) ---
+// --- MENUS DO FUNIL MODULAR (STYLE TYPEBOT) ---
+
 async function renderFunnelMenu(ctx, instId) {
-    const { data: funnel } = await supabase
-        .from("qualification_funnels")
-        .select("*")
-        .eq("instance_id", instId)
-        .maybeSingle();
-
-    const active = funnel?.is_active || false;
-    const questions = funnel?.questions || [];
+    const { data: funnel } = await supabase.from("qualification_funnels").select("*").eq("instance_id", instId).maybeSingle();
+    const isActive = funnel?.is_active || false;
+    const blocksCount = funnel?.blocks?.length || 0;
     const finalAction = funnel?.final_action || "human";
-    const presentation = funnel?.presentation_text || "❌ Nenhuma apresentação definida.";
 
-    let text = `⚙️ *Funil de Qualificação (${instId})*\n\n` +
-        `O funil permite coletar dados do lead de forma sequencial sem usar IA.\n\n` +
-        `🔋 *Status:* ${active ? "✅ Ativado" : "❌ Desativado"}\n` +
-        `📝 *Apresentação:* \`${presentation.substring(0, 50)}${presentation.length > 50 ? "..." : ""}\`\n` +
-        `❓ *Perguntas:* \`${questions.length}\` cadastradas.\n` +
-        `🏁 *Ação Final:* \`${finalAction}\`\n\n` +
-        `Escolha uma opção para configurar:`;
+    let text = `⚙️ *Funil de Qualificação* (${instId})\n\n`;
+    text += `O funil permite criar uma sequência de blocos (Mensagens, Mídias, Coletas) para qualificar o lead sem IA.\n\n`;
+    text += `🟢 *Status:* ${isActive ? "✅ Ativado" : "❌ Desativado"}\n`;
+    text += `🧱 *Blocos:* ${blocksCount} configurados\n`;
+    text += `🏁 *Ação Final:* \`${finalAction}\`\n\n`;
+    text += `Escolha uma opção:`;
 
     const buttons = [
-        [Markup.button.callback(active ? "🔴 Desativar Funil" : "🟢 Ativar Funil", `wa_funnel_toggle_${instId}`)],
-        [Markup.button.callback("📝 Editar Apresentação", `wa_funnel_set_pres_${instId}`)],
-        [Markup.button.callback("❓ Gerenciar Perguntas", `wa_funnel_questions_${instId}`)],
-        [Markup.button.callback("🏁 Definir Ação Final", `wa_funnel_set_action_${instId}`)],
-        [Markup.button.callback("🔙 Voltar", `manage_${instId}`)]
+        [Markup.button.callback(isActive ? "🔴 Desativar Funil" : "🟢 Ativar Funil", `wa_funnel_toggle_${instId}`)],
+        [Markup.button.callback("🧱 Gerenciar Blocos (Fluxo)", `wa_funnel_blocks_${instId}`)],
+        [Markup.button.callback("🏁 Definir Ação Final", `wa_funnel_act_${instId}`)],
+        [Markup.button.callback("⬅️ Voltar", `manage_${instId}`)]
+    ];
+
+    await safeEdit(ctx, text, Markup.inlineKeyboard(buttons));
+}
+
+async function renderFunnelBlocksMenu(ctx, instId) {
+    const { data: funnel } = await supabase.from("qualification_funnels").select("*").eq("instance_id", instId).maybeSingle();
+    const blocks = funnel?.blocks || [];
+
+    let text = `🧱 *Gerenciar Fluxo de Blocos*\n\n`;
+    if (blocks.length === 0) {
+        text += `_Nenhum bloco configurado._\n\n`;
+    } else {
+        blocks.forEach((b, i) => {
+            const icon = b.type === 'text' ? '📝' : b.type === 'media' ? '📷' : b.type === 'wait' ? '❓' : '⏳';
+            const waitInfo = b.wait_for_reply ? " (Para e Coleta)" : " (Segue)";
+            text += `${i + 1}. ${icon} *${b.type.toUpperCase()}*${b.type === 'wait' ? '' : waitInfo}\n`;
+            if (b.text) text += `   └ "${b.text.substring(0, 40)}${b.text.length > 40 ? '...' : ''}"\n`;
+            if (b.field) text += `   └ Campo: \`${b.field}\`\n`;
+            if (b.delay) text += `   └ Delay: ${b.delay}s\n`;
+        });
+        text += `\n`;
+    }
+
+    text += `O bot executa os blocos em ordem. Se o bloco NÃO for de "Coleta", ele simula digitação e pula para o próximo.`;
+
+    const buttons = [
+        [Markup.button.callback("📝 + Texto", `wa_funnel_add_txt_${instId}`)],
+        [Markup.button.callback("📷 + Imagem/Arquivo", `wa_funnel_add_med_${instId}`)],
+        [Markup.button.callback("❓ + Pergunta (Coleta)", `wa_funnel_add_wait_${instId}`)],
+        [Markup.button.callback("⏳ + Delay (Aguardar)", `wa_funnel_add_delay_${instId}`)],
+        [Markup.button.callback("🗑️ Apagar Último", `wa_funnel_pop_block_${instId}`)],
+        [Markup.button.callback("⬅️ Voltar", `wa_funnel_menu_${instId}`)]
     ];
 
     await safeEdit(ctx, text, Markup.inlineKeyboard(buttons));
@@ -1036,6 +1063,13 @@ bot.action(/^wa_funnel_menu_(.+)$/, async (ctx) => {
     const id = ctx.match[1];
     if (!await checkOwnership(ctx, id)) return;
     await renderFunnelMenu(ctx, id);
+});
+
+bot.action(/^wa_funnel_blocks_(.+)$/, async (ctx) => {
+    safeAnswer(ctx);
+    const id = ctx.match[1];
+    if (!await checkOwnership(ctx, id)) return;
+    await renderFunnelBlocksMenu(ctx, id);
 });
 
 bot.action(/^wa_funnel_toggle_(.+)$/, async (ctx) => {
@@ -2420,98 +2454,108 @@ bot.action(/^wa_broker_confirm_del_(.+)_(.+)$/, async (ctx) => {
     await renderBrokersMenu(ctx, instId);
 });
 
+
+
 // --- Módulo de Funil de Qualificação (Lógica de Execução) ---
 async function handleFunnel(tgChatId, instId, remoteJid, text, pushName) {
     try {
         // 1. Buscar configuração do funil
-        const { data: funnel } = await supabase
-            .from("qualification_funnels")
-            .select("*")
-            .eq("instance_id", instId)
-            .eq("is_active", true)
-            .maybeSingle();
-
-        if (!funnel) return false; // Funil não ativo
+        const { data: funnel } = await supabase.from("qualification_funnels").select("*").eq("instance_id", instId).eq("is_active", true).maybeSingle();
+        if (!funnel) return false;
 
         // 2. Buscar estado atual do lead
-        const { data: state, error } = await supabase
-            .from("funnel_leads_state")
-            .select("*")
-            .eq("instance_id", instId)
-            .eq("remote_jid", remoteJid)
-            .maybeSingle();
+        let { data: state } = await supabase.from("funnel_leads_state").select("*").eq("instance_id", instId).eq("remote_jid", remoteJid).maybeSingle();
+        if (state && state.status !== 'active') return false;
 
-        if (state && state.status !== 'active') return false; // Funil já concluído ou abandonado
+        const blocks = funnel.blocks || [];
+        if (blocks.length === 0) return false;
 
-        const questions = funnel.questions || [];
-        const presentation = funnel.presentation_text || "";
+        // 3. Função para simular digitação e delay
+        const simulateDelay = async (seconds) => {
+            await callWuzapi("/chat/presence", "POST", { Phone: remoteJid, Type: "composing" }, instId);
+            await new Promise(r => setTimeout(r, (seconds || 2) * 1000));
+        };
 
-        // 3. Se não tem estado, inicia o funil
-        if (!state) {
-            log(`[FUNNEL] Iniciando funil para ${remoteJid} na instância ${instId}`);
+        // 4. Se for resposta a uma pergunta anterior
+        let startIndex = 0;
+        let answers = state?.answers || {};
 
-            // Enviar apresentação
-            if (presentation) {
-                await callWuzapi("/chat/send/text", "POST", { Phone: remoteJid, Body: presentation }, instId);
-            }
-
-            if (questions.length > 0) {
-                // Enviar primeira pergunta imediatamente
-                const firstQ = questions[0];
-                await new Promise(r => setTimeout(r, 2000)); // Pequeno delay humano
-                await callWuzapi("/chat/send/text", "POST", { Phone: remoteJid, Body: firstQ.text }, instId);
-
-                await supabase.from("funnel_leads_state").insert({
-                    instance_id: instId,
-                    remote_jid: remoteJid,
-                    funnel_id: funnel.id,
-                    current_step: 0,
-                    status: 'active'
-                });
+        if (state) {
+            const currentBlock = blocks[state.current_step];
+            if (currentBlock && currentBlock.type === 'wait') {
+                // Salvar a resposta do lead
+                answers[currentBlock.text] = text;
+                startIndex = state.current_step + 1;
+                log(`[FUNNEL] Resposta recebida para: ${currentBlock.text} | Avançando para bloco ${startIndex}`);
             } else {
-                // Sem perguntas, finaliza após apresentação
-                await finishFunnel(tgChatId, instId, remoteJid, funnel, {}, pushName);
-                await supabase.from("funnel_leads_state").insert({
-                    instance_id: instId,
-                    remote_jid: remoteJid,
-                    funnel_id: funnel.id,
-                    current_step: 0,
-                    status: 'completed'
-                });
+                startIndex = state.current_step;
             }
-            return true;
+        } else {
+            log(`[FUNNEL] Iniciando funil modular para ${remoteJid}`);
+            // Criar estado inicial
+            const { data: newState } = await supabase.from("funnel_leads_state").insert({
+                instance_id: instId,
+                remote_jid: remoteJid,
+                funnel_id: funnel.id,
+                current_step: 0,
+                status: 'active',
+                answers: {}
+            }).select().single();
+            state = newState;
         }
 
-        // 4. Se já está no funil, processa a resposta
-        log(`[FUNNEL] Processando resposta de ${remoteJid} | Passo atual: ${state.current_step}`);
-        const currentStep = state.current_step;
-        const currentQ = questions[currentStep];
+        // 5. Loop de Execução de Blocos
+        for (let i = startIndex; i < blocks.length; i++) {
+            const block = blocks[i];
 
-        if (currentQ) {
-            const answers = { ...state.answers, [currentQ.text]: text };
-            const nextStep = currentStep + 1;
+            // Atualizar banco com o bloco atual
+            await supabase.from("funnel_leads_state").update({
+                current_step: i,
+                answers,
+                last_interaction: new Date().toISOString()
+            }).eq("id", state.id);
 
-            if (nextStep < questions.length) {
-                // Enviar próxima pergunta
-                const nextQ = questions[nextStep];
-                await callWuzapi("/chat/send/text", "POST", { Phone: remoteJid, Body: nextQ.text }, instId);
+            if (block.type === 'text' || block.type === 'wait') {
+                const isWait = block.type === 'wait';
+                // Delay baseado no tamanho do texto (simular humano)
+                const delay = Math.max(2, Math.min(5, block.text.length / 20));
+                await simulateDelay(delay);
+                await callWuzapi("/chat/send/text", "POST", { Phone: remoteJid, Body: block.text }, instId);
 
-                await supabase.from("funnel_leads_state")
-                    .update({ current_step: nextStep, answers, last_interaction: new Date().toISOString() })
-                    .eq("id", state.id);
-            } else {
-                // Finalizar funil
-                await finishFunnel(tgChatId, instId, remoteJid, funnel, answers, pushName);
-                await supabase.from("funnel_leads_state")
-                    .update({ status: 'completed', answers, last_interaction: new Date().toISOString() })
-                    .eq("id", state.id);
+                if (isWait) {
+                    log(`[FUNNEL] Parando no bloco ${i} (Coleta)`);
+                    return true; // Para aqui e aguarda resposta
+                }
+            } else if (block.type === 'delay') {
+                log(`[FUNNEL] Executando delay de ${block.delay}s`);
+                await new Promise(r => setTimeout(r, block.delay * 1000));
+            } else if (block.type === 'media') {
+                log(`[FUNNEL] Enviando mídia: ${block.url}`);
+                await simulateDelay(2);
+
+                let endpoint = "/chat/send/image";
+                const mime = block.mime || "";
+                if (mime.includes("video")) endpoint = "/chat/send/video";
+                else if (mime.includes("audio")) endpoint = "/chat/send/audio";
+                else if (mime.includes("document")) endpoint = "/chat/send/document";
+
+                await callWuzapi(endpoint, "POST", {
+                    Phone: remoteJid,
+                    URL: block.url,
+                    Caption: block.caption || "",
+                    FileName: block.filename || "arquivo"
+                }, instId);
             }
-            return true;
         }
 
-        return false;
+        // 6. Se chegou aqui, o funil acabou
+        log(`[FUNNEL] Funil concluído para ${remoteJid}`);
+        await finishFunnel(tgChatId, instId, remoteJid, funnel, answers, pushName);
+        await supabase.from("funnel_leads_state").update({ status: 'completed', last_interaction: new Date().toISOString() }).eq("id", state.id);
+
+        return true;
     } catch (e) {
-        log(`[ERR FUNNEL] ${e.message}`);
+        log(`[ERR FUNNEL-MOD] ${e.message}`);
         return false;
     }
 }
@@ -2795,6 +2839,38 @@ bot.action("gen_pix_mensal", async (ctx) => {
     }
 });
 
+bot.on(["photo", "document", "video", "audio", "voice"], async (ctx) => {
+    const session = await getSession(ctx.chat.id);
+    if (!session.stage) return;
+
+    if (session.stage.startsWith("WA_FUNNEL_WAIT_BLOCK_MED_")) {
+        const instId = session.stage.replace("WA_FUNNEL_WAIT_BLOCK_MED_", "");
+        const msg = ctx.message;
+        const fileId = msg.photo ? msg.photo[msg.photo.length - 1].file_id : (msg.document || msg.video || msg.audio || msg.voice).file_id;
+        const fileLink = await bot.telegram.getFileLink(fileId);
+        const caption = msg.caption || "";
+
+        const { data: funnel } = await supabase.from("qualification_funnels").select("*").eq("instance_id", instId).maybeSingle();
+        let blocks = funnel?.blocks || [];
+
+        blocks.push({
+            id: Date.now(),
+            type: 'media',
+            url: fileLink.href,
+            caption,
+            wait_for_reply: false,
+            mime: msg.document?.mime_type || (msg.photo ? 'image/jpeg' : 'application/octet-stream')
+        });
+
+        await supabase.from("qualification_funnels").upsert({ instance_id: instId, blocks }, { onConflict: "instance_id" });
+        ctx.reply("✅ Bloco de mídia adicionado com sucesso!");
+        session.stage = "READY";
+        await syncSession(ctx, session);
+        return renderFunnelBlocksMenu(ctx, instId);
+    }
+    // ... (restante do código de mídia existente se houver)
+});
+
 bot.on("text", async (ctx) => {
     if (ctx.message.text.startsWith("/")) return;
     const session = await getSession(ctx.chat.id);
@@ -2804,37 +2880,40 @@ bot.on("text", async (ctx) => {
         try { await ctx.deleteMessage(); } catch (e) { } // Deleta a mensagem do usuário (comando ou texto)
     };
 
-    // --- FUNNEL CONFIG STAGES ---
-    if (session.stage && session.stage.startsWith("WA_FUNNEL_WAIT_")) {
+    // --- FUNNEL CONFIG STAGES (MODULAR) ---
+    if (session.stage && session.stage.startsWith("WA_FUNNEL_WAIT_BLOCK_")) {
         const parts = session.stage.split("_");
         const instId = parts[parts.length - 1];
 
-        if (session.stage.includes("WAIT_PRES")) {
-            const text = ctx.message.text.trim();
-            await supabase.from("qualification_funnels")
-                .upsert({ instance_id: instId, presentation_text: text, name: `Funil ${instId}` }, { onConflict: "instance_id" });
+        const { data: funnel } = await supabase.from("qualification_funnels").select("*").eq("instance_id", instId).maybeSingle();
+        let blocks = funnel?.blocks || [];
 
-            ctx.reply("✅ Mensagem de apresentação salva com sucesso!");
-            session.stage = "READY";
-            await syncSession(ctx, session);
-            return renderFunnelMenu(ctx, instId);
+        if (session.stage.includes("WAIT_BLOCK_TXT")) {
+            const text = ctx.message.text.trim();
+            blocks.push({ id: Date.now(), type: 'text', text, wait_for_reply: false });
+            await supabase.from("qualification_funnels").upsert({ instance_id: instId, blocks, name: `Funil ${instId}` }, { onConflict: "instance_id" });
+            ctx.reply("✅ Bloco de texto adicionado!");
         }
 
-        if (session.stage.includes("WAIT_QUES")) {
+        if (session.stage.includes("WAIT_BLOCK_QUES")) {
             const text = ctx.message.text.trim();
-            const { data: funnel } = await supabase.from("qualification_funnels").select("*").eq("instance_id", instId).maybeSingle();
-
-            let questions = funnel?.questions || [];
-            questions.push({ id: Date.now(), text, type: "text" });
-
-            await supabase.from("qualification_funnels")
-                .upsert({ instance_id: instId, questions, name: `Funil ${instId}` }, { onConflict: "instance_id" });
-
-            ctx.reply("✅ Pergunta adicionada com sucesso!");
-            session.stage = "READY";
-            await syncSession(ctx, session);
-            return renderFunnelQuestionsMenu(ctx, instId);
+            // Pergunta é um bloco de texto que espera resposta
+            blocks.push({ id: Date.now(), type: 'wait', text, wait_for_reply: true, field: `campo_${blocks.length + 1}` });
+            await supabase.from("qualification_funnels").upsert({ instance_id: instId, blocks, name: `Funil ${instId}` }, { onConflict: "instance_id" });
+            ctx.reply("✅ Bloco de coleta adicionado!");
         }
+
+        if (session.stage.includes("WAIT_BLOCK_DELAY")) {
+            const delay = parseInt(ctx.message.text.trim());
+            if (isNaN(delay)) return ctx.reply("❌ Digite um número válido em segundos.");
+            blocks.push({ id: Date.now(), type: 'delay', delay });
+            await supabase.from("qualification_funnels").upsert({ instance_id: instId, blocks, name: `Funil ${instId}` }, { onConflict: "instance_id" });
+            ctx.reply("✅ Bloco de delay adicionado!");
+        }
+
+        session.stage = "READY";
+        await syncSession(ctx, session);
+        return renderFunnelBlocksMenu(ctx, instId);
     }
 
     // --- ADMIN STAGES ---
