@@ -3608,6 +3608,42 @@ async function handleMassMedia(ctx, type, fileId, caption, fileName, fileSize) {
         const base64Data = `data:${mimeType};base64,${buffer.toString('base64')}`;
 
         const variations = (caption || "").split(";;;").map(v => v.trim()).filter(v => v.length > 0);
+
+        // --- NOVO: Suporte a arquivo .txt para contatos ---
+        if (type === 'document' && (fileName?.toLowerCase().endsWith(".txt") || mimeType === 'text/plain')) {
+            const content = buffer.toString('utf-8');
+            const lines = content.split("\n").map(n => n.trim()).filter(n => n.length > 5);
+            const contacts = lines.map(line => {
+                if (line.includes(";")) {
+                    const [name, phone] = line.split(";").map(p => p.trim());
+                    return { name, phone: phone.replace(/\D/g, "") };
+                }
+                return { name: null, phone: line.replace(/\D/g, "") };
+            }).filter(c => c.phone.length >= 8);
+
+            if (contacts.length === 0) {
+                try { await ctx.telegram.deleteMessage(ctx.chat.id, processingMsg.message_id); } catch (e) { }
+                return ctx.reply("❌ Nenhum número válido encontrado no arquivo .txt.\n\nCertifique-se de que os números estão um por linha.");
+            }
+
+            session.mass_contacts = contacts;
+            session.stage = `WA_WAITING_MASS_MSG_${instId}`;
+            await syncSession(ctx, session);
+
+            try { await ctx.telegram.deleteMessage(ctx.chat.id, processingMsg.message_id); } catch (e) { }
+
+            const prompt = `✅ *${contacts.length} contatos importados do arquivo!*\n\n` +
+                `Agora, envie o **conteúdo** que deseja disparar (Texto, Foto, Vídeo, etc):`;
+            const sent = await ctx.reply(prompt, {
+                parse_mode: "Markdown",
+                ...Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar", `wa_mass_init_${instId}`)]])
+            });
+            session.last_ui_id = sent.message_id;
+            await syncSession(ctx, session);
+            return;
+        }
+        // --- FIM Suporte .txt ---
+
         session.mass_msgs = variations.length > 0 ? variations : [""];
         session.mass_media_type = type;
         session.mass_media_data = base64Data;
