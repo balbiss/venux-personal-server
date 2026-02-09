@@ -138,7 +138,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.70-UI";
+const SERVER_VERSION = "1.1.71-UI";
 
 async function safeEdit(ctx, text, extra = {}) {
     const session = await getSession(ctx.chat.id);
@@ -469,7 +469,10 @@ bot.action("admin_search_user", async (ctx) => {
     const session = await getSession(ctx.chat.id);
     session.stage = "ADMIN_WAIT_USER_SEARCH";
     await syncSession(ctx, session);
-    ctx.reply("🔍 *Buscar Usuário*\n\nDigite o **Chat ID** do usuário que deseja gerenciar:", { parse_mode: "Markdown" });
+    ctx.reply("🔍 *Buscar Usuário*\n\nDigite o **Chat ID** do usuário que deseja gerenciar:", {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar", "admin_users_menu")]])
+    });
 });
 
 async function renderUserDetails(ctx, targetChatId) {
@@ -1175,8 +1178,12 @@ bot.action(/^wa_mass_new_start_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
     if (!await checkOwnership(ctx, id)) return;
-    ctx.editMessageText("📝 *Novo Disparo*\n\nPor favor, envie a **lista de números** (um por linha).\n\nFormatos:\n`5511999998888` ou `Nome;5511999998888`", { parse_mode: "Markdown" });
+    ctx.editMessageText("📝 *Novo Disparo*\n\nPor favor, envie a **lista de números** (um por linha).\n\nFormatos:\n`5511999998888` ou `Nome;5511999998888`", {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar", `wa_mass_init_${id}`)]])
+    });
 });
+
 
 bot.action(/^wa_mass_list_paused_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
@@ -1595,7 +1602,7 @@ async function renderFollowupMenu(ctx, instId) {
         [Markup.button.callback("⏰ Definir Tempo (horas)", `wa_fu_set_hours_${instId}`)],
         [Markup.button.callback("🔢 Definir Qnt. Lembretes", `wa_fu_set_max_${instId}`)],
         [Markup.button.callback("📝 Prompt do Sistema", `wa_ai_prompt_${instId}`)],
-        [Markup.button.callback("🔙 Voltar", `wa_manage_${instId}`)]
+        [Markup.button.callback("🔙 Voltar", `manage_${instId}`)]
     ];
 
     await safeEdit(ctx, text, Markup.inlineKeyboard(buttons));
@@ -2699,8 +2706,10 @@ bot.on(["photo", "document", "video", "audio", "voice"], async (ctx) => {
         await syncSession(ctx, session);
         return renderFunnelBlocksMenu(ctx, instId);
     }
-    // ... (restante do código de mídia existente se houver)
+
+    return next();
 });
+
 
 bot.on("text", async (ctx) => {
     if (ctx.message.text.startsWith("/")) return;
@@ -2853,7 +2862,7 @@ bot.on("text", async (ctx) => {
                 ...Markup.inlineKeyboard([
                     [Markup.button.callback("📷 QR Code", `wa_qr_${id}`)],
                     [Markup.button.callback("🔢 Conectar por Código", `wa_pair_${id}`)],
-                    [Markup.button.callback("📱 Minhas Instâncias", "cmd_instancias")]
+                    [Markup.button.callback("📱 Minhas Instâncias", "cmd_instancias_menu")]
                 ])
             });
             session.last_ui_id = sent.message_id;
@@ -2869,7 +2878,8 @@ bot.on("text", async (ctx) => {
         session.wiz.data.nome_agente = ctx.message.text.trim();
         session.stage = `WA_WIZ_IMOB_COMPANY_${instId}`;
         await syncSession(ctx, session);
-        ctx.reply("2. Qual o **Nome da Imobiliária**?");
+        ctx.reply("2. Qual o **Nome da Imobiliária**?", Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar", `wa_wiz_re_back_${instId}_1`)]]));
+
 
     } else if (session.stage && session.stage.startsWith("WA_WIZ_IMOB_COMPANY_")) {
         await cleanup();
@@ -3130,9 +3140,9 @@ bot.on("text", async (ctx) => {
             await triggerMedicalWizard(ctx, instId, 4);
         }
     } else if (session.stage && session.stage.startsWith("WA_AI_CONF_MC_BOOKING_")) {
-
         await cleanup();
-        const instId = session.stage.replace("WA_AI_CONF_RE_RULES_", "");
+        const instId = session.stage.replace("WA_AI_CONF_MC_BOOKING_", "");
+
         const inst = await checkOwnership(ctx, instId);
         if (!inst) return;
         if (inst) {
@@ -3141,14 +3151,14 @@ bot.on("text", async (ctx) => {
             await syncSession(ctx, session);
 
             const styles = [
-                [Markup.button.callback("😊 Amigável e com Emojis", `wa_ai_re_style_${instId}_amigavel`)],
-                [Markup.button.callback("💼 Formal e Profissional", `wa_ai_re_style_${instId}_formal`)],
-                [Markup.button.callback("🎯 Direto e Persuasivo", `wa_ai_re_style_${instId}_direto`)],
-                [Markup.button.callback("😎 Descontraído", `wa_ai_re_style_${instId}_descontraido`)]
+                [Markup.button.callback("😊 Acolhedor", `wa_ai_mc_style_${instId}_acolhedor`)],
+                [Markup.button.callback("💼 Profissional", `wa_ai_mc_style_${instId}_formal`)],
+                [Markup.button.callback("🔙 Voltar", `wa_ai_mc_back_${instId}_3`)]
             ];
-            const sent = await ctx.reply("🎭 *Passo 8/9: Estilo de Conversa*\n\nEscolha como a IA deve falar:", Markup.inlineKeyboard(styles));
+            const sent = await ctx.reply("🎭 *Passo Final: Estilo de Conversa*\n\nEscolha o tom de voz da clínica:", Markup.inlineKeyboard(styles));
             session.last_ui_id = sent.message_id;
             await syncSession(ctx, session);
+
         }
     } else if (session.stage && session.stage.startsWith("WA_AI_RESUME_TIME_VAL_")) {
         await cleanup();
@@ -3212,7 +3222,11 @@ bot.on("text", async (ctx) => {
             `💡 *Personalização:* Use \`{{nome}}\` para o nome do contato.\n\n` +
             `*Exemplo:* \`Oi {{nome}}!;;;Olá, como vai?;;;Fala {{nome}}!\``;
 
-        const sent = await ctx.reply(prompt, { parse_mode: "Markdown" });
+        const sent = await ctx.reply(prompt, {
+            parse_mode: "Markdown",
+            ...Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar", `wa_mass_init_${instId}`)]])
+        });
+
         session.last_ui_id = sent.message_id;
         await syncSession(ctx, session);
 
@@ -3231,7 +3245,10 @@ bot.on("text", async (ctx) => {
         if (session.last_ui_id) try { await ctx.telegram.deleteMessage(ctx.chat.id, session.last_ui_id); } catch (e) { }
         try { await ctx.deleteMessage(); } catch (e) { }
 
-        const sent = await ctx.reply(`📝 ${session.mass_msgs.length} variações de mensagem salvas.\n\nAgora, defina o **intervalo de tempo** (delay) em segundos no formato \`MÍN-MÁX\`.\n\nExemplo: \`10-30\`.`);
+        const sent = await ctx.reply(`📝 ${session.mass_msgs.length} variações de mensagem salvas.\n\nAgora, defina o **intervalo de tempo** (delay) em segundos no formato \`MÍN-MÁX\`.\n\nExemplo: \`10-30\`.`, {
+            ...Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar", `wa_mass_new_start_${instId}`)]])
+        });
+
         session.last_ui_id = sent.message_id;
         await syncSession(ctx, session);
 
@@ -3774,7 +3791,158 @@ bot.telegram.setMyCommands([
 ]).then(() => log("✅ Menu de Comandos atualizado com sucesso no Telegram"))
     .catch(err => log(`❌ Erro ao atualizar Menu de Comandos: ${err.message}`));
 
-// -- Background Worker para Agendamentos --
+async function triggerRealEstateWizard(ctx, instId, step) {
+    const session = await getSession(ctx.chat.id);
+    session.wiz = session.wiz || { data: {}, step };
+    session.wiz.step = step;
+
+    const back = (s) => Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar", s)]]);
+
+    if (step === 1) {
+        session.stage = `WA_AI_CONF_RE_COMPANY_${instId}`;
+        await syncSession(ctx, session);
+        return ctx.reply("1. Qual o **Nome da Empresa/Imobiliária**?", back(`wa_ai_menu_${instId}`));
+    } else if (step === 2) {
+        session.stage = `WA_AI_CONF_RE_GREETING_${instId}`;
+        await syncSession(ctx, session);
+        return ctx.reply("2. Qual a **Saudação Inicial**?", back(`wa_ai_re_back_${instId}_1`));
+    } else if (step === 3) {
+        session.stage = `WA_AI_CONF_RE_ADDRESS_${instId}`;
+        await syncSession(ctx, session);
+        return ctx.reply("3. Qual o **Endereço/Região de Atendimento**?", back(`wa_ai_re_back_${instId}_2`));
+    } else if (step === 4) {
+        session.stage = `WA_AI_CONF_RE_PRODUCT_${instId}`;
+        await syncSession(ctx, session);
+        return ctx.reply("4. Quais seus principais **Produtos/Nichos** (ex: venda, locação, alto padrão)?", back(`wa_ai_re_back_${instId}_3`));
+    } else if (step === 5) {
+        session.stage = `WA_AI_CONF_RE_FUNNEL_${instId}`;
+        await syncSession(ctx, session);
+        return ctx.reply("5. Qual o seu principal **Objetivo** no atendimento (ex: agendar visita, captar leads)?", back(`wa_ai_re_back_${instId}_4`));
+    } else if (step === 6) {
+        session.stage = `WA_AI_CONF_RE_BIO_${instId}`;
+        await syncSession(ctx, session);
+        return ctx.reply("6. Conte um pouco sobre a **História/Bio** da empresa:", back(`wa_ai_re_back_${instId}_5`));
+    } else if (step === 7) {
+        session.stage = "READY";
+        await syncSession(ctx, session);
+        const styles = [
+            [Markup.button.callback("😊 Amigável e com Emojis", `wa_ai_re_style_${instId}_amigavel`)],
+            [Markup.button.callback("💼 Formal e Profissional", `wa_ai_re_style_${instId}_formal`)],
+            [Markup.button.callback("🎯 Direto e Persuasivo", `wa_ai_re_style_${instId}_direto`)],
+            [Markup.button.callback("🔙 Voltar", `wa_ai_re_back_${instId}_6`)]
+        ];
+        return ctx.reply("🎭 *Passo Final: Estilo de Conversa*\n\nEscolha como a IA deve falar:", Markup.inlineKeyboard(styles));
+    }
+}
+
+async function triggerMedicalWizard(ctx, instId, step) {
+    const session = await getSession(ctx.chat.id);
+    session.wiz = session.wiz || { data: {}, step };
+    session.wiz.step = step;
+
+    const back = (s) => Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar", s)]]);
+
+    if (step === 1) {
+        session.stage = `WA_AI_CONF_MC_COMPANY_${instId}`;
+        await syncSession(ctx, session);
+        return ctx.reply("1. Qual o **Nome da Clínica/Consultório**?", back(`wa_ai_menu_${instId}`));
+    } else if (step === 2) {
+        session.stage = `WA_AI_CONF_MC_SPECIALTIES_${instId}`;
+        await syncSession(ctx, session);
+        return ctx.reply("2. Quais as **Especialidades** atendidas?", back(`wa_ai_mc_back_${instId}_1`));
+    } else if (step === 3) {
+        session.stage = `WA_AI_CONF_MC_PLANS_${instId}`;
+        await syncSession(ctx, session);
+        return ctx.reply("3. Quais **Convênios** você aceita? (ou apenas particular)", back(`wa_ai_mc_back_${instId}_2`));
+    } else if (step === 4) {
+        session.stage = `WA_AI_CONF_MC_BOOKING_${instId}`;
+        await syncSession(ctx, session);
+        return ctx.reply("4. Link ou orientação para **Agendamento**:", back(`wa_ai_mc_back_${instId}_3`));
+    } else if (step === 5) {
+        session.stage = "READY";
+        await syncSession(ctx, session);
+        const styles = [
+            [Markup.button.callback("😊 Acolhedor", `wa_ai_mc_style_${instId}_acolhedor`)],
+            [Markup.button.callback("💼 Profissional", `wa_ai_mc_style_${instId}_formal`)],
+            [Markup.button.callback("🔙 Voltar", `wa_ai_mc_back_${instId}_4`)]
+        ];
+        return ctx.reply("🎭 *Passo Final: Estilo de Conversa*\n\nEscolha o tom de voz da clínica:", Markup.inlineKeyboard(styles));
+    }
+}
+
+async function finishWizard(ctx, instId, wiz) {
+    const session = await getSession(ctx.chat.id);
+    const inst = session.whatsapp.instances.find(i => i.id === instId);
+    if (!inst) return;
+
+    let prompt = "";
+    const d = wiz.data;
+
+    if (d.specialties) {
+        // Medical
+        prompt = `Você é o assistente virtual da clínica ${d.company_name}. ` +
+            `Especialidades: ${d.specialties}. ` +
+            `Convênios: ${d.plans}. ` +
+            `Agendamento: ${d.booking}. ` +
+            `Seu tom de voz deve ser ${wiz.style || 'profissional'}. ` +
+            `Responda de forma empática e ajude o paciente a agendar uma consulta.`;
+    } else {
+        // Real Estate
+        prompt = `Você é o corretor virtual da ${d.company_name}. ` +
+            `Atendemos em: ${d.address}. ` +
+            `Produtos: ${d.products}. ` +
+            `Objetivo: ${d.funnel}. ` +
+            `Bio: ${d.bio}. ` +
+            `Seu tom de voz deve ser ${wiz.style || 'profissional'}. ` +
+            `Tente qualificar o lead e encaminhá-lo para um corretor humano quando necessário.`;
+    }
+
+    inst.ai_prompt = prompt;
+    inst.ai_enabled = true;
+    session.stage = "READY";
+    delete session.wiz;
+    await syncSession(ctx, session);
+
+    ctx.reply("✨ *Configuração Concluída!*\n\nSua IA foi configurada e ativada automaticamente com base nas suas respostas.", { parse_mode: "Markdown" });
+    await renderAiMenu(ctx, instId);
+}
+
+bot.action(/^wa_ai_re_style_(.+)_(.+)$/, async (ctx) => {
+    safeAnswer(ctx);
+    const instId = ctx.match[1];
+    const style = ctx.match[2];
+    const session = await getSession(ctx.chat.id);
+    if (!session.wiz) session.wiz = { data: {} };
+    session.wiz.style = style;
+    await finishWizard(ctx, instId, session.wiz);
+});
+
+bot.action(/^wa_ai_mc_style_(.+)_(.+)$/, async (ctx) => {
+    safeAnswer(ctx);
+    const instId = ctx.match[1];
+    const style = ctx.match[2];
+    const session = await getSession(ctx.chat.id);
+    if (!session.wiz) session.wiz = { data: {} };
+    session.wiz.style = style;
+    await finishWizard(ctx, instId, session.wiz);
+});
+
+bot.action(/^wa_wiz_re_back_(.+)_(.+)$/, async (ctx) => {
+    safeAnswer(ctx);
+    const instId = ctx.match[1];
+    const step = parseInt(ctx.match[2]);
+    // Este é para o Wizard antigo se ainda for usado
+    const session = await getSession(ctx.chat.id);
+    if (step === 1) {
+        session.stage = `WA_WIZ_IMOB_AGENT_${instId}`;
+        await syncSession(ctx, session);
+        ctx.reply("1. Qual o **Nome do Agente/Consultor**?");
+    }
+});
+
+// --- Background Worker para Campanhas Agendadas ---
+
+
 async function checkScheduledCampaigns() {
     try {
         const now = new Date().toISOString();
