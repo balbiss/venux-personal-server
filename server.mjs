@@ -667,7 +667,7 @@ bot.action("cmd_shortcuts_disparos", async (ctx) => {
 bot.command("stats", async (ctx) => {
     try {
         const session = await getSession(ctx.chat.id);
-        const instIds = session.whatsapp.instances.map(i => i.id);
+        const instIds = (session.whatsapp?.instances || []).map(i => i.id);
 
         if (instIds.length === 0) return ctx.reply("❌ Você ainda não possui instâncias configuradas.");
 
@@ -678,29 +678,34 @@ bot.command("stats", async (ctx) => {
             .in("instance_id", instIds)
             .eq("status", "HUMAN_ACTIVE");
 
-        if (error) throw error;
+        if (error) {
+            log(`[STATS DB ERR] ${error.message}`);
+            return ctx.reply("❌ Erro ao acessar o banco de dados de estatísticas.");
+        }
+
+        const leadsList = leads || [];
 
         // 2. Leads de Hoje
         const today = new Date().toISOString().split('T')[0];
-        const leadsToday = leads.filter(l => l.last_interaction.startsWith(today));
+        const leadsToday = leadsList.filter(l => l.last_interaction && l.last_interaction.startsWith(today));
 
         // 3. Stats por Instância
         let instStats = "";
-        for (const inst of session.whatsapp.instances) {
-            const count = leads.filter(l => l.instance_id === inst.id).length;
+        for (const inst of (session.whatsapp?.instances || [])) {
+            const count = leadsList.filter(l => l.instance_id === inst.id).length;
             instStats += `- *${inst.name}:* ${count} leads qualificados\n`;
         }
 
         const msg = `📊 *Dashboard de Leads (Analytics)*\n\n` +
-            `🔥 *Leads Qualificados (Total):* ${leads.length}\n` +
+            `🔥 *Leads Qualificados (Total):* ${leadsList.length}\n` +
             `📅 *Leads de Hoje:* ${leadsToday.length}\n\n` +
             `📱 *Performance por Instância:*\n${instStats || '_Sem dados_'}\n\n` +
             `💡 *Dica:* Seus leads qualificados são aqueles que foram pausados para atendimento humano ou entregues via rodízio.`;
 
         ctx.reply(msg, { parse_mode: "Markdown" });
     } catch (e) {
-        log(`[STATS ERR] ${e.message}`);
-        ctx.reply("❌ Erro ao buscar estatísticas. Tente novamente mais tarde.");
+        log(`[STATS FATAL] ${e.message}`);
+        ctx.reply("❌ Erro inesperado ao gerar estatísticas.");
     }
 });
 
