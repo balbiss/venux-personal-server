@@ -138,7 +138,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.72-UI";
+const SERVER_VERSION = "1.1.73-UI";
 
 async function safeEdit(ctx, text, extra = {}) {
     const session = await getSession(ctx.chat.id);
@@ -3287,18 +3287,17 @@ bot.on("text", async (ctx) => {
         if (!match) return ctx.reply("❌ Formato inválido. Use `DD/MM/AAAA HH:MM`.");
 
         const [_, d, m, y, h, min] = match;
-        const scheduledFor = new Date(y, m - 1, d, h, min);
+        // Força o fuso horário de Brasília (UTC-3)
+        const scheduledFor = new Date(`${y}-${m}-${d}T${h}:${min}:00-03:00`);
 
         const now = new Date();
-        const serverTimeStr = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-        const serverDateStr = now.toLocaleDateString('pt-BR');
+        // Hora atual de Brasília para feedback
+        const brtNow = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+        const serverTimeStr = brtNow.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        const serverDateStr = brtNow.toLocaleDateString('pt-BR');
 
-        // Buffer de 4 horas para lidar com disparidade UTC (Servidor) vs BRT (Usuário)
-        const bufferNow = new Date();
-        bufferNow.setHours(bufferNow.getHours() - 4);
-
-        if (isNaN(scheduledFor.getTime()) || scheduledFor < bufferNow) {
-            return ctx.reply(`❌ *Data no passado!*\n\nHora no Servidor: \`${serverDateStr} ${serverTimeStr}\`\nSua entrada: \`${dateStr}\`\n\nPor favor, envie um horário futuro baseado no relógio do servidor acima.`, { parse_mode: "Markdown" });
+        if (isNaN(scheduledFor.getTime()) || scheduledFor < now) {
+            return ctx.reply(`❌ *Data no passado!*\n\nHora Atual (Brasília): \`${serverDateStr} ${serverTimeStr}\`\nSua entrada: \`${dateStr}\`\n\nPor favor, envie um horário futuro.`, { parse_mode: "Markdown" });
         }
 
         const campaignData = {
@@ -4116,7 +4115,8 @@ setInterval(checkAutoResume, 600000); // Check every 10 min
 
 bot.launch().then(() => {
     log("Bot Ativo");
-    checkScheduledCampaigns(); // Execução imediata ao iniciar
+    // Não executa imediatamente ao iniciar para evitar disparos acidentais se o fuso do servidor mudar
+    setTimeout(checkScheduledCampaigns, 5000);
 });
 
 // Graceful stop
