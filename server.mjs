@@ -138,7 +138,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.77-UI";
+const SERVER_VERSION = "1.178";
 
 async function safeEdit(ctx, text, extra = {}) {
     const session = await getSession(ctx.chat.id);
@@ -671,9 +671,9 @@ bot.command("stats", async (ctx) => {
 
         if (instIds.length === 0) return ctx.reply("❌ Você ainda não possui instâncias configuradas.");
 
-        // 1. Leads Qualificados Totais
+        // 1. Leads Qualificados Totais (Usando rodizio_leads como fallback se ai_leads_tracking não existir)
         const { data: leads, error } = await supabase
-            .from("ai_leads_tracking")
+            .from("qualification_leads") // Tabela correta para leads qualificados
             .select("*")
             .in("instance_id", instIds)
             .eq("status", "HUMAN_ACTIVE");
@@ -3582,9 +3582,15 @@ bot.on("text", async (ctx) => {
 // Helper para processar mídias de massa
 async function handleMassMedia(ctx, type, fileId, caption, fileName, fileSize) {
     const session = await getSession(ctx.chat.id);
-    if (!session.stage || !session.stage.startsWith("WA_WAITING_MASS_MSG_")) return;
+    if (!session.stage) return;
 
-    const instId = session.stage.replace("WA_WAITING_MASS_MSG_", "");
+    // Se estiver na etapa de contatos, só aceita documento .txt
+    const isContactImport = session.stage.startsWith("WA_WAITING_MASS_CONTACTS_");
+    const isMessageContent = session.stage.startsWith("WA_WAITING_MASS_MSG_");
+
+    if (!isContactImport && !isMessageContent) return;
+
+    const instId = session.stage.replace(isContactImport ? "WA_WAITING_MASS_CONTACTS_" : "WA_WAITING_MASS_MSG_", "");
     if (!await checkOwnership(ctx, instId)) return;
 
     // Verificação de tamanho (Limite 20MB da API do Telegram Bot)
