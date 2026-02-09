@@ -8,9 +8,9 @@ services:
     ports:
       - "8788:8788"
     command: >
-      sh -c "echo 'Starting Connect deployment script v1.179...' &&
+      sh -c "echo 'Starting Connect deployment script v1.180...' &&
              apk add --no-cache git &&
-             echo 'Cloning fresh repository (v1.179)...' &&
+             echo 'Cloning fresh repository (v1.180)...' &&
              rm -rf /app_tmp &&
              git clone https://github.com/balbiss/venux-personal-server.git /app_tmp &&
              echo 'Updating application files...' &&
