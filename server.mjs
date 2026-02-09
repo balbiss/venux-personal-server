@@ -65,6 +65,13 @@ async function getSession(chatId) {
         stage: "START",
         isVip: false,
         subscriptionExpiry: null,
+        referredBy: null,
+        affiliate: {
+            balance: 0,
+            totalEarned: 0,
+            referralsCount: 0,
+            conversionsCount: 0
+        },
         whatsapp: { instances: [], maxInstances: 1 },
         reports: {}
     };
@@ -120,6 +127,7 @@ async function getSystemConfig() {
     const defaultConfig = {
         planPrice: 49.90,
         referralDays: 7,
+        referralCommission: 10.00,
         supportLink: "@ConnectSuporte",
         tutorialLink: "https://t.me/seu_canal_de_tutoriais",
         adminChatId: null, // ID do dono
@@ -140,7 +148,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.184";
+const SERVER_VERSION = "1.185";
 
 async function safeEdit(ctx, text, extra = {}) {
     const session = await getSession(ctx.chat.id);
@@ -580,6 +588,29 @@ bot.start(async (ctx) => {
     const config = await getSystemConfig();
     const userFirstName = ctx.from.first_name || "Parceiro";
 
+    // --- Lógica de Afiliados: Atribuição ---
+    const payload = ctx.startPayload; // Captura o ID do link: t.me/bot?start=ID
+    const session = await getSession(ctx.chat.id);
+
+    if (payload && !session.referredBy && String(payload) !== String(ctx.chat.id)) {
+        // Verifica se o padrinho existe
+        const referrerId = String(payload);
+        const refSession = await getSession(referrerId);
+
+        if (refSession) {
+            session.referredBy = referrerId;
+            refSession.affiliate.referralsCount = (refSession.affiliate.referralsCount || 0) + 1;
+            await saveSession(referrerId, refSession);
+            log(`[AFFILIATE] Novo indicado para ${referrerId}: ${ctx.chat.id}`);
+
+            // Avisar o padrinho (opcional, mas motivador)
+            try {
+                bot.telegram.sendMessage(referrerId, `🤝 *Nova Indicação!* \n\n${userFirstName} entrou pelo seu link. Se ele(a) assinar, você ganha comissão!`, { parse_mode: "Markdown" });
+            } catch (e) { }
+        }
+    }
+    await syncSession(ctx, session);
+
     const welcomeMsg = `👋 *Olá, ${userFirstName}! Bem-vindo ao Connect SaaS* 🚀\n\n` +
         `O sistema definitivo para automação de WhatsApp com IA e Rodízio de Leads.\n\n` +
         `👇 *Escolha uma opção no menu abaixo:*`;
@@ -590,7 +621,7 @@ bot.start(async (ctx) => {
 
     const buttons = [
         [Markup.button.callback("🚀 Minhas Instâncias", "cmd_instancias_menu")],
-        [Markup.button.callback("📢 Disparo em Massa", "cmd_shortcuts_disparos"), Markup.button.callback("👥 Rodízio de Leads", "cmd_shortcuts_rodizio")],
+        [Markup.button.callback("📢 Disparo em Massa", "cmd_shortcuts_disparos"), Markup.button.callback("🤝 Afiliados", "cmd_afiliados")],
         [Markup.button.callback("🔔 Follow-ups / Agenda", "cmd_shortcuts_followups")],
         [Markup.button.callback("💎 Seu Plano (Ativo)", "cmd_planos_menu"), Markup.button.callback("👤 Suporte / Ajuda", "cmd_suporte")]
     ];
@@ -816,6 +847,52 @@ bot.action("cmd_tutoriais", async (ctx) => {
         parse_mode: "Markdown",
         ...Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar", "start")]])
     });
+});
+
+async function renderAffiliateMenu(ctx) {
+    const session = await getSession(ctx.chat.id);
+    const botInfo = await ctx.telegram.getMe();
+    const affLink = `https://t.me/${botInfo.username}?start=${ctx.chat.id}`;
+    const aff = session.affiliate || { balance: 0, referralsCount: 0, conversionsCount: 0 };
+
+    const text = `🤝 *Sistema de Afiliados Connect*\n\n` +
+        `Indique o Connect para seus amigos e ganhe comissão por cada assinatura confirmada!\n\n` +
+        `🔗 *Seu Link de Indicação:* \n\`${affLink}\`\n\n` +
+        `📊 *Suas Estatísticas:*\n` +
+        `👤 Indicados: ${aff.referralsCount || 0}\n` +
+        `✅ Vendas Convertidas: ${aff.conversionsCount || 0}\n` +
+        `💰 *Saldo Atual: R$ ${(aff.balance || 0).toFixed(2)}*\n\n` +
+        `━━━━━━━━━━━━━━━━━━━━\n` +
+        `📢 *Como funciona?*\n` +
+        `1. Você compartilha seu link.\n` +
+        `2. Alguém entra e assina o Plano Pro.\n` +
+        `3. Você ganha **R$ 10,00** de comissão na hora no seu saldo!`;
+
+    const buttons = [
+        [Markup.button.callback("💸 Solicitar Saque", "gen_withdraw_pix")],
+        [Markup.button.callback("🔙 Voltar", "start")]
+    ];
+
+    await safeEdit(ctx, text, Markup.inlineKeyboard(buttons));
+}
+
+bot.action("cmd_afiliados", async (ctx) => {
+    safeAnswer(ctx);
+    await renderAffiliateMenu(ctx);
+});
+
+bot.action("gen_withdraw_pix", async (ctx) => {
+    safeAnswer(ctx);
+    const session = await getSession(ctx.chat.id);
+    const aff = session.affiliate || { balance: 0 };
+
+    if (aff.balance < 10) {
+        return ctx.reply("❌ *Saldo Insuficiente*\n\nO valor mínimo para saque é de R$ 10,00.", { parse_mode: "Markdown" });
+    }
+
+    session.stage = "ADMIN_WAIT_WITHDRAW_PIX";
+    await syncSession(ctx, session);
+    ctx.reply("💸 *Solicitar Saque*\n\nQual o seu **PIX (Chave e Tipo)** para recebimento?\n\nExemplo: `000.000.000-00 (CPF)`", { parse_mode: "Markdown" });
 });
 
 bot.action("cmd_start", (ctx) => {
@@ -2953,6 +3030,40 @@ bot.on("text", async (ctx) => {
             return renderAdminPanel(ctx);
         }
 
+        if (session.stage === "ADMIN_WAIT_WITHDRAW_PIX") {
+            const pixKey = ctx.message.text.trim();
+            const aff = session.affiliate || { balance: 0 };
+            const amount = aff.balance;
+
+            if (amount < 10) {
+                return ctx.reply("❌ Saldo insuficiente para saque.");
+            }
+
+            // Notifica o Admin
+            if (config.adminChatId) {
+                const adminMsg = `🚨 *Nova Solicitação de Saque*\n\n` +
+                    `👤 Usuário: \`${ctx.chat.id}\` (@${ctx.from.username || "sem_user"})\n` +
+                    `💰 Valor: **R$ ${amount.toFixed(2)}**\n` +
+                    `🔑 Chave PIX: \`${pixKey}\`\n\n` +
+                    `_Por favor, realize o pagamento manual e avise o usuário._`;
+
+                try {
+                    await bot.telegram.sendMessage(config.adminChatId, adminMsg, { parse_mode: "Markdown" });
+                } catch (e) {
+                    log(`[ERR NOTIFY ADMIN] ${e.message}`);
+                }
+            }
+
+            // Zera o saldo e salva
+            aff.balance = 0;
+            session.affiliate = aff;
+            session.stage = "READY";
+            await syncSession(ctx, session);
+
+            ctx.reply("✅ *Solicitação Enviada!*\n\nSeu pedido de saque foi enviado para o administrador. Você receberá o pagamento em breve.", { parse_mode: "Markdown" });
+            return renderAffiliateMenu(ctx);
+        }
+
         if (session.stage === "ADMIN_WAIT_USER_SEARCH") {
             const targetId = ctx.message.text.trim();
             // Validar se é número (opcional, mas bom pois ids são numéricos)
@@ -3821,7 +3932,28 @@ app.post("/webhook", async (req, res) => {
     // -- 1. Tratar Webhook SyncPay (Pagamento) --
     if (body.external_id && (body.status === "paid" || body.status === "confirmed")) {
         const chatId = body.external_id;
+        const config = await getSystemConfig();
         const s = await getSession(chatId);
+
+        // Se já era VIP, talvez seja renovação. Comissão geralmente é na primeira venda ou em todas?
+        // Vou implementar crédito de comissão se houver padrinho e for primeira conversão (ou simplificar para cada pagamento confirmado)
+        if (s.referredBy) {
+            const refId = s.referredBy;
+            const referrer = await getSession(refId);
+            const comm = config.referralCommission || 10.0;
+
+            referrer.affiliate.balance = (referrer.affiliate.balance || 0) + comm;
+            referrer.affiliate.totalEarned = (referrer.affiliate.totalEarned || 0) + comm;
+            referrer.affiliate.conversionsCount = (referrer.affiliate.conversionsCount || 0) + 1;
+
+            await saveSession(refId, referrer);
+            log(`[AFFILIATE] Comissão de R$ ${comm} creditada para ${refId} por indicação de ${chatId}`);
+
+            try {
+                bot.telegram.sendMessage(refId, `💰 *Comissão Recebida!*\n\nParabéns! Um de seus indicados assinou e você ganhou **R$ ${comm.toFixed(2)}**. \n\nConsulte seu saldo no menu de Afiliados.`, { parse_mode: "Markdown" });
+            } catch (e) { }
+        }
+
         s.isVip = true;
         const exp = new Date(); exp.setDate(exp.getDate() + 30);
         s.subscriptionExpiry = exp.toISOString();
