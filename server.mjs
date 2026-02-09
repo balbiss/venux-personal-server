@@ -138,7 +138,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.66-UI";
+const SERVER_VERSION = "1.1.67-UI";
 
 async function safeEdit(ctx, text, extra = {}) {
     const session = await getSession(ctx.chat.id);
@@ -2046,7 +2046,6 @@ async function renderAiMenu(ctx, instId) {
         [Markup.button.callback("📚 Base de Conhecimento (PDF)", `wa_set_ai_knowledge_${instId}`)],
         [Markup.button.callback("⏱️ Tempo de Reativação", `wa_ai_resume_time_${instId}`)],
         [Markup.button.callback("🔔 Follow-ups", `wa_ai_followup_menu_${instId}`)],
-        [Markup.button.callback("🔄 Sincronizar Webhook", `wa_ai_sync_web_${instId}`)],
         [Markup.button.callback("🔙 Voltar", `manage_${instId}`)]
     ];
 
