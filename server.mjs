@@ -849,8 +849,14 @@ async function showInstances(ctx) {
             }
         }
 
+        let phoneInfo = `🆔 \`${inst.id}\``;
+        if (isOnline && stats.data?.jid) {
+            const phoneNumber = stats.data.jid.split(":")[0].split("@")[0];
+            phoneInfo = `📱 **${phoneNumber}**`;
+        }
+
         const status = isOnline ? "✅ On" : "❌ Off";
-        msg += `🔹 **${inst.name}**\n🆔 \`${inst.id}\`\n📡 Status: ${status}\n\n`;
+        msg += `🔹 **${inst.name}**\n${phoneInfo}\n📡 Status: ${status}\n\n`;
         buttons.push([Markup.button.callback(`⚙️ Gerenciar ${inst.name}`, `manage_${inst.id}`)]);
     }
 
