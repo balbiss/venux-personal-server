@@ -138,7 +138,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.74-UI";
+const SERVER_VERSION = "1.1.75-UI";
 
 async function safeEdit(ctx, text, extra = {}) {
     const session = await getSession(ctx.chat.id);
@@ -1569,7 +1569,27 @@ bot.action(/^wa_set_ai_prompt_(.+)$/, async (ctx) => {
 
     session.stage = `WA_WAITING_AI_PROMPT_${id}`;
     await syncSession(ctx, session);
-    ctx.reply(`📝 *System Prompt (Instruções)*\n\n📌 *Conteúdo Atual:*\n\`\`\`\n${currentPrompt}\n\`\`\`\n\nPara alterar, envie o novo texto abaixo:`, { parse_mode: "Markdown" });
+
+    // Escapar caracteres HTML para evitar quebra de parsing
+    const escapedPrompt = currentPrompt
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+
+    const message = `📝 <b>System Prompt (Instruções)</b>\n\n📌 <b>Conteúdo Atual:</b>\n<pre>${escapedPrompt}</pre>\n\nPara alterar, envie o novo texto abaixo:`;
+
+    try {
+        if (message.length > 4096) {
+            await ctx.reply("📝 *System Prompt (Instruções)*\n\n⚠️ O prompt atual é muito longo para exibição formatada. Aqui está ele como texto simples:", { parse_mode: "Markdown" });
+            await ctx.reply(currentPrompt);
+            return ctx.reply("Para alterar, envie o novo texto acima revisado ou novo texto:");
+        }
+        await ctx.reply(message, { parse_mode: "HTML" });
+    } catch (e) {
+        log(`[PROMPT EDIT ERR] ${e.message}`);
+        await ctx.reply("📝 *System Prompt (Instruções)*\n\nPara alterar, envie o novo texto abaixo:", { parse_mode: "Markdown" });
+        await ctx.reply(currentPrompt);
+    }
 });
 
 bot.action(/^wa_set_ai_human_(.+)$/, async (ctx) => {
