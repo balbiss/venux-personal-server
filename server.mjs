@@ -120,6 +120,7 @@ async function getSystemConfig() {
     const defaultConfig = {
         planPrice: 49.90,
         referralDays: 7,
+        supportLink: "@ConnectSuporte",
         adminChatId: null, // ID do dono
         limits: {
             vip: { instances: 5 }
@@ -138,7 +139,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.182";
+const SERVER_VERSION = "1.183";
 
 async function safeEdit(ctx, text, extra = {}) {
     const session = await getSession(ctx.chat.id);
@@ -378,11 +379,12 @@ async function renderAdminPanel(ctx) {
         `👥 *Usuários:* ${count || 0}\n` +
         `💰 *Preço Atual:* R$ ${config.planPrice.toFixed(2)}\n` +
         `💎 *Limite Instâncias VIP:* ${config.limits.vip.instances}\n` +
-        `🤝 *Corretores:* Liberados (Ilimitados)\n`;
+        `🤝 *Corretores:* Liberados (Ilimitados)\n` +
+        `👤 *Suporte Atual:* \`${config.supportLink || "Não definido"}\`\n`;
 
     const buttons = [
         [Markup.button.callback("📢 Broadcast (Msg em Massa)", "admin_broadcast")],
-        [Markup.button.callback("💰 Alterar Preço", "admin_price")],
+        [Markup.button.callback("💰 Alterar Preço", "admin_price"), Markup.button.callback("👤 Configurar Suporte", "admin_support")],
         [Markup.button.callback("💎 Ajustar Limite Instâncias", "admin_limit_vip"), Markup.button.callback("👥 Gerenciar Usuários", "admin_users_menu")],
         [Markup.button.callback("👤 Ativar VIP Manual", "admin_vip_manual")],
         [Markup.button.callback("🔙 Voltar", "start")]
@@ -446,6 +448,14 @@ bot.action("admin_limit_free", async (ctx) => {
     session.stage = "ADMIN_WAIT_LIMIT_FREE";
     await syncSession(ctx, session);
     ctx.reply("⚙️ *Limites FREE*\n\nDigite no formato: `INSTANCIAS,CORRETORES` (ex: 1,1):", { parse_mode: "Markdown" });
+});
+
+bot.action("admin_support", async (ctx) => {
+    safeAnswer(ctx);
+    const session = await getSession(ctx.chat.id);
+    session.stage = "ADMIN_WAIT_SUPPORT";
+    await syncSession(ctx, session);
+    ctx.reply("👤 *Configurar Suporte*\n\nDigite o novo @username ou Link de Suporte:", { parse_mode: "Markdown" });
 });
 
 bot.action("admin_limit_vip", async (ctx) => {
@@ -770,9 +780,10 @@ bot.action("cmd_planos_menu", async (ctx) => {
     ctx.editMessageText(text, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
 });
 
-bot.action("cmd_suporte", (ctx) => {
+bot.action("cmd_suporte", async (ctx) => {
     safeAnswer(ctx);
-    ctx.editMessageText(`👤 *Suporte & Ajuda*\n\nPrecisa de ajuda? Entre em contato com o suporte oficial:\n\n👉 @SeuUsuarioDeSuporte`, {
+    const config = await getSystemConfig();
+    ctx.editMessageText(`👤 *Suporte & Ajuda*\n\nPrecisa de ajuda? Entre em contato com o suporte oficial:\n\n👉 ${config.supportLink || "@SeuUsuarioDeSuporte"}`, {
         parse_mode: "Markdown",
         ...Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar", "start")]])
     });
@@ -2886,6 +2897,17 @@ bot.on("text", async (ctx) => {
             config.limits.vip.instances = insts;
             await saveSystemConfig(config);
             ctx.reply(`✅ Limite de instâncias VIP atualizado para **${insts}**.`);
+            session.stage = "READY";
+            await syncSession(ctx, session);
+            return renderAdminPanel(ctx);
+        }
+
+        if (session.stage === "ADMIN_WAIT_SUPPORT") {
+            const link = ctx.message.text.trim();
+            if (!link) return ctx.reply("❌ Link inválido.");
+            config.supportLink = link;
+            await saveSystemConfig(config);
+            ctx.reply(`✅ Link de suporte atualizado para: **${link}**`);
             session.stage = "READY";
             await syncSession(ctx, session);
             return renderAdminPanel(ctx);
