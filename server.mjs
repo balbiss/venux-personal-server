@@ -138,7 +138,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.71-UI";
+const SERVER_VERSION = "1.1.72-UI";
 
 async function safeEdit(ctx, text, extra = {}) {
     const session = await getSession(ctx.chat.id);
@@ -2155,9 +2155,9 @@ bot.action(/^wa_clear_ai_knowledge_(.+)$/, async (ctx) => {
     }
 });
 
-bot.on('document', async (ctx) => {
+bot.on('document', async (ctx, next) => {
     const session = await getSession(ctx.chat.id);
-    if (!session.stage || !session.stage.startsWith("WA_WAITING_AI_KNOWLEDGE_")) return;
+    if (!session.stage || !session.stage.startsWith("WA_WAITING_AI_KNOWLEDGE_")) return next();
 
     const instId = session.stage.split("WA_WAITING_AI_KNOWLEDGE_")[1];
     const doc = ctx.message.document;
@@ -2677,9 +2677,9 @@ bot.action("gen_pix_mensal", async (ctx) => {
     }
 });
 
-bot.on(["photo", "document", "video", "audio", "voice"], async (ctx) => {
+bot.on(["photo", "document", "video", "audio", "voice"], async (ctx, next) => {
     const session = await getSession(ctx.chat.id);
-    if (!session.stage) return;
+    if (!session.stage) return next();
 
     if (session.stage.startsWith("WA_FUNNEL_WAIT_BLOCK_MED_")) {
         const instId = session.stage.replace("WA_FUNNEL_WAIT_BLOCK_MED_", "");
@@ -3549,11 +3549,11 @@ async function handleMassMedia(ctx, type, fileId, caption, fileName, fileSize) {
     }
 }
 
-bot.on("photo", ctx => handleMassMedia(ctx, 'photo', ctx.message.photo[ctx.message.photo.length - 1].file_id, ctx.message.caption, null, ctx.message.photo[ctx.message.photo.length - 1].file_size));
-bot.on("video", ctx => handleMassMedia(ctx, 'video', ctx.message.video.file_id, ctx.message.caption, ctx.message.video.file_name, ctx.message.video.file_size));
-bot.on("audio", ctx => handleMassMedia(ctx, 'audio', ctx.message.audio.file_id, ctx.message.caption, ctx.message.audio.file_name, ctx.message.audio.file_size));
-bot.on("voice", ctx => handleMassMedia(ctx, 'audio', ctx.message.voice.file_id, ctx.message.caption, "audio.ogg", ctx.message.voice.file_size));
-bot.on("document", ctx => handleMassMedia(ctx, 'document', ctx.message.document.file_id, ctx.message.caption, ctx.message.document.file_name, ctx.message.document.file_size));
+bot.on("photo", async (ctx) => handleMassMedia(ctx, 'photo', ctx.message.photo[ctx.message.photo.length - 1].file_id, ctx.message.caption, null, ctx.message.photo[ctx.message.photo.length - 1].file_size));
+bot.on("video", async (ctx) => handleMassMedia(ctx, 'video', ctx.message.video.file_id, ctx.message.caption, ctx.message.video.file_name, ctx.message.video.file_size));
+bot.on("audio", async (ctx) => handleMassMedia(ctx, 'audio', ctx.message.audio.file_id, ctx.message.caption, ctx.message.audio.file_name, ctx.message.audio.file_size));
+bot.on("voice", async (ctx) => handleMassMedia(ctx, 'audio', ctx.message.voice.file_id, ctx.message.caption, "audio.ogg", ctx.message.voice.file_size));
+bot.on("document", async (ctx) => handleMassMedia(ctx, 'document', ctx.message.document.file_id, ctx.message.caption, ctx.message.document.file_name, ctx.message.document.file_size));
 
 // -- Server Endpoints --
 app.get("/", (req, res) => res.send("Venux Bot Alive"));
