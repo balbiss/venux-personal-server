@@ -2046,11 +2046,11 @@ Se o cliente falar sobre os seguintes temas, use a tag [TRANSFERIR] imediatament
 "${humanTopics}"
 
 # QUALIFICAÇÃO DE LEADS (RODÍZIO)
-Ao identificar que o cliente está pronto ou qualificado conforme seu objetivo, use a tag [QUALIFICADO] no final da resposta para enviá-lo ao corretor/atendente.
+Ao identificar que o cliente está pronto ou qualificado conforme seu objetivo, você DEVE incluir a tag [QUALIFICADO] no final da resposta. Isso é essencial para que o sistema funcione.
 
-# FINALIZAÇÃO
-- Para transbordo humano: use [TRANSFERIR].
-- Para lead qualificado (pronto para venda/rodízio): use [QUALIFICADO].
+# FINALIZAÇÃO (Tags Obrigatórias)
+- Para transbordo humano: use [TRANSFERIR]
+- Para lead qualificado (pronto para venda/rodízio): use [QUALIFICADO]
 `;
 }
 
@@ -2499,6 +2499,7 @@ async function handleAiSdr({ text, audioBase64, history = [], systemPrompt, chat
         });
 
         const aiResponse = response.choices[0].message.content;
+        log(`[AI SDR RAW] Resposta para ${chatId}: ${aiResponse.substring(0, 500)}`);
 
         // Salvar resposta da IA no histórico do banco
         if (aiResponse) {
@@ -2552,7 +2553,7 @@ async function distributeLead(tgChatId, leadJid, instId, leadName, summary) {
         await supabase.from("ai_leads_tracking")
             .update({ status: "TRANSFERRED", last_interaction: new Date().toISOString() })
             .eq("instance_id", instId)
-            .eq("remote_jid", leadJid);
+            .eq("chat_id", leadJid); // Consistency: using chat_id instead of remote_jid if possible
 
         const brokerJid = broker.phone.includes("@") ? broker.phone : `${broker.phone}@s.whatsapp.net`;
         await callWuzapi("/chat/send/text", "POST", { Phone: brokerJid, Body: msg }, instId);
@@ -3767,6 +3768,7 @@ app.post("/webhook", async (req, res) => {
                                             await supabase.from("ai_leads_tracking").update({ status: "HUMAN_ACTIVE" })
                                                 .eq("chat_id", remoteJid).eq("instance_id", tokenId);
 
+                                            log(`[AI QUALIFY] Notificando admin ${chatId} sobre lead ${readableLead}`);
                                             bot.telegram.sendMessage(chatId, `✅ *Lead Qualificado!* **${readableLead}**\n\nEncaminhando para o corretor da vez...`);
 
                                             // Trigger Rodízio Round-Robin com os dados capturados
