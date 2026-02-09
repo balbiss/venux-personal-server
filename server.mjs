@@ -138,7 +138,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.68-UI";
+const SERVER_VERSION = "1.1.69-UI";
 
 async function safeEdit(ctx, text, extra = {}) {
     const session = await getSession(ctx.chat.id);
@@ -2398,7 +2398,7 @@ async function finishFunnel(tgChatId, instId, remoteJid, funnel, answers, pushNa
 }
 
 // Função para processar IA (Suporta Texto, Áudio/Whisper e Histórico/Memória)
-async function handleAiSdr({ text, audioBase64, history = [], systemPrompt, chatId }) {
+async function handleAiSdr({ text, audioBase64, history = [], systemPrompt, chatId, instanceId }) {
     try {
         let userMessage = text;
 
@@ -2421,51 +2421,72 @@ async function handleAiSdr({ text, audioBase64, history = [], systemPrompt, chat
 
         if (!userMessage && history.length === 0) return null;
 
-        // 2. Formatar Histórico para context (Cronologia Correta)
+        // 2. Formatar Histórico (Priority: SUPABASE)
         const messages = [{ role: "system", content: systemPrompt }];
 
-        // Adicionar histórico (últimas 15 msgs) ordenado cronologicamente (Antigo -> Novo)
-        const sortedHistory = [...history].reverse().slice(-15);
+        // Buscar histórico no banco de dados
+        const { data: dbHistory, error: dbErr } = await supabase
+            .from("ai_chat_history")
+            .select("role, content")
+            .eq("chat_id", chatId)
+            .eq("instance_id", instanceId)
+            .order("created_at", { ascending: false })
+            .limit(15);
 
-        sortedHistory.forEach(msg => {
-            // Identificação robusta do papel (Removido sender_jid === chatId que causava bug)
-            const isMe = msg.from_me === true || msg.FromMe === true ||
-                (msg.sender_jid && msg.sender_jid.includes("me")) ||
-                (msg.Info?.FromMe === true);
-            const role = isMe ? "assistant" : "user";
+        if (!dbErr && dbHistory && dbHistory.length > 0) {
+            log(`[AI HISTORY] Recuperadas ${dbHistory.length} mensagens do Supabase para ${chatId}`);
+            [...dbHistory].reverse().forEach(row => {
+                messages.push({ role: row.role, content: row.content });
+            });
+        } else if (history && history.length > 0) {
+            log(`[AI HISTORY] Usando histórico do Wuzapi como fallback.`);
+            const sortedHistory = [...history].reverse().slice(-15);
+            sortedHistory.forEach(msg => {
+                const isMe = msg.from_me === true || msg.FromMe === true || (msg.sender_jid && msg.sender_jid.includes("me")) || (msg.Info?.FromMe === true);
+                const role = isMe ? "assistant" : "user";
+                const content = msg.text_content || msg.Body || msg.Message?.Conversation || msg.Message?.conversation || msg.Message?.extendedTextMessage?.text || "";
+                if (content) messages.push({ role, content });
+            });
+        }
 
-            // Extração robusta de conteúdo do histórico
-            const content = msg.text_content || msg.Body ||
-                msg.Message?.Conversation ||
-                msg.Message?.conversation ||
-                msg.Message?.extendedTextMessage?.text ||
-                msg.Message?.imageMessage?.caption ||
-                msg.Message?.videoMessage?.caption ||
-                msg.Message?.documentMessage?.caption || "";
-
-            if (content && typeof content === 'string' && content.trim().length > 0) {
-                // log(`[AI DEBUG] Role: ${role} | Content: ${content.substring(0, 50)}...`);
-                messages.push({ role, content: content.trim() });
-            }
-        });
-
-        // Adicionar mensagem atual se houver
-        if (userMessage) messages.push({ role: "user", content: userMessage });
+        // Salvar mensagem atual do usuário no banco
+        if (userMessage) {
+            await supabase.from("ai_chat_history").insert({
+                chat_id: chatId,
+                instance_id: instanceId,
+                role: "user",
+                content: userMessage
+            });
+            messages.push({ role: "user", content: userMessage });
+        }
 
         // 3. Gerar resposta humanizada
         const response = await openai.chat.completions.create({
             model: DEFAULT_MODEL,
             messages: messages,
             temperature: 0.8,
-            max_tokens: 200
+            max_tokens: 250
         });
 
-        return response.choices[0].message.content;
+        const aiResponse = response.choices[0].message.content;
+
+        // Salvar resposta da IA no histórico do banco
+        if (aiResponse) {
+            await supabase.from("ai_chat_history").insert({
+                chat_id: chatId,
+                instance_id: instanceId,
+                role: "assistant",
+                content: aiResponse
+            });
+        }
+
+        return aiResponse;
     } catch (e) {
         log(`[ERR AI SDR] ${e.message}`);
         return null;
     }
 }
+
 
 // --- Módulo de Distribuição de Leads (Rodízio Round-Robin) ---
 async function distributeLead(tgChatId, leadJid, instId, leadName, summary) {
@@ -3677,7 +3698,8 @@ app.post("/webhook", async (req, res) => {
                                         audioBase64: q.audio,
                                         history: history,
                                         systemPrompt: systemPrompt,
-                                        chatId: remoteJid
+                                        chatId: remoteJid,
+                                        instanceId: tokenId
                                     });
 
                                     if (aiResponse) {
