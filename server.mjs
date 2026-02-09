@@ -138,7 +138,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.1.67-UI";
+const SERVER_VERSION = "1.1.68-UI";
 
 async function safeEdit(ctx, text, extra = {}) {
     const session = await getSession(ctx.chat.id);
@@ -2065,6 +2065,19 @@ bot.action(/^wa_ai_menu_(.+)$/, async (ctx) => {
     await renderAiMenu(ctx, id);
 });
 
+bot.action(/^wa_toggle_ai_(.+)$/, async (ctx) => {
+    safeAnswer(ctx);
+    const id = ctx.match[1];
+    if (!await checkOwnership(ctx, id)) return;
+    const session = await getSession(ctx.chat.id);
+    const inst = session.whatsapp.instances.find(i => i.id === id);
+    if (inst) {
+        inst.ai_enabled = !inst.ai_enabled;
+        await syncSession(ctx, session);
+        await renderAiMenu(ctx, id);
+    }
+});
+
 
 
 bot.action(/^wa_ai_keep_fu_(hours|max|msgs)_(.+)$/, async (ctx) => {
@@ -2163,7 +2176,7 @@ bot.on('document', async (ctx) => {
 
         const inst = session.whatsapp.instances.find(i => i.id === instId);
         if (inst) {
-            inst.ai_knowledge_base = text.substring(0, 15000); // Limite de 15k caracteres para segurança de contexto
+            inst.ai_knowledge_base = text.substring(0, 15000); // Limite de 15k caracteres
             session.stage = "READY";
             await syncSession(ctx, session);
 
@@ -3379,8 +3392,8 @@ bot.on("text", async (ctx) => {
         }
     } else if (session.stage && session.stage.startsWith("WA_WAITING_AI_PROMPT_")) {
         const instId = session.stage.replace("WA_WAITING_AI_PROMPT_", "");
-        const inst = await checkOwnership(ctx, instId);
-        if (!inst) return;
+        const inst = session.whatsapp.instances.find(i => i.id === instId);
+        if (!inst) return ctx.reply("❌ Instância não encontrada.");
         const prompt = ctx.message.text.trim();
         inst.ai_prompt = prompt;
         session.stage = "READY";
