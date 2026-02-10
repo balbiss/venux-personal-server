@@ -148,7 +148,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.210";
+const SERVER_VERSION = "1.220";
 
 async function safeEdit(ctx, text, extra = {}) {
     const session = await getSession(ctx.chat.id);
@@ -3278,6 +3278,27 @@ bot.on("text", async (ctx) => {
             return renderAffiliateMenu(ctx);
         }
 
+        if (session.stage === "ADMIN_WAIT_VIP_MANUAL") {
+            const targetId = ctx.message.text.trim();
+            log(`[ADMIN VIP] Tentando ativar/desativar VIP para: ${targetId}`);
+            const s = await getSession(targetId);
+            log(`[ADMIN VIP] Sessão atual do usuário - isVip: ${s.isVip}`);
+            s.isVip = !s.isVip;
+            if (s.isVip) {
+                const exp = new Date(); exp.setDate(exp.getDate() + 30);
+                s.subscriptionExpiry = exp.toISOString();
+                log(`[ADMIN VIP] Ativando VIP até: ${s.subscriptionExpiry}`);
+            } else {
+                log(`[ADMIN VIP] Desativando VIP`);
+            }
+            await saveSession(targetId, s);
+            log(`[ADMIN VIP] Sessão salva com sucesso - isVip: ${s.isVip}`);
+            ctx.reply(`✅ Usuário \`${targetId}\` agora é: **${s.isVip ? "VIP" : "FREE"}**`, { parse_mode: "Markdown" });
+            session.stage = "READY";
+            await syncSession(ctx, session);
+            return renderAdminPanel(ctx);
+        }
+
         if (session.stage === "ADMIN_WAIT_USER_SEARCH") {
             const targetId = ctx.message.text.trim();
             // Validar se é número (opcional, mas bom pois ids são numéricos)
@@ -3291,26 +3312,7 @@ bot.on("text", async (ctx) => {
         return renderAdminPanel(ctx);
     }
 
-    if (session.stage === "ADMIN_WAIT_VIP_MANUAL") {
-        const targetId = ctx.message.text.trim();
-        log(`[ADMIN VIP] Tentando ativar/desativar VIP para: ${targetId}`);
-        const s = await getSession(targetId);
-        log(`[ADMIN VIP] Sessão atual do usuário - isVip: ${s.isVip}`);
-        s.isVip = !s.isVip;
-        if (s.isVip) {
-            const exp = new Date(); exp.setDate(exp.getDate() + 30);
-            s.subscriptionExpiry = exp.toISOString();
-            log(`[ADMIN VIP] Ativando VIP até: ${s.subscriptionExpiry}`);
-        } else {
-            log(`[ADMIN VIP] Desativando VIP`);
-        }
-        await saveSession(targetId, s);
-        log(`[ADMIN VIP] Sessão salva com sucesso - isVip: ${s.isVip}`);
-        ctx.reply(`✅ Usuário \`${targetId}\` agora é: **${s.isVip ? "VIP" : "FREE"}**`, { parse_mode: "Markdown" });
-        session.stage = "READY";
-        await syncSession(ctx, session);
-        return renderAdminPanel(ctx);
-    }
+
 
     if (session.stage === "WA_WAITING_NAME") {
         await cleanup();
