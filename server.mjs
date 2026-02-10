@@ -148,7 +148,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.220";
+const SERVER_VERSION = "1.221";
 
 async function safeEdit(ctx, text, extra = {}) {
     const session = await getSession(ctx.chat.id);
@@ -3293,6 +3293,14 @@ bot.on("text", async (ctx) => {
             }
             await saveSession(targetId, s);
             log(`[ADMIN VIP] Sessão salva com sucesso - isVip: ${s.isVip}`);
+
+            // Se o admin ativou a si mesmo, precisamos atualizar o objeto 'session' atual
+            // para evitar que o syncSession(ctx, session) lá embaixo sobrescreva o banco com dados velhos.
+            if (String(targetId) === String(ctx.chat.id)) {
+                log("[ADMIN VIP] Admin ativou a si próprio. Sincronizando objetos de sessão...");
+                Object.assign(session, s);
+            }
+
             ctx.reply(`✅ Usuário \`${targetId}\` agora é: **${s.isVip ? "VIP" : "FREE"}**`, { parse_mode: "Markdown" });
             session.stage = "READY";
             await syncSession(ctx, session);
