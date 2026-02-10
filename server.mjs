@@ -148,7 +148,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.186";
+const SERVER_VERSION = "1.187";
 
 async function safeEdit(ctx, text, extra = {}) {
     const session = await getSession(ctx.chat.id);
@@ -2225,6 +2225,7 @@ async function renderAiMenu(ctx, instId) {
         `🤝 *Temas para Humano:* \n_${humanTopics}_`;
 
     const buttons = [
+        [Markup.button.callback("🪄 Iniciar Configuração Mágica", `wa_ai_start_wizard_${instId}`)],
         [Markup.button.callback(isEnabled ? "🔴 Desativar IA" : "🟢 Ativar IA", `wa_toggle_ai_${instId}`)],
         [Markup.button.callback("📝 Editar System Prompt", `wa_set_ai_prompt_${instId}`)],
         [Markup.button.callback("🤝 Temas para Humano", `wa_set_ai_human_${instId}`)],
@@ -2248,6 +2249,37 @@ bot.action(/^wa_ai_menu_(.+)$/, async (ctx) => {
     if (!await checkOwnership(ctx, id)) return;
     await ensureWebhookSet(id);
     await renderAiMenu(ctx, id);
+});
+
+bot.action(/^wa_ai_start_wizard_(.+)$/, async (ctx) => {
+    safeAnswer(ctx);
+    const id = ctx.match[1];
+    if (!await checkOwnership(ctx, id)) return;
+
+    const text = "🪄 *Configurador Mágico*\n\n" +
+        "Esta opção irá configurar sua IA automaticamente respondendo algumas perguntas.\n\n" +
+        "Selecione o seu **Nicho de Negócio** abaixo:";
+
+    const buttons = [
+        [Markup.button.callback("🏠 Imobiliária / Corretor", `wa_ai_choose_niche_re_${id}`)],
+        [Markup.button.callback("🏥 Clínica / Consultório Médico", `wa_ai_choose_niche_mc_${id}`)],
+        [Markup.button.callback("🔙 Voltar", `wa_ai_menu_${id}`)]
+    ];
+
+    await ctx.editMessageText(text, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
+});
+
+bot.action(/^wa_ai_choose_niche_(re|mc)_(.+)$/, async (ctx) => {
+    safeAnswer(ctx);
+    const type = ctx.match[1];
+    const id = ctx.match[2];
+    if (!await checkOwnership(ctx, id)) return;
+
+    if (type === "re") {
+        await triggerRealEstateWizard(ctx, id, 1);
+    } else {
+        await triggerMedicalWizard(ctx, id, 1);
+    }
 });
 
 bot.action(/^wa_toggle_ai_(.+)$/, async (ctx) => {
