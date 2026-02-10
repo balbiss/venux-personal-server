@@ -4239,6 +4239,7 @@ async function finishWizard(ctx, instId, wiz) {
 
     if (d.specialties) {
         // Medical
+        inst.niche = 'medical';
         prompt = `Você é o assistente virtual da clínica ${d.company_name}. ` +
             `Especialidades: ${d.specialties}. ` +
             `Convênios: ${d.plans}. ` +
@@ -4247,6 +4248,7 @@ async function finishWizard(ctx, instId, wiz) {
             `Responda de forma empática e ajude o paciente a agendar uma consulta.`;
     } else {
         // Real Estate
+        inst.niche = 'real_estate';
         prompt = `Você é o corretor virtual da ${d.company_name}. ` +
             `Atendemos em: ${d.address}. ` +
             `Produtos: ${d.products}. ` +
