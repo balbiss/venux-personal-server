@@ -148,7 +148,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.189";
+const SERVER_VERSION = "1.210";
 
 async function safeEdit(ctx, text, extra = {}) {
     const session = await getSession(ctx.chat.id);
@@ -4143,6 +4143,32 @@ app.get("/api/instance/:id/status-proxy", async (req, res) => {
     }
     const status = isOnline ? "CONNECTED" : "DISCONNECTED";
     res.json({ status });
+});
+
+// Endpoint para forçar refresh do código via Git
+app.get("/webhook/force-refresh", async (req, res) => {
+    log("🚀 [REFRESH] Iniciando force refresh via webhook...");
+    try {
+        const { execSync } = await import('child_process');
+
+        log("📥 [REFRESH] Executando git pull...");
+        const pullOutput = execSync('git pull origin main --force').toString();
+        log(`[REFRESH] Resultado Git: ${pullOutput}`);
+
+        log("📦 [REFRESH] Instalando dependências...");
+        execSync('npm install --production');
+
+        res.send(`<h1>✅ Refresh Concluído!</h1><pre>${pullOutput}</pre><p>Reiniciando processo...</p>`);
+
+        log("🔄 [REFRESH] Reiniciando servidor em 2 segundos...");
+        setTimeout(() => {
+            process.exit(0); // O Docker/PM2 vai reiniciar o container com o código novo
+        }, 2000);
+
+    } catch (error) {
+        log(`❌ [REFRESH] Erro ao atualizar: ${error.message}`);
+        res.status(500).send(`<h1>❌ Erro ao atualizar</h1><pre>${error.message}</pre>`);
+    }
 });
 
 app.post("/webhook", async (req, res) => {
