@@ -148,7 +148,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.187";
+const SERVER_VERSION = "1.188";
 
 async function safeEdit(ctx, text, extra = {}) {
     const session = await getSession(ctx.chat.id);
@@ -2275,6 +2275,13 @@ bot.action(/^wa_ai_choose_niche_(re|mc)_(.+)$/, async (ctx) => {
     const id = ctx.match[2];
     if (!await checkOwnership(ctx, id)) return;
 
+    const session = await getSession(ctx.chat.id);
+    const inst = session.whatsapp.instances.find(i => i.id === id);
+    if (inst) {
+        inst.niche_data = {}; // Reinicia para nova configuração
+        await syncSession(ctx, session);
+    }
+
     if (type === "re") {
         await triggerRealEstateWizard(ctx, id, 1);
     } else {
@@ -4267,26 +4274,28 @@ async function finishWizard(ctx, instId, wiz) {
     if (!inst) return;
 
     let prompt = "";
-    const d = wiz.data;
+    // Garantir que d usa niche_data que foi preenchido nos handlers de texto
+    const d = inst.niche_data || {};
+    const style = wiz.style || 'profissional';
 
     if (d.specialties) {
         // Medical
         inst.niche = 'medical';
-        prompt = `Você é o assistente virtual da clínica ${d.company_name}. ` +
-            `Especialidades: ${d.specialties}. ` +
-            `Convênios: ${d.plans}. ` +
-            `Agendamento: ${d.booking}. ` +
-            `Seu tom de voz deve ser ${wiz.style || 'profissional'}. ` +
+        prompt = `Você é o assistente virtual da clínica ${d.company_name || 'nossa clínica'}. ` +
+            `Especialidades: ${d.specialties || 'atendimento médico'}. ` +
+            `Convênios: ${d.plans || 'particulares'}. ` +
+            `Agendamento: ${d.booking || 'nosso canal'}. ` +
+            `Seu tom de voz deve ser ${style}. ` +
             `Responda de forma empática e ajude o paciente a agendar uma consulta.`;
     } else {
         // Real Estate
         inst.niche = 'real_estate';
-        prompt = `Você é o corretor virtual da ${d.company_name}. ` +
-            `Atendemos em: ${d.address}. ` +
-            `Produtos: ${d.products}. ` +
-            `Objetivo: ${d.funnel}. ` +
-            `Bio: ${d.bio}. ` +
-            `Seu tom de voz deve ser ${wiz.style || 'profissional'}. ` +
+        prompt = `Você é o corretor virtual da ${d.company_name || 'nossa imobiliária'}. ` +
+            `Atendemos em: ${d.address || 'nossa região'}. ` +
+            `Produtos: ${d.products || 'imóveis'}. ` +
+            `Objetivo: ${d.funnel || 'atendimento'}. ` +
+            `Bio: ${d.bio || 'especialista imobiliário'}. ` +
+            `Seu tom de voz deve ser ${style}. ` +
             `Tente qualificar o lead e encaminhá-lo para um corretor humano quando necessário.`;
     }
 
