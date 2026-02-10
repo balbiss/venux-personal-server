@@ -3293,14 +3293,20 @@ bot.on("text", async (ctx) => {
 
     if (session.stage === "ADMIN_WAIT_VIP_MANUAL") {
         const targetId = ctx.message.text.trim();
+        log(`[ADMIN VIP] Tentando ativar/desativar VIP para: ${targetId}`);
         const s = await getSession(targetId);
+        log(`[ADMIN VIP] Sessão atual do usuário - isVip: ${s.isVip}`);
         s.isVip = !s.isVip;
         if (s.isVip) {
             const exp = new Date(); exp.setDate(exp.getDate() + 30);
             s.subscriptionExpiry = exp.toISOString();
+            log(`[ADMIN VIP] Ativando VIP até: ${s.subscriptionExpiry}`);
+        } else {
+            log(`[ADMIN VIP] Desativando VIP`);
         }
         await saveSession(targetId, s);
-        ctx.reply(`✅ Usuário \`${targetId}\` agora é: **${s.isVip ? "VIP" : "FREE"}**`);
+        log(`[ADMIN VIP] Sessão salva com sucesso - isVip: ${s.isVip}`);
+        ctx.reply(`✅ Usuário \`${targetId}\` agora é: **${s.isVip ? "VIP" : "FREE"}**`, { parse_mode: "Markdown" });
         session.stage = "READY";
         await syncSession(ctx, session);
         return renderAdminPanel(ctx);
