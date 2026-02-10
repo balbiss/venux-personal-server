@@ -148,7 +148,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.188";
+const SERVER_VERSION = "1.189";
 
 async function safeEdit(ctx, text, extra = {}) {
     const session = await getSession(ctx.chat.id);
@@ -1319,9 +1319,166 @@ bot.action(/^wa_mass_new_start_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
     if (!await checkOwnership(ctx, id)) return;
-    ctx.editMessageText("📝 *Novo Disparo*\n\nPor favor, envie a **lista de números** (um por linha) ou um **arquivo .txt** com os contatos.\n\nFormatos:\n`5511999998888` ou `Nome;5511999998888`", {
+
+    ctx.editMessageText("📢 *Módulo de Disparo em Massa*\n\nSelecione o tipo de destinatário:", {
         parse_mode: "Markdown",
-        ...Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar", `wa_mass_init_${id}`)]])
+        ...Markup.inlineKeyboard([
+            [Markup.button.callback("👤 Contatos (via .txt)", `wa_mass_start_txt_${id}`)],
+            [Markup.button.callback("👥 Grupos da Instância", `wa_mass_groups_fetch_${id}`)],
+            [Markup.button.callback("🔙 Voltar", `wa_mass_init_${id}`)]
+        ])
+    });
+});
+
+bot.action(/^wa_mass_start_txt_(.+)$/, async (ctx) => {
+    safeAnswer(ctx);
+    const id = ctx.match[1];
+    if (!await checkOwnership(ctx, id)) return;
+    const session = await getSession(ctx.chat.id);
+
+    session.stage = `WA_WAITING_MASS_CONTACTS_${id}`;
+    await syncSession(ctx, session);
+
+    // Texto original do wa_mass_init_ (agora movido para cá)
+    ctx.editMessageText("📢 *Disparo em Massa (Individual)*\n\nPor favor, envie um arquivo *.txt* contendo os números (um por linha).\n\nFormato: `Nome;5511999998888` ou apenas `5511999998888`.", {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar", `wa_mass_new_start_${id}`)]])
+    });
+});
+
+// --- NOVO: Lógica de Grupos ---
+
+bot.action(/^wa_mass_groups_fetch_(.+)$/, async (ctx) => {
+    safeAnswer(ctx);
+    const instId = ctx.match[1];
+    if (!await checkOwnership(ctx, instId)) return;
+
+    ctx.editMessageText("⏳ *Extraindo grupos...* Aguarde.", { parse_mode: "Markdown" });
+
+    // Buscar grupos da API
+    const res = await callWuzapi("/group/list", "GET", null, instId);
+
+    if (!res.success || !res.data || !res.data.Groups) {
+        return ctx.editMessageText("❌ Falha ao buscar grupos ou nenhum grupo encontrado.", {
+            ...Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar", `wa_mass_init_${instId}`)]])
+        });
+    }
+
+    const groups = res.data.Groups.map(g => ({
+        name: g.Name || "Sem Nome",
+        id: g.JID,
+        selected: false
+    }));
+
+    if (groups.length === 0) {
+        return ctx.editMessageText("⚠️ Nenhum grupo encontrado nesta instância.", {
+            ...Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar", `wa_mass_init_${instId}`)]])
+        });
+    }
+
+    // Salvar na sessão temporária
+    const session = await getSession(ctx.chat.id);
+    session.temp_groups = groups;
+    session.temp_groups_page = 0;
+    await syncSession(ctx, session);
+
+    await renderGroupSelection(ctx, instId);
+});
+
+async function renderGroupSelection(ctx, instId) {
+    const session = await getSession(ctx.chat.id);
+    const groups = session.temp_groups || [];
+    const page = session.temp_groups_page || 0;
+    const PAGE_SIZE = 8;
+
+    const totalPages = Math.ceil(groups.length / PAGE_SIZE);
+    const start = page * PAGE_SIZE;
+    const end = start + PAGE_SIZE;
+    const slice = groups.slice(start, end);
+
+    const buttons = slice.map(g => {
+        const icon = g.selected ? "✅" : "⬜";
+        return [Markup.button.callback(`${icon} ${g.name.substring(0, 25)}`, `wa_mass_grp_toggle_${instId}_${g.id}`)];
+    });
+
+    // Paginação
+    const navRow = [];
+    if (page > 0) navRow.push(Markup.button.callback("⬅️ Ant", `wa_mass_grp_page_${instId}_${page - 1}`));
+    if (page < totalPages - 1) navRow.push(Markup.button.callback("Prox ➡️", `wa_mass_grp_page_${instId}_${page + 1}`));
+
+    if (navRow.length > 0) buttons.push(navRow);
+
+    // Ações Finais
+    const selectedCount = groups.filter(g => g.selected).length;
+
+    buttons.push([
+        Markup.button.callback(`Seleção: ${selectedCount}`, "noop"),
+        Markup.button.callback(selectedCount > 0 ? "🚀 Confirmar" : "⚠️ Selecione...", selectedCount > 0 ? `wa_mass_grp_confirm_${instId}` : "noop")
+    ]);
+
+    buttons.push([Markup.button.callback("🔙 Voltar", `wa_mass_init_${instId}`)]);
+
+    const msgText = `📂 *Seleção de Grupos*\n\nTotal encontrados: ${groups.length}\nSelecionados: ${selectedCount}\n\nMarque os grupos para disparar:`;
+
+    // Tentar editar, se falhar (ex: imagem antiga), enviar nova
+    try {
+        await ctx.editMessageText(msgText, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
+    } catch {
+        await ctx.reply(msgText, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
+    }
+}
+
+bot.action(/^wa_mass_grp_toggle_(.+)_(.+)$/, async (ctx) => {
+    // safeAnswer(ctx); // Pode causar "flash" em listas longas, opcional
+    const instId = ctx.match[1];
+    const grpId = ctx.match[2];
+
+    const session = await getSession(ctx.chat.id);
+    if (!session.temp_groups) return;
+
+    const group = session.temp_groups.find(g => g.id === grpId);
+    if (group) {
+        group.selected = !group.selected;
+        await syncSession(ctx, session);
+        await renderGroupSelection(ctx, instId);
+    } else {
+        ctx.answerCbQuery("Grupo não encontrado na sessão.");
+    }
+});
+
+bot.action(/^wa_mass_grp_page_(.+)_(.+)$/, async (ctx) => {
+    const instId = ctx.match[1];
+    const page = parseInt(ctx.match[2]);
+    const session = await getSession(ctx.chat.id);
+    session.temp_groups_page = page;
+    await syncSession(ctx, session);
+    await renderGroupSelection(ctx, instId);
+});
+
+bot.action(/^wa_mass_grp_confirm_(.+)$/, async (ctx) => {
+    safeAnswer(ctx);
+    const instId = ctx.match[1];
+    const session = await getSession(ctx.chat.id);
+
+    const selected = session.temp_groups.filter(g => g.selected);
+    if (selected.length === 0) return ctx.answerCbQuery("Selecione pelo menos um grupo!");
+
+    // O formato esperado pelo runCampaign é { name, phone } ou apenas string phone
+    // Vamos converter para o formato padrão de contatos
+    session.mass_contacts = selected.map(g => ({ name: g.name, phone: g.id }));
+
+    // Avança para o estágio de mensagem (mesmo do txt)
+    session.stage = `WA_WAITING_MASS_MSG_${instId}`;
+    await syncSession(ctx, session);
+
+    // Limpar temp groups da sessão (opcional, para economizar espaço)
+    delete session.temp_groups;
+    delete session.temp_groups_page;
+    await syncSession(ctx, session);
+
+    ctx.reply(`✅ *${selected.length} grupos selecionados!*\n\nAgora, envie o **conteúdo** que deseja disparar (Texto, Foto, Vídeo, etc):`, {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar", `wa_mass_groups_fetch_${instId}`)]])
     });
 });
 
@@ -1428,7 +1585,12 @@ async function runCampaign(chatId, instId) {
         const contactName = (typeof contact === 'object' && contact.name) ? contact.name : nameFallback;
 
         const phone = rawPhone.replace(/\D/g, "");
-        if (!phone) continue;
+        // Se for grupo, o "phone" vai ficar vazio ou estranho com o regex acima se não tratarmos
+        // Melhor usar o rawPhone se contiver '@'
+        const isGroupNode = rawPhone.includes("@g.us");
+        const finalPhone = isGroupNode ? rawPhone : phone;
+
+        if (!finalPhone) continue;
 
         // 1. Escolher Variação e Substituir Variáveis
         const variations = campaign.messages || [campaign.message];
@@ -1455,13 +1617,26 @@ async function runCampaign(chatId, instId) {
             jid = check.data.Users[0].JID;
         }
 
+        // --- FIX: Suporte a Grupos ---
+        // Se o número original já for um JID de grupo (@g.us), usamos ele diretamente
+        if (phone.includes("@g.us") || rawPhone.includes("@g.us")) {
+            jid = rawPhone; // Confia no JID extraído da API
+        }
+
         if (jid) {
             // 3. Enviar baseado no tipo de mídia
             const body = { Phone: jid };
             let endpoint = "/chat/send/text";
 
+            // Se for grupo, usa endpoint específico para mensagens de texto se necessário,
+            // mas WUZAPI geralmente aceita /chat/send/text com JID de grupo.
+            // Para mídias, o endpoint é o mesmo, apenas o Phone muda.
+
             if (campaign.mediaType === 'text') {
                 body.Body = chosenMsg;
+                // WUZAPI pode exigir GroupJID para alguns endpoints específicos, mas /chat/send/text costuma funcionar
+                // Se der erro, pode ser necessário usar /group/send/text (não padrão) ou verificar a doc.
+                // Pela doc fornecida: /chat/send/text aceita Phone (que pode ser grupo)
             } else {
                 // Usar campos específicos conforme documentação WUZAPI
                 if (chosenMsg) body.Caption = chosenMsg;
