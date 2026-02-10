@@ -58,7 +58,14 @@ async function getSession(chatId) {
         log("Erro ao buscar sessão: " + error.message);
     }
 
-    if (data) return data.data;
+    if (data) {
+        // Garantir estrutura básica se o objeto no banco estiver incompleto
+        const s = data.data;
+        if (!s.whatsapp) s.whatsapp = { instances: [], maxInstances: 1 };
+        if (!s.affiliate) s.affiliate = { balance: 0, totalEarned: 0, referralsCount: 0, conversionsCount: 0 };
+        if (!s.stage) s.stage = "READY";
+        return s;
+    }
 
     // Se não existir, cria padrão
     const newSession = {
@@ -148,7 +155,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.221";
+const SERVER_VERSION = "1.230";
 
 async function safeEdit(ctx, text, extra = {}) {
     const session = await getSession(ctx.chat.id);
@@ -703,10 +710,7 @@ bot.action(/^tour_step_(\d+)$/, async (ctx) => {
 });
 
 // --- Menu Handlers ---
-bot.action("cmd_instancias_menu", async (ctx) => {
-    safeAnswer(ctx);
-    await showInstances(ctx);
-});
+
 
 // Atalhos Globais (SaaS Dashboard)
 bot.action("cmd_shortcuts_disparos", async (ctx) => {
@@ -947,34 +951,38 @@ bot.command("agenda", async (ctx) => {
 
 async function showInstances(ctx) {
     const session = await getSession(ctx.chat.id);
-    if (session.whatsapp.instances.length === 0) return ctx.reply("📱 Nenhuma instância encontrada.");
-
     let msg = `📱 *Suas Instâncias (v${SERVER_VERSION}):*\n\n`;
     const buttons = [];
-    for (const inst of session.whatsapp.instances) {
-        // WUZAPI: status is via /session/status with user token
-        const stats = await callWuzapi(`/session/status`, "GET", null, inst.id);
-        log(`[STATUS CHECK] Instance ${inst.id}: ${JSON.stringify(stats)}`);
 
-        let isOnline = false;
-        if (stats.success && stats.data) {
-            const d = stats.data;
-            // Critério Rígido: On apenas se estiver LoggedIn no WhatsApp
-            const isFullyLoggedIn = (d.LoggedIn === true || d.loggedIn === true || d.status === "LoggedIn");
-            if (isFullyLoggedIn) {
-                isOnline = true;
+    if (session.whatsapp.instances.length === 0) {
+        msg += "_Nenhuma instância encontrada._\n";
+    } else {
+        for (const inst of session.whatsapp.instances) {
+            // ... (o loop continua abaixo)
+            // WUZAPI: status is via /session/status with user token
+            const stats = await callWuzapi(`/session/status`, "GET", null, inst.id);
+            log(`[STATUS CHECK] Instance ${inst.id}: ${JSON.stringify(stats)}`);
+
+            let isOnline = false;
+            if (stats.success && stats.data) {
+                const d = stats.data;
+                // Critério Rígido: On apenas se estiver LoggedIn no WhatsApp
+                const isFullyLoggedIn = (d.LoggedIn === true || d.loggedIn === true || d.status === "LoggedIn");
+                if (isFullyLoggedIn) {
+                    isOnline = true;
+                }
             }
-        }
 
-        let phoneInfo = `🆔 \`${inst.id}\``;
-        if (isOnline && stats.data?.jid) {
-            const phoneNumber = stats.data.jid.split(":")[0].split("@")[0];
-            phoneInfo = `📱 **${phoneNumber}**`;
-        }
+            let phoneInfo = `🆔 \`${inst.id}\``;
+            if (isOnline && stats.data?.jid) {
+                const phoneNumber = stats.data.jid.split(":")[0].split("@")[0];
+                phoneInfo = `📱 **${phoneNumber}**`;
+            }
 
-        const status = isOnline ? "✅ On" : "❌ Off";
-        msg += `🔹 **${inst.name}**\n${phoneInfo}\n📡 Status: ${status}\n\n`;
-        buttons.push([Markup.button.callback(`⚙️ Gerenciar ${inst.name}`, `manage_${inst.id}`)]);
+            const status = isOnline ? "✅ On" : "❌ Off";
+            msg += `🔹 **${inst.name}**\n${phoneInfo}\n📡 Status: ${status}\n\n`;
+            buttons.push([Markup.button.callback(`⚙️ Gerenciar ${inst.name}`, `manage_${inst.id}`)]);
+        }
     }
 
     const isVip = await checkVip(ctx.chat.id);
