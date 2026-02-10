@@ -59,6 +59,7 @@ async function getSession(chatId) {
     }
 
     if (data) {
+        log(`[DB DEBUG] Sessão encontrada para ${id}: ${JSON.stringify(data.data).substring(0, 100)}...`);
         // Garantir estrutura básica se o objeto no banco estiver incompleto
         const s = data.data;
         if (!s.whatsapp) s.whatsapp = { instances: [], maxInstances: 1 };
@@ -155,7 +156,7 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.230";
+const SERVER_VERSION = "1.231";
 
 async function safeEdit(ctx, text, extra = {}) {
     const session = await getSession(ctx.chat.id);
@@ -642,6 +643,16 @@ bot.start(async (ctx) => {
     }
 
     await safeEdit(ctx, welcomeMsg, Markup.inlineKeyboard(buttons));
+});
+
+bot.command("debug_id", async (ctx) => {
+    const session = await getSession(ctx.chat.id);
+    ctx.reply(`🆔 *Debug ID Info*\n\n` +
+        `• Seu ChatID: \`${ctx.chat.id}\`\n` +
+        `• Tipo do ID no Contexto: \`${typeof ctx.chat.id}\`\n` +
+        `• VIP Ativo no Banco: \`${session.isVip ? "SIM" : "NÃO"}\`\n` +
+        `• Instâncias no Objeto: \`${session.whatsapp?.instances?.length || 0}\`\n` +
+        `• Versão do Servidor: \`${SERVER_VERSION}\``, { parse_mode: "Markdown" });
 });
 
 // --- Tour de Funcionalidades ---
