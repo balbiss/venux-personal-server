@@ -43,9 +43,20 @@ const supabase = createClient(
 
 // -- Persistence Layer (Supabase) --
 const activePolls = new Map();
+const sessionCache = new Map(); // V1.245: Cache de leitura para performance
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutos de TTL
 
 async function getSession(chatId) {
     const id = String(chatId);
+    const now = Date.now();
+
+    // V1.245: Cache de leitura para performance
+    if (sessionCache.has(id)) {
+        const cached = sessionCache.get(id);
+        if (now - cached.timestamp < CACHE_TTL) {
+            return cached.data;
+        }
+    }
 
     // Tenta buscar no banco
     const { data, error } = await supabase
@@ -65,48 +76,54 @@ async function getSession(chatId) {
         }
     }
 
+    let sessionObj;
     if (data) {
-        log(`[DB DEBUG] Sessão encontrada para ${id}. Verificando integridade...`);
-        const s = data.data;
+        // Log reduzido para v1.245 (Apenas se quiser depurar profundamente habilite)
+        // log(`[DB DEBUG] Sessão encontrada para ${id}. Verificando integridade...`);
+        sessionObj = data.data;
 
         // V1.244: Auto-Cura Profunda (Deep Healing)
         // Garante que sub-objetos existam mesmo se o JSON no banco estiver incompleto
-        if (!s.whatsapp) s.whatsapp = {};
-        if (!Array.isArray(s.whatsapp.instances)) s.whatsapp.instances = [];
-        if (typeof s.whatsapp.maxInstances !== 'number') s.whatsapp.maxInstances = 1;
+        if (!sessionObj.whatsapp) sessionObj.whatsapp = {};
+        if (!Array.isArray(sessionObj.whatsapp.instances)) sessionObj.whatsapp.instances = [];
+        if (typeof sessionObj.whatsapp.maxInstances !== 'number') sessionObj.whatsapp.maxInstances = 1;
 
-        if (!s.affiliate) s.affiliate = {};
-        if (typeof s.affiliate.balance !== 'number') s.affiliate.balance = 0;
-        if (typeof s.affiliate.totalEarned !== 'number') s.affiliate.totalEarned = 0;
+        if (!sessionObj.affiliate) sessionObj.affiliate = {};
+        if (typeof sessionObj.affiliate.balance !== 'number') sessionObj.affiliate.balance = 0;
+        if (typeof sessionObj.affiliate.totalEarned !== 'number') sessionObj.affiliate.totalEarned = 0;
 
-        if (!s.reports) s.reports = {};
-        if (!s.stage) s.stage = "READY";
-
-        return s;
+        if (!sessionObj.reports) sessionObj.reports = {};
+        if (!sessionObj.stage) sessionObj.stage = "READY";
+    } else {
+        // Se não existir, cria padrão
+        sessionObj = {
+            stage: "START",
+            isVip: false,
+            subscriptionExpiry: null,
+            referredBy: null,
+            affiliate: {
+                balance: 0,
+                totalEarned: 0,
+                referralsCount: 0,
+                conversionsCount: 0
+            },
+            whatsapp: { instances: [], maxInstances: 1 },
+            reports: {}
+        };
+        await saveSession(id, sessionObj);
     }
 
-    // Se não existir, cria padrão
-    const newSession = {
-        stage: "START",
-        isVip: false,
-        subscriptionExpiry: null,
-        referredBy: null,
-        affiliate: {
-            balance: 0,
-            totalEarned: 0,
-            referralsCount: 0,
-            conversionsCount: 0
-        },
-        whatsapp: { instances: [], maxInstances: 1 },
-        reports: {}
-    };
-
-    await saveSession(id, newSession);
-    return newSession;
+    // Atualiza cache
+    sessionCache.set(id, { data: sessionObj, timestamp: now });
+    return sessionObj;
 }
 
 async function saveSession(chatId, sessionData) {
     const id = String(chatId);
+
+    // Atualiza cache imediatamente
+    sessionCache.set(id, { data: sessionData, timestamp: Date.now() });
+
     const { error } = await supabase
         .from('bot_sessions')
         .upsert({
@@ -115,7 +132,7 @@ async function saveSession(chatId, sessionData) {
             updated_at: new Date().toISOString()
         });
 
-    if (error) log("Erro ao salvar sessão: " + error.message);
+    if (error) log(`[DB ERR] Erro ao salvar sessão ${id}: ${error.message}`);
 }
 
 // Helper para salvar sessão atual rapidamente
@@ -123,7 +140,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.244";
+const SERVER_VERSION = "1.245";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -4826,6 +4843,10 @@ async function checkAiFollowups() {
             const tgChatId = parts[1];
 
             const session = await getSession(tgChatId);
+
+            // V1.245: Check de segurança defensivo
+            if (!session?.whatsapp?.instances) continue;
+
             const inst = session.whatsapp.instances.find(i => i.id === lead.instance_id);
 
             if (!inst) {
