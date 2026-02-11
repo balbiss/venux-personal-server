@@ -106,7 +106,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.233";
+const SERVER_VERSION = "1.234";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -1244,7 +1244,6 @@ bot.action(/^wa_funnel_set_pres_(.+)$/, async (ctx) => {
     const id = ctx.match[1];
     const { inst, session } = await checkOwnership(ctx, id);
     if (!inst) return;
-    const session = await getSession(ctx.chat.id);
     session.stage = `WA_FUNNEL_WAIT_PRES_${id}`;
     await syncSession(ctx, session);
     ctx.reply("📝 *Mensagem de Apresentação*\n\nDigite o texto que o robô falará ao iniciar o funil:");
@@ -1263,7 +1262,6 @@ bot.action(/^wa_funnel_add_ques_(.+)$/, async (ctx) => {
     const id = ctx.match[1];
     const { inst, session } = await checkOwnership(ctx, id);
     if (!inst) return;
-    const session = await getSession(ctx.chat.id);
     session.stage = `WA_FUNNEL_WAIT_QUES_${id}`;
     await syncSession(ctx, session);
     ctx.reply("➕ *Nova Pergunta*\n\nDigite a pergunta que deseja adicionar ao final da lista:");
@@ -1314,13 +1312,15 @@ bot.action(/^wa_funnel_set_f_(.+)_(.+)$/, async (ctx) => {
 // --- Módulo de Disparo em Massa ---
 const activeCampaigns = new Map();
 
+// This block was likely part of a bot.action handler that was removed or misplaced.
+// The user's instruction implies it should be part of a `wa_mass_init_` handler.
+// Assuming it's the start of `wa_mass_init_`
 bot.action(/^wa_mass_init_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
     const { inst, session } = await checkOwnership(ctx, id);
     if (!inst) return;
 
-    const session = await getSession(ctx.chat.id);
     if (activeCampaigns.has(ctx.chat.id)) {
         return ctx.reply("⚠️ Você já tem um disparo em andamento. Aguarde a conclusão ou cancele.", {
             ...Markup.inlineKeyboard([[Markup.button.callback("🛑 Parar Disparo Atual", `wa_stop_mass`)]])
@@ -1368,7 +1368,6 @@ bot.action(/^wa_mass_start_txt_(.+)$/, async (ctx) => {
     const id = ctx.match[1];
     const { inst, session } = await checkOwnership(ctx, id);
     if (!inst) return;
-    const session = await getSession(ctx.chat.id);
 
     session.stage = `WA_WAITING_MASS_CONTACTS_${id}`;
     await syncSession(ctx, session);
@@ -1412,7 +1411,6 @@ bot.action(/^wa_mass_groups_fetch_(.+)$/, async (ctx) => {
     }
 
     // Salvar na sessão temporária
-    const session = await getSession(ctx.chat.id);
     session.temp_groups = groups;
     session.temp_groups_page = 0;
     await syncSession(ctx, session);
@@ -1850,12 +1848,18 @@ bot.action("wa_stop_mass", async (ctx) => {
 });
 
 // Handlers para Agendamento
-bot.action(/^wa_mass_now_(.+)$/, async (ctx) => {
+bot.action(/^wa_mass_confirm_start_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const instId = ctx.match[1];
     const { inst, session } = await checkOwnership(ctx, instId);
     if (!inst) return;
-    const session = await getSession(ctx.chat.id);
+
+    if (!session.mass_contacts || session.mass_contacts.length === 0) {
+        return ctx.reply("❌ Nenhum contato encontrado para o disparo. Por favor, envie o arquivo novamente.");
+    }
+    if (!session.mass_msgs || session.mass_msgs.length === 0) {
+        return ctx.reply("❌ Nenhuma mensagem configurada para o disparo.");
+    }
 
     const camp = {
         instId,
@@ -1906,7 +1910,6 @@ bot.action(/^wa_mass_sched_(.+)$/, async (ctx) => {
     const instId = ctx.match[1];
     const { inst, session } = await checkOwnership(ctx, instId);
     if (!inst) return;
-    const session = await getSession(ctx.chat.id);
 
     session.stage = `WA_WAITING_MASS_SCHEDULE_${instId}`;
     await syncSession(ctx, session);
@@ -2067,7 +2070,6 @@ bot.action(/^wa_report_(.+)$/, async (ctx) => {
     const instId = ctx.match[1];
     const { inst, session } = await checkOwnership(ctx, instId);
     if (!inst) return;
-    const session = await getSession(ctx.chat.id);
     const report = session.reports ? session.reports[instId] : null;
 
     let reportMsg = `📊 *Relatório Completo de Disparo*\n\n` +
@@ -2177,7 +2179,6 @@ bot.action(/^wa_pair_(.+)$/, async (ctx) => {
         return ctx.reply("✅ Você já está conectado!");
     }
 
-    const session = await getSession(ctx.chat.id);
     session.stage = `WA_WAITING_PAIR_PHONE_${id}`;
     await syncSession(ctx, session);
 
@@ -2224,7 +2225,6 @@ bot.action(/^wa_set_web_(.+)$/, async (ctx) => {
     const id = ctx.match[1];
     const { inst, session } = await checkOwnership(ctx, id);
     if (!inst) return;
-    const session = await getSession(ctx.chat.id);
     session.stage = `WA_WAITING_WEBHOOK_URL_${id}`;
     await syncSession(ctx, session);
 
@@ -2352,8 +2352,6 @@ bot.action(/^wa_conf_(.+)$/, async (ctx) => {
     if (!inst) return;
 
     // Buscar status de presença atual (embora a API não retorne o estado, simulamos via sessão)
-    const session = await getSession(ctx.chat.id);
-    const inst = session.whatsapp.instances.find(i => i.id === id) || {};
     const presence = inst.presence || "available";
 
     ctx.editMessageText(`⚙️ *Configurações (${id})*\n\nAjuste o comportamento do número nesta instância:`, {
@@ -2369,9 +2367,6 @@ bot.action(/^wa_toggle_presence_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
     const { inst, session } = await checkOwnership(ctx, id);
-    if (!inst) return;
-    const session = await getSession(ctx.chat.id);
-    const inst = session.whatsapp.instances.find(i => i.id === id);
     if (!inst) return;
 
     const current = inst.presence || "available";
@@ -2526,8 +2521,8 @@ bot.action(/^wa_toggle_ai_(.+)$/, async (ctx) => {
 bot.action(/^wa_ai_keep_fu_(hours|max|msgs)_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[2];
-    if (!await checkOwnership(ctx, id)) return;
-    const session = await getSession(ctx.chat.id);
+    const { inst, session } = await checkOwnership(ctx, id);
+    if (!inst) return;
     session.stage = "READY";
     await syncSession(ctx, session);
     await renderFollowupMenu(ctx, id);
@@ -2536,8 +2531,8 @@ bot.action(/^wa_ai_keep_fu_(hours|max|msgs)_(.+)$/, async (ctx) => {
 bot.action(/^wa_ai_keep_resume_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
-    const session = await getSession(ctx.chat.id);
+    const { inst, session } = await checkOwnership(ctx, id);
+    if (!inst) return;
     session.stage = "READY";
     await syncSession(ctx, session);
     await renderAiMenu(ctx, id);
@@ -2547,7 +2542,8 @@ bot.action(/^wa_ai_keep_resume_(.+)$/, async (ctx) => {
 bot.action(/^wa_ai_sync_web_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
+    const { inst, session } = await checkOwnership(ctx, id);
+    if (!inst) return;
     log(`[SYNC] Iniciando sincronização manual para ${id}...`);
     await ensureWebhookSet(id);
     ctx.answerCbQuery("✅ Webhook sincronizado com sucesso!");
@@ -2580,9 +2576,8 @@ bot.action(/^wa_set_ai_knowledge_(.+)$/, async (ctx) => {
 bot.action(/^wa_clear_ai_knowledge_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
-    const session = await getSession(ctx.chat.id);
-    const inst = session.whatsapp.instances.find(i => i.id === id);
+    const { inst, session } = await checkOwnership(ctx, id);
+    if (!inst) return;
     if (inst) {
         inst.ai_knowledge_base = null;
         await syncSession(ctx, session);
@@ -2635,9 +2630,7 @@ bot.on('document', async (ctx, next) => {
 bot.action(/^wa_ai_resume_time_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const instId = ctx.match[1];
-    if (!await checkOwnership(ctx, instId)) return;
-    const session = await getSession(ctx.chat.id);
-    const inst = await checkOwnership(ctx, instId);
+    const { inst, session } = await checkOwnership(ctx, instId);
     if (!inst) return;
 
     session.stage = `WA_AI_RESUME_TIME_VAL_${instId}`;
@@ -2704,8 +2697,8 @@ bot.action(/^wa_brokers_menu_(.+)$/, async (ctx) => {
 bot.action(/^wa_broker_add_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
-    const session = await getSession(ctx.chat.id);
+    const { inst, session } = await checkOwnership(ctx, id);
+    if (!inst) return;
     session.stage = `WA_BROKER_WAIT_NAME_${id}`;
     await syncSession(ctx, session);
     ctx.reply("📝 Digite o **NOME** do corretor:");
