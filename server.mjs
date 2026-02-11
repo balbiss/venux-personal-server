@@ -106,6 +106,8 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
+const SERVER_VERSION = "1.232";
+
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
     const inst = (session.whatsapp?.instances || []).find(i => i.id === instId);
@@ -118,9 +120,9 @@ async function checkOwnership(ctx, instId) {
                 await ctx.reply("🚫 *Acesso Negado*\n\nEssa instância não pertence à sua conta.", { parse_mode: "Markdown" });
             }
         } catch (e) { }
-        return null;
+        return { inst: null, session };
     }
-    return inst;
+    return { inst, session };
 }
 
 async function getSystemConfig() {
@@ -156,7 +158,6 @@ function isAdmin(chatId, config) {
     return String(config.adminChatId) === String(chatId);
 }
 
-const SERVER_VERSION = "1.231";
 
 async function safeEdit(ctx, text, extra = {}) {
     const session = await getSession(ctx.chat.id);
@@ -1216,14 +1217,16 @@ async function renderFunnelQuestionsMenu(ctx, instId) {
 bot.action(/^wa_funnel_menu_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
+    const { inst, session } = await checkOwnership(ctx, id);
+    if (!inst) return;
     await renderFunnelMenu(ctx, id);
 });
 
 bot.action(/^wa_funnel_toggle_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
+    const { inst, session } = await checkOwnership(ctx, id);
+    if (!inst) return;
     const { data: funnel } = await supabase.from("qualification_funnels").select("*").eq("instance_id", id).maybeSingle();
     if (!funnel) {
         await supabase.from("qualification_funnels").insert({ instance_id: id, is_active: true });
@@ -1897,9 +1900,8 @@ bot.action(/^wa_mass_sched_(.+)$/, async (ctx) => {
 bot.action(/^wa_set_ai_prompt_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
-    const session = await getSession(ctx.chat.id);
-    const inst = session.whatsapp.instances.find(i => i.id === id);
+    const { inst, session } = await checkOwnership(ctx, id);
+    if (!inst) return;
     const currentPrompt = inst?.ai_prompt || "🤖 Você é um assistente virtual prestativo.";
 
     session.stage = `WA_WAITING_AI_PROMPT_${id}`;
@@ -1930,8 +1932,10 @@ bot.action(/^wa_set_ai_prompt_(.+)$/, async (ctx) => {
 bot.action(/^wa_set_ai_human_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
-    const session = await getSession(ctx.chat.id);
+    const { inst, session } = await checkOwnership(ctx, id);
+    if (!inst) return;
+    const currentThemes = inst?.ai_human_topics || "❌ Nenhum tema definido.";
+
     session.stage = `WA_WAITING_AI_HUMAN_${id}`;
     await syncSession(ctx, session);
     ctx.reply("🤝 *Temas para Transbordo Humano*\n\nListe quais assuntos ou situações a IA deve **parar** de responder e te chamar.\n\nExemplo:\n`Reclamações, negociação de valores, suporte técnico avançado ou quando o cliente expressar urgência crítica.`", { parse_mode: "Markdown" });
@@ -1959,7 +1963,7 @@ async function renderFollowupMenu(ctx, instId) {
         [Markup.button.callback(enabled ? "🔴 Desativar" : "🟢 Ativar", `wa_fu_toggle_${instId}`)],
         [Markup.button.callback("⏰ Definir Tempo (horas)", `wa_fu_set_hours_${instId}`)],
         [Markup.button.callback("🔢 Definir Qnt. Lembretes", `wa_fu_set_max_${instId}`)],
-        [Markup.button.callback("📝 Prompt do Sistema", `wa_ai_prompt_${instId}`)],
+        [Markup.button.callback("📝 Prompt do Sistema", `wa_set_ai_prompt_${instId}`)],
         [Markup.button.callback("🔙 Voltar", `manage_${instId}`)]
     ];
 
@@ -1978,9 +1982,8 @@ bot.action(/^wa_ai_followup_menu_(.+)$/, async (ctx) => {
 bot.action(/^wa_fu_toggle_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
-    const inst = await checkOwnership(ctx, id);
+    const { inst, session } = await checkOwnership(ctx, id);
     if (!inst) return;
-    const session = await getSession(ctx.chat.id);
     inst.fu_enabled = !inst.fu_enabled;
     await syncSession(ctx, session);
     await renderFollowupMenu(ctx, id);
@@ -1989,9 +1992,7 @@ bot.action(/^wa_fu_toggle_(.+)$/, async (ctx) => {
 bot.action(/^wa_fu_set_hours_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
-    const session = await getSession(ctx.chat.id);
-    const inst = await checkOwnership(ctx, id);
+    const { inst, session } = await checkOwnership(ctx, id);
     if (!inst) return;
 
     session.stage = `WA_WAITING_FU_HOURS_${id}`;
@@ -2010,9 +2011,7 @@ bot.action(/^wa_fu_set_hours_(.+)$/, async (ctx) => {
 bot.action(/^wa_fu_set_max_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
-    const session = await getSession(ctx.chat.id);
-    const inst = await checkOwnership(ctx, id);
+    const { inst, session } = await checkOwnership(ctx, id);
     if (!inst) return;
 
     session.stage = `WA_WAITING_FU_MAX_${id}`;
@@ -2029,9 +2028,7 @@ bot.action(/^wa_fu_set_max_(.+)$/, async (ctx) => {
 bot.action(/^wa_fu_set_msgs_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
-    const session = await getSession(ctx.chat.id);
-    const inst = await checkOwnership(ctx, id);
+    const { inst, session } = await checkOwnership(ctx, id);
     if (!inst) return;
 
     session.stage = `WA_WAITING_FU_MSGS_${id}`;
@@ -2123,7 +2120,7 @@ bot.action(/^wa_qr_(.+)$/, async (ctx) => {
     await ensureWebhookSet(id);
 
     // Antes de gerar, verifica se já não está logado
-    const stats = await callWuzapi(`/session/status`, "GET", null, id);
+    const stats = await callWuzapi("/session/status", "GET", null, id);
     if (stats.success && (stats.data?.LoggedIn || stats.data?.loggedIn)) {
         return ctx.reply("✅ Você já está conectado!");
     }
@@ -2440,7 +2437,8 @@ bot.action(/^wa_ai_menu_(.+)$/, async (ctx) => {
     const id = ctx.match[1];
     log(`[AI_MENU] Acesso ao menu principal ID: ${id}`);
     safeAnswer(ctx);
-    if (!await checkOwnership(ctx, id)) return;
+    const { inst, session } = await checkOwnership(ctx, id);
+    if (!inst) return;
     await ensureWebhookSet(id);
     await renderAiMenu(ctx, id);
 });
@@ -2448,7 +2446,8 @@ bot.action(/^wa_ai_menu_(.+)$/, async (ctx) => {
 bot.action(/^wa_ai_start_wizard_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
+    const { inst, session } = await checkOwnership(ctx, id);
+    if (!inst) return;
 
     const text = "🪄 *Configurador Mágico*\n\n" +
         "Esta opção irá configurar sua IA automaticamente respondendo algumas perguntas.\n\n" +
@@ -2467,10 +2466,9 @@ bot.action(/^wa_ai_choose_niche_(re|mc)_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const type = ctx.match[1];
     const id = ctx.match[2];
-    if (!await checkOwnership(ctx, id)) return;
+    const { inst, session } = await checkOwnership(ctx, id);
+    if (!inst) return;
 
-    const session = await getSession(ctx.chat.id);
-    const inst = session.whatsapp.instances.find(i => i.id === id);
     if (inst) {
         inst.niche_data = {}; // Reinicia para nova configuração
         await syncSession(ctx, session);
@@ -2486,9 +2484,8 @@ bot.action(/^wa_ai_choose_niche_(re|mc)_(.+)$/, async (ctx) => {
 bot.action(/^wa_toggle_ai_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
-    const session = await getSession(ctx.chat.id);
-    const inst = session.whatsapp.instances.find(i => i.id === id);
+    const { inst, session } = await checkOwnership(ctx, id);
+    if (!inst) return;
     if (inst) {
         inst.ai_enabled = !inst.ai_enabled;
         await syncSession(ctx, session);
@@ -2538,12 +2535,12 @@ bot.action(/^wa_ai_sync_web_(.+)$/, async (ctx) => {
 bot.action(/^wa_set_ai_knowledge_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
-    const session = await getSession(ctx.chat.id);
+    const { inst, session } = await checkOwnership(ctx, id);
+    if (!inst) return;
+
     session.stage = `WA_WAITING_AI_KNOWLEDGE_${id}`;
     await syncSession(ctx, session);
 
-    const inst = session.whatsapp.instances.find(i => i.id === id);
     const hasKnowledge = inst.ai_knowledge_base ? "✅ Já possui uma base ativa." : "❌ Nenhuma base configurada.";
 
     ctx.reply(`📚 *Base de Conhecimento (PDF)*\n\n${hasKnowledge}\n\nEnvie um arquivo **PDF** agora para treinar o robô com novas informações.\n\n_Dica: Envie tabelas de preços, manuais ou catálogos para respostas precisas._`, {
