@@ -106,7 +106,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.234";
+const SERVER_VERSION = "1.235";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -4430,6 +4430,12 @@ app.post("/webhook", async (req, res) => {
                                                 try { await callWuzapi("/chat/presence", "POST", { Phone: remoteJid, State: "composing" }, tokenId); } catch (e) { }
                                             }
                                         }
+
+                                        // V1.235: Atualizar last_interaction APÓS a IA responder para "zerar" o cronômetro de follow-up
+                                        await supabase.from("ai_leads_tracking").update({
+                                            last_interaction: new Date().toISOString(),
+                                            nudge_count: 0
+                                        }).eq("chat_id", remoteJid).eq("instance_id", tokenId);
                                     }
                                 } catch (err) {
                                     log(`[ERR DEBOUNCE AI] ${err.message}`);
@@ -4783,8 +4789,8 @@ async function checkFunnelFollowups() {
     }
 }
 
-// Iniciar worker de follow-up a cada 5 minutos
-setInterval(checkAiFollowups, 300000);
+// Iniciar worker de follow-up a cada 1 minuto (V1.235: mais rápido para follow-ups curtos)
+setInterval(checkAiFollowups, 60000);
 setInterval(checkFunnelFollowups, 600000); // Check every 10 min
 setInterval(checkAutoResume, 600000); // Check every 10 min
 
