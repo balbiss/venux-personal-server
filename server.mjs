@@ -106,7 +106,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.232";
+const SERVER_VERSION = "1.233";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -1115,7 +1115,8 @@ async function renderManageMenu(ctx, id) {
 bot.action(/^manage_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
+    const { inst, session } = await checkOwnership(ctx, id);
+    if (!inst) return;
     await renderManageMenu(ctx, id);
 });
 
@@ -1123,7 +1124,8 @@ bot.action(/^manage_(.+)$/, async (ctx) => {
 bot.action(/^wa_api_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
+    const { inst, session } = await checkOwnership(ctx, id);
+    if (!inst) return;
 
     const message = `🔗 *Dados de Integração (API / n8n)*\n\n` +
         `Utilize os dados abaixo para conectar sua instância em ferramentas externas como o n8n:\n\n` +
@@ -1144,7 +1146,8 @@ bot.action(/^wa_api_(.+)$/, async (ctx) => {
 bot.action(/^wa_endpoints_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
+    const { inst, session } = await checkOwnership(ctx, id);
+    if (!inst) return;
 
     const message = `📋 *Guia de Endpoints (WUZAPI)*\n\n` +
         `Todos os comandos devem usar o método **POST** e o Header \`token: ${id}\`.\n\n` +
@@ -1239,7 +1242,8 @@ bot.action(/^wa_funnel_toggle_(.+)$/, async (ctx) => {
 bot.action(/^wa_funnel_set_pres_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
+    const { inst, session } = await checkOwnership(ctx, id);
+    if (!inst) return;
     const session = await getSession(ctx.chat.id);
     session.stage = `WA_FUNNEL_WAIT_PRES_${id}`;
     await syncSession(ctx, session);
@@ -1249,14 +1253,16 @@ bot.action(/^wa_funnel_set_pres_(.+)$/, async (ctx) => {
 bot.action(/^wa_funnel_questions_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
+    const { inst, session } = await checkOwnership(ctx, id);
+    if (!inst) return;
     await renderFunnelQuestionsMenu(ctx, id);
 });
 
 bot.action(/^wa_funnel_add_ques_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
+    const { inst, session } = await checkOwnership(ctx, id);
+    if (!inst) return;
     const session = await getSession(ctx.chat.id);
     session.stage = `WA_FUNNEL_WAIT_QUES_${id}`;
     await syncSession(ctx, session);
@@ -1266,7 +1272,8 @@ bot.action(/^wa_funnel_add_ques_(.+)$/, async (ctx) => {
 bot.action(/^wa_funnel_pop_ques_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
+    const { inst, session } = await checkOwnership(ctx, id);
+    if (!inst) return;
     const { data: funnel } = await supabase.from("qualification_funnels").select("*").eq("instance_id", id).maybeSingle();
     let questions = funnel?.questions || [];
     if (questions.length > 0) {
@@ -1280,7 +1287,8 @@ bot.action(/^wa_funnel_pop_ques_(.+)$/, async (ctx) => {
 bot.action(/^wa_funnel_set_act_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
+    const { inst, session } = await checkOwnership(ctx, id);
+    if (!inst) return;
     const text = "🏁 *Definir Ação Final*\n\nO que o robô deve fazer após o lead terminar o funil?";
     const buttons = [
         [Markup.button.callback("👤 Transbordo Humano", `wa_funnel_set_f_${id}_human`)],
@@ -1294,7 +1302,8 @@ bot.action(/^wa_funnel_set_f_(.+)_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
     const act = ctx.match[2];
-    if (!await checkOwnership(ctx, id)) return;
+    const { inst, session } = await checkOwnership(ctx, id);
+    if (!inst) return;
     await supabase.from("qualification_funnels").update({ final_action: act }).eq("instance_id", id);
     ctx.answerCbQuery("✅ Ação final atualizada");
     await renderFunnelMenu(ctx, id);
@@ -1308,7 +1317,8 @@ const activeCampaigns = new Map();
 bot.action(/^wa_mass_init_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
+    const { inst, session } = await checkOwnership(ctx, id);
+    if (!inst) return;
 
     const session = await getSession(ctx.chat.id);
     if (activeCampaigns.has(ctx.chat.id)) {
@@ -1340,7 +1350,8 @@ bot.action(/^wa_mass_init_(.+)$/, async (ctx) => {
 bot.action(/^wa_mass_new_start_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
+    const { inst, session } = await checkOwnership(ctx, id);
+    if (!inst) return;
 
     ctx.editMessageText("📢 *Módulo de Disparo em Massa*\n\nSelecione o tipo de destinatário:", {
         parse_mode: "Markdown",
@@ -1355,7 +1366,8 @@ bot.action(/^wa_mass_new_start_(.+)$/, async (ctx) => {
 bot.action(/^wa_mass_start_txt_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
+    const { inst, session } = await checkOwnership(ctx, id);
+    if (!inst) return;
     const session = await getSession(ctx.chat.id);
 
     session.stage = `WA_WAITING_MASS_CONTACTS_${id}`;
@@ -1373,7 +1385,8 @@ bot.action(/^wa_mass_start_txt_(.+)$/, async (ctx) => {
 bot.action(/^wa_mass_groups_fetch_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const instId = ctx.match[1];
-    if (!await checkOwnership(ctx, instId)) return;
+    const { inst, session } = await checkOwnership(ctx, instId);
+    if (!inst) return;
 
     ctx.editMessageText("⏳ *Extraindo grupos...* Aguarde.", { parse_mode: "Markdown" });
 
@@ -1508,7 +1521,8 @@ bot.action(/^wa_mass_grp_confirm_(.+)$/, async (ctx) => {
 bot.action(/^wa_mass_list_paused_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const instId = ctx.match[1];
-    if (!await checkOwnership(ctx, instId)) return;
+    const { inst, session } = await checkOwnership(ctx, instId);
+    if (!inst) return;
 
     const { data, error } = await supabase
         .from('scheduled_campaigns')
@@ -1550,7 +1564,8 @@ bot.action(/^wa_mass_resume_db_(.+)$/, async (ctx) => {
         .single();
 
     if (error || !data) return ctx.reply("❌ Campanha não encontrada ou erro no banco.");
-    if (!await checkOwnership(ctx, data.inst_id)) return;
+    const { inst, session } = await checkOwnership(ctx, data.inst_id);
+    if (!inst) return;
 
     const camp = {
         ...data.campaign_data,
@@ -1838,7 +1853,8 @@ bot.action("wa_stop_mass", async (ctx) => {
 bot.action(/^wa_mass_now_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const instId = ctx.match[1];
-    if (!await checkOwnership(ctx, instId)) return;
+    const { inst, session } = await checkOwnership(ctx, instId);
+    if (!inst) return;
     const session = await getSession(ctx.chat.id);
 
     const camp = {
@@ -1888,7 +1904,8 @@ bot.action(/^wa_mass_now_(.+)$/, async (ctx) => {
 bot.action(/^wa_mass_sched_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const instId = ctx.match[1];
-    if (!await checkOwnership(ctx, instId)) return;
+    const { inst, session } = await checkOwnership(ctx, instId);
+    if (!inst) return;
     const session = await getSession(ctx.chat.id);
 
     session.stage = `WA_WAITING_MASS_SCHEDULE_${instId}`;
@@ -1975,7 +1992,8 @@ async function renderFollowupMenu(ctx, instId) {
 bot.action(/^wa_ai_followup_menu_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
+    const { inst, session } = await checkOwnership(ctx, id);
+    if (!inst) return;
     await renderFollowupMenu(ctx, id);
 });
 
@@ -2047,7 +2065,8 @@ bot.action(/^wa_fu_set_msgs_(.+)$/, async (ctx) => {
 bot.action(/^wa_report_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const instId = ctx.match[1];
-    if (!await checkOwnership(ctx, instId)) return;
+    const { inst, session } = await checkOwnership(ctx, instId);
+    if (!inst) return;
     const session = await getSession(ctx.chat.id);
     const report = session.reports ? session.reports[instId] : null;
 
@@ -2114,7 +2133,8 @@ async function startConnectionPolling(chatId, instId) {
 bot.action(/^wa_qr_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
+    const { inst, session } = await checkOwnership(ctx, id);
+    if (!inst) return;
     ctx.reply("⏳ Gerando QR Code...");
 
     await ensureWebhookSet(id);
@@ -2146,7 +2166,8 @@ bot.action(/^wa_qr_(.+)$/, async (ctx) => {
 bot.action(/^wa_pair_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
+    const { inst, session } = await checkOwnership(ctx, id);
+    if (!inst) return;
 
     await ensureWebhookSet(id);
 
@@ -2192,7 +2213,8 @@ async function renderWebhookMenu(ctx, id) {
 bot.action(/^wa_web_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
+    const { inst, session } = await checkOwnership(ctx, id);
+    if (!inst) return;
     await renderWebhookMenu(ctx, id);
 });
 
@@ -2200,7 +2222,8 @@ bot.action(/^wa_web_(.+)$/, async (ctx) => {
 bot.action(/^wa_set_web_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
+    const { inst, session } = await checkOwnership(ctx, id);
+    if (!inst) return;
     const session = await getSession(ctx.chat.id);
     session.stage = `WA_WAITING_WEBHOOK_URL_${id}`;
     await syncSession(ctx, session);
@@ -2216,7 +2239,8 @@ bot.action(/^wa_set_web_(.+)$/, async (ctx) => {
 bot.action(/^wa_del_web_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
+    const { inst, session } = await checkOwnership(ctx, id);
+    if (!inst) return;
 
     // Obter UUID para limpar também no Admin
     const statusRes = await callWuzapi("/session/status", "GET", null, id);
@@ -2237,7 +2261,8 @@ bot.action(/^wa_del_web_(.+)$/, async (ctx) => {
 bot.action(/^wa_events_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
+    const { inst, session } = await checkOwnership(ctx, id);
+    if (!inst) return;
     const res = await callWuzapi("/webhook", "GET", null, id);
     if (!res.success || !res.data) return ctx.reply("❌ Não foi possível carregar eventos.");
 
@@ -2257,7 +2282,8 @@ bot.action(/^wa_events_(.+)$/, async (ctx) => {
 bot.action(/^wa_toggle_ev_(.+)_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
+    const { inst, session } = await checkOwnership(ctx, id);
+    if (!inst) return;
     const event = ctx.match[2];
 
     const res = await callWuzapi("/webhook", "GET", null, id);
@@ -2322,7 +2348,8 @@ bot.action(/^wa_toggle_ev_(.+)_(.+)$/, async (ctx) => {
 bot.action(/^wa_conf_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
+    const { inst, session } = await checkOwnership(ctx, id);
+    if (!inst) return;
 
     // Buscar status de presença atual (embora a API não retorne o estado, simulamos via sessão)
     const session = await getSession(ctx.chat.id);
@@ -2341,7 +2368,8 @@ bot.action(/^wa_conf_(.+)$/, async (ctx) => {
 bot.action(/^wa_toggle_presence_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
+    const { inst, session } = await checkOwnership(ctx, id);
+    if (!inst) return;
     const session = await getSession(ctx.chat.id);
     const inst = session.whatsapp.instances.find(i => i.id === id);
     if (!inst) return;
@@ -2629,7 +2657,8 @@ bot.action(/^wa_ai_resume_time_(.+)$/, async (ctx) => {
 bot.action(/^wa_ai_resume_(.+)_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const tokenId = ctx.match[1];
-    if (!await checkOwnership(ctx, tokenId)) return;
+    const { inst, session } = await checkOwnership(ctx, tokenId);
+    if (!inst) return;
     const remoteJid = ctx.match[2];
 
     log(`[BOT] Retomando IA para ${remoteJid} na instância ${tokenId}`);
@@ -4281,6 +4310,23 @@ app.post("/webhook", async (req, res) => {
                     const inst = session.whatsapp.instances.find(i => i.id === tokenId);
 
                     if (isFromMe) {
+                        // V1.233: Anti-Self-Pause logic
+                        // Verificamos se a mensagem enviada foi a própria IA (evitando loop de pausa)
+                        const { data: lastAiMsg } = await supabase
+                            .from("ai_chat_history")
+                            .select("content")
+                            .eq("chat_id", remoteJid)
+                            .eq("instance_id", tokenId)
+                            .eq("role", "assistant")
+                            .order("created_at", { ascending: false })
+                            .limit(1)
+                            .maybeSingle();
+
+                        if (lastAiMsg && lastAiMsg.content === text) {
+                            log(`[WEBHOOK] Ignorando eco da própria IA para ${remoteJid}`);
+                            return res.send({ ok: true });
+                        }
+
                         log(`[WEBHOOK] Resposta humana detectada para ${remoteJid}. Pausando IA.`);
                         await supabase.from("ai_leads_tracking").upsert({
                             chat_id: remoteJid,
