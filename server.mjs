@@ -66,12 +66,22 @@ async function getSession(chatId) {
     }
 
     if (data) {
-        log(`[DB DEBUG] Sessão encontrada para ${id}: ${JSON.stringify(data.data).substring(0, 100)}...`);
-        // Garantir estrutura básica se o objeto no banco estiver incompleto
+        log(`[DB DEBUG] Sessão encontrada para ${id}. Verificando integridade...`);
         const s = data.data;
-        if (!s.whatsapp) s.whatsapp = { instances: [], maxInstances: 1 };
-        if (!s.affiliate) s.affiliate = { balance: 0, totalEarned: 0, referralsCount: 0, conversionsCount: 0 };
+
+        // V1.244: Auto-Cura Profunda (Deep Healing)
+        // Garante que sub-objetos existam mesmo se o JSON no banco estiver incompleto
+        if (!s.whatsapp) s.whatsapp = {};
+        if (!Array.isArray(s.whatsapp.instances)) s.whatsapp.instances = [];
+        if (typeof s.whatsapp.maxInstances !== 'number') s.whatsapp.maxInstances = 1;
+
+        if (!s.affiliate) s.affiliate = {};
+        if (typeof s.affiliate.balance !== 'number') s.affiliate.balance = 0;
+        if (typeof s.affiliate.totalEarned !== 'number') s.affiliate.totalEarned = 0;
+
+        if (!s.reports) s.reports = {};
         if (!s.stage) s.stage = "READY";
+
         return s;
     }
 
@@ -113,7 +123,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.243";
+const SERVER_VERSION = "1.244";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -973,7 +983,8 @@ async function showInstances(ctx) {
     let msg = `📱 *Suas Instâncias (v${SERVER_VERSION}):*\n\n`;
     const buttons = [];
 
-    if (session.whatsapp.instances.length === 0) {
+    // V1.244: Check de segurança extra
+    if (!session.whatsapp || !Array.isArray(session.whatsapp.instances) || session.whatsapp.instances.length === 0) {
         msg += "_Nenhuma instância encontrada._\n";
     } else {
         for (const inst of session.whatsapp.instances) {
