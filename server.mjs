@@ -106,7 +106,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.235";
+const SERVER_VERSION = "1.236";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -4293,7 +4293,15 @@ app.post("/webhook", async (req, res) => {
                     messageObj.videoMessage?.caption ||
                     messageObj.documentMessage?.caption ||
                     info.Body || "";
-                const audioBase64 = messageObj.audioMessage?.url || messageObj.audioMessage?.directPath || rawData.Audio || null;
+                // V1.236: Extração robusta de áudio (Previne erro 400 no Whisper)
+                let audioBase64 = rawData.Audio || body.Audio || (info.Audio) || null;
+
+                // Proteção Crítica: Se o que temos for uma URL do WhatsApp, o Whisper vai dar erro.
+                // Resetamos para null se for URL ou Path, pois não é base64 válido para o Buffer.
+                if (audioBase64 && (typeof audioBase64 !== 'string' || audioBase64.startsWith("http") || audioBase64.startsWith("/"))) {
+                    log(`[WEBHOOK] Mídia recebida como URL/Path. Ignorando transcrição direta.`);
+                    audioBase64 = null;
+                }
 
                 log(`[WEBHOOK] Msg from: ${remoteJid} | Group: ${isGroup} | FromMe: ${isFromMe} | Text: ${text.substring(0, 50)}`);
 
