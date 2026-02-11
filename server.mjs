@@ -140,7 +140,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.246";
+const SERVER_VERSION = "1.247";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -206,21 +206,18 @@ async function safeEdit(ctx, text, extra = {}) {
 
     if (ctx.callbackQuery) {
         try {
-            await ctx.editMessageText(text, { parse_mode: "Markdown", ...extra });
-            // Se editou a mensagem atual, esse ID continua sendo o nosso last_menu_id ativo
+            await ctx.editMessageText(text, { parse_mode: "HTML", ...extra });
             session.last_menu_id = ctx.callbackQuery.message.message_id;
             await syncSession(ctx, session);
         } catch (e) {
-            // Se falhou ao editar (ex: mensagem expirou), apaga e manda nova
             await killOld();
-            const sent = await ctx.reply(text, { parse_mode: "Markdown", ...extra });
+            const sent = await ctx.reply(text, { parse_mode: "HTML", ...extra });
             session.last_menu_id = sent.message_id;
             await syncSession(ctx, session);
         }
     } else {
-        // Se é um comando (/start), mata o menu antigo e manda novo
         await killOld();
-        const sent = await ctx.reply(text, { parse_mode: "Markdown", ...extra });
+        const sent = await ctx.reply(text, { parse_mode: "HTML", ...extra });
         session.last_menu_id = sent.message_id;
         await syncSession(ctx, session);
     }
@@ -427,13 +424,13 @@ async function renderAdminPanel(ctx) {
     const config = await getSystemConfig();
     const { count } = await supabase.from('bot_sessions').select('*', { count: 'exact', head: true });
 
-    const text = `👑 *Painel Admin SaaS*\n\n` +
-        `👥 *Usuários:* ${count || 0}\n` +
-        `💰 *Preço Atual:* R$ ${config.planPrice.toFixed(2)}\n` +
-        `💎 *Limite Instâncias VIP:* ${config.limits.vip.instances}\n` +
-        `🤝 *Corretores:* Liberados (Ilimitados)\n` +
-        `👤 *Suporte:* \`${config.supportLink || "Não definido"}\`\n` +
-        `📺 *Tutoriais:* \`${config.tutorialLink || "Não definido"}\`\n`;
+    const text = `👑 <b>Painel Admin SaaS</b>\n\n` +
+        `👥 <b>Usuários:</b> ${count || 0}\n` +
+        `💰 <b>Preço Atual:</b> R$ ${config.planPrice.toFixed(2)}\n` +
+        `💎 <b>Limite Instâncias VIP:</b> ${config.limits.vip.instances}\n` +
+        `🤝 <b>Corretores:</b> Liberados (Ilimitados)\n` +
+        `👤 <b>Suporte:</b> <code>${config.supportLink || "Não definido"}</code>\n` +
+        `📺 <b>Tutoriais:</b> <code>${config.tutorialLink || "Não definido"}</code>\n`;
 
     const buttons = [
         [Markup.button.callback("📢 Broadcast (Msg em Massa)", "admin_broadcast")],
@@ -567,8 +564,8 @@ async function renderUserDetails(ctx, targetChatId) {
     const expiry = s.subscriptionExpiry ? new Date(s.subscriptionExpiry).toLocaleDateString('pt-BR') : "N/A";
     const blocked = s.blocked || false;
 
-    const text = `👤 *Detalhes do Usuário*\n\n` +
-        `🆔 ID: \`${targetChatId}\`\n` +
+    const text = `👤 <b>Detalhes do Usuário</b>\n\n` +
+        `🆔 ID: <code>${targetChatId}</code>\n` +
         `👤 Nome: ${s.firstName || "Desconhecido"}\n` +
         `💎 VIP: ${isVip ? "SIM" : "NÃO"}\n` +
         `📅 Expira em: ${expiry}\n` +
@@ -581,7 +578,7 @@ async function renderUserDetails(ctx, targetChatId) {
         [Markup.button.callback("🔙 Voltar", "admin_search_user")]
     ];
 
-    await ctx.reply(text, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
+    await ctx.reply(text, { parse_mode: "HTML", ...Markup.inlineKeyboard(buttons) });
 }
 
 // Handlers dinâmicos para ações de usuário
@@ -648,15 +645,16 @@ bot.start(async (ctx) => {
 
             // Avisar o padrinho (opcional, mas motivador)
             try {
-                bot.telegram.sendMessage(referrerId, `🤝 *Nova Indicação!* \n\n${userFirstName} entrou pelo seu link. Se ele(a) assinar, você ganha comissão!`, { parse_mode: "Markdown" });
+                bot.telegram.sendMessage(referrerId, `🤝 <b>Nova Indicação!</b> \n\n${userFirstName} entrou pelo seu link. Se ele(a) assinar, você ganha comissão!`, { parse_mode: "HTML" });
             } catch (e) { }
         }
     }
     await syncSession(ctx, session);
 
-    const welcomeMsg = `👋 *Olá, ${userFirstName}! Bem-vindo ao Connect SaaS* 🚀\n\n` +
+    // V1.247: Mudança global para HTML para evitar erros de Markdown com nomes/links
+    const welcomeMsg = `👋 <b>Olá, ${userFirstName}! Bem-vindo ao Connect SaaS</b> 🚀\n\n` +
         `O sistema definitivo para automação de WhatsApp com IA e Rodízio de Leads.\n\n` +
-        `👇 *Escolha uma opção no menu abaixo:*`;
+        `👇 <b>Escolha uma opção no menu abaixo:</b>`;
 
     if (!isVip && !isAdmin(ctx.chat.id, config)) {
         return renderTourMenu(ctx, 0);
@@ -699,7 +697,7 @@ async function renderTourMenu(ctx, step = 0) {
     const steps = [
         {
             title: "🚀 Bem-vindo ao Connect SaaS!",
-            description: "Você acaba de acessar a plataforma mais completa para automação de vendas via WhatsApp.\n\nNossa tecnologia permite que você tenha um **SDR Artificial** trabalhando 24h por dia, qualificando leads e fechando negócios enquanto você dorme.",
+            description: "Você acaba de acessar a plataforma mais completa para automação de vendas via WhatsApp.\n\nNossa tecnologia permite que você tenha um <b>SDR Artificial</b> trabalhando 24h por dia, qualificando leads e fechando negócios enquanto você dorme.",
             btnNext: "Conhecer IAs 🤖"
         },
         {
@@ -714,7 +712,7 @@ async function renderTourMenu(ctx, step = 0) {
         },
         {
             title: "📢 Disparo em Massa Inteligente",
-            description: "Alcance milhares de clientes:\n✅ Variáveis dinâmicas `{{nome}}`.\n✅ Delay aleatório anti-ban.\n✅ Suporte a fotos, vídeos e áudios.\n✅ Campanhas agendadas.",
+            description: "Alcance milhares de clientes:\n✅ Variáveis dinâmicas <code>{{nome}}</code>.\n✅ Delay aleatório anti-ban.\n✅ Suporte a fotos, vídeos e áudios.\n✅ Campanhas agendadas.",
             btnNext: "Rodízio & Gestão 👥"
         },
         {
@@ -724,14 +722,14 @@ async function renderTourMenu(ctx, step = 0) {
         },
         {
             title: "💎 Escolha seu Sucesso",
-            description: `Tudo isso liberado imediatamente após a assinatura.\n\n💰 *Investimento:* R$ ${config.planPrice.toFixed(2)}/mês\n\nSem taxas de adesão. Cancele quando quiser.`,
+            description: `Tudo isso liberado imediatamente após a assinatura.\n\n💰 <b>Investimento:</b> R$ ${config.planPrice.toFixed(2)}/mês\n\nSem taxas de adesão. Cancele quando quiser.`,
             btnNext: "🔥 ASSINAR AGORA (PIX)"
         }
     ];
 
     const s = steps[step];
-    text = `*Step ${step + 1}/${steps.length}*\n\n` +
-        `*${s.title}*\n\n` +
+    text = `<b>Step ${step + 1}/${steps.length}</b>\n\n` +
+        `<b>${s.title}</b>\n\n` +
         `${s.description}`;
 
     if (step < steps.length - 1) {
@@ -905,18 +903,18 @@ async function renderAffiliateMenu(ctx) {
     const affLink = `https://t.me/${botInfo.username}?start=${ctx.chat.id}`;
     const aff = session.affiliate || { balance: 0, referralsCount: 0, conversionsCount: 0 };
 
-    const text = `🤝 *Sistema de Afiliados Connect*\n\n` +
+    const text = `🤝 <b>Sistema de Afiliados Connect</b>\n\n` +
         `Indique o Connect para seus amigos e ganhe comissão por cada assinatura confirmada!\n\n` +
-        `🔗 *Seu Link de Indicação:* \n\`${affLink}\`\n\n` +
-        `📊 *Suas Estatísticas:*\n` +
+        `🔗 <b>Seu Link de Indicação:</b> \n<code>${affLink}</code>\n\n` +
+        `📊 <b>Suas Estatísticas:</b>\n` +
         `👤 Indicados: ${aff.referralsCount || 0}\n` +
         `✅ Vendas Convertidas: ${aff.conversionsCount || 0}\n` +
-        `💰 *Saldo Atual: R$ ${(aff.balance || 0).toFixed(2)}*\n\n` +
+        `💰 <b>Saldo Atual: R$ ${(aff.balance || 0).toFixed(2)}</b>\n\n` +
         `━━━━━━━━━━━━━━━━━━━━\n` +
-        `📢 *Como funciona?*\n` +
+        `📢 <b>Como funciona?</b>\n` +
         `1. Você compartilha seu link.\n` +
         `2. Alguém entra e assina o Plano Pro.\n` +
-        `3. Você ganha **R$ 10,00** de comissão na hora no seu saldo!`;
+        `3. Você ganha <b>R$ 10,00</b> de comissão na hora no seu saldo!`;
 
     const buttons = [
         [Markup.button.callback("💸 Solicitar Saque", "gen_withdraw_pix")],
@@ -1067,11 +1065,12 @@ async function startConnection(ctx) {
     }
 
     if (!isAdminUser && session.whatsapp.instances.length >= config.limits.vip.instances) {
-        return safeEdit(ctx, `⚠️ *Limite de Instâncias Atingido!*\n\nSeu plano permite apenas ${config.limits.vip.instances} instâncias.\n\nFale com o suporte ou use /admin se for o dono.`,
+        return safeEdit(ctx, `⚠️ <b>Limite de Instâncias Atingido!</b>\n\nSeu plano permite apenas ${config.limits.vip.instances} instâncias.\n\nFale com o suporte ou use /admin se for o dono.`,
             Markup.inlineKeyboard([[Markup.button.callback("💎 Ver Planos", "cmd_planos_menu")], [Markup.button.callback("🔙 Voltar", "cmd_instancias_menu")]])
+            , { parse_mode: "HTML" }
         );
     }
-    await safeEdit(ctx, "🔗 *Nova Conexão*\n\nDigite um **Nome** para identificar esta instância:", Markup.inlineKeyboard([[Markup.button.callback("❌ Cancelar", "cmd_instancias_menu")]]));
+    await safeEdit(ctx, "🔗 <b>Nova Conexão</b>\n\nDigite um <b>Nome</b> para identificar esta instância:", Markup.inlineKeyboard([[Markup.button.callback("❌ Cancelar", "cmd_instancias_menu")]]));
     session.stage = "WA_WAITING_NAME";
     await syncSession(ctx, session);
 }
@@ -1365,9 +1364,9 @@ bot.action(/^wa_mass_init_(.+)$/, async (ctx) => {
     session.stage = `WA_WAITING_MASS_CONTACTS_${id}`;
     await syncSession(ctx, session);
 
-    const text = "🚀 *Configuração de Disparo em Massa*\n\nO que deseja fazer?";
+    const text = "🚀 <b>Configuração de Disparo em Massa</b>\n\nO que deseja fazer?";
     const extra = {
-        parse_mode: "Markdown",
+        parse_mode: "HTML",
         ...Markup.inlineKeyboard([
             [Markup.button.callback("🆕 Novo Disparo", `wa_mass_new_start_${id}`)],
             [Markup.button.callback("📂 Campanhas Pausadas / Pendentes", `wa_mass_list_paused_${id}`)],
@@ -1388,8 +1387,8 @@ bot.action(/^wa_mass_new_start_(.+)$/, async (ctx) => {
     const { inst, session } = await checkOwnership(ctx, id);
     if (!inst) return;
 
-    ctx.editMessageText("📢 *Módulo de Disparo em Massa*\n\nSelecione o tipo de destinatário:", {
-        parse_mode: "Markdown",
+    ctx.editMessageText("📢 <b>Módulo de Disparo em Massa</b>\n\nSelecione o tipo de destinatário:", {
+        parse_mode: "HTML",
         ...Markup.inlineKeyboard([
             [Markup.button.callback("👤 Contatos (via .txt)", `wa_mass_start_txt_${id}`)],
             [Markup.button.callback("👥 Grupos da Instância", `wa_mass_groups_fetch_${id}`)],
