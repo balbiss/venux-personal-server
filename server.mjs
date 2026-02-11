@@ -140,7 +140,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.250";
+const SERVER_VERSION = "1.251";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -1649,207 +1649,167 @@ async function runCampaign(chatId, instId) {
             break;
         }
 
-        campaign.currentIndex = i;
-        const contact = campaign.contacts[i];
-        const rawPhone = typeof contact === 'string' ? contact : contact.phone;
-        const nameFallback = "amigo(a)";
-        const contactName = (typeof contact === 'object' && contact.name) ? contact.name : nameFallback;
+        try {
+            campaign.currentIndex = i;
+            const contact = campaign.contacts[i];
+            const rawPhone = typeof contact === 'string' ? contact : contact.phone;
+            const nameFallback = "amigo(a)";
+            const contactName = (typeof contact === 'object' && contact.name) ? contact.name : nameFallback;
 
-        const phone = rawPhone.replace(/\D/g, "");
-        // Se for grupo, o "phone" vai ficar vazio ou estranho com o regex acima se não tratarmos
-        // Melhor usar o rawPhone se contiver '@'
-        const isGroupNode = rawPhone.includes("@g.us");
-        const finalPhone = isGroupNode ? rawPhone : phone;
+            const phone = rawPhone.replace(/\D/g, "");
+            const isGroupNode = rawPhone.includes("@g.us");
+            const finalPhone = isGroupNode ? rawPhone : phone;
 
-        if (!finalPhone) continue;
+            if (!finalPhone) continue;
 
-        // 1. Escolher Variação e Substituir Variáveis
-        const variations = campaign.messages || [campaign.message];
-        let chosenMsg = variations[Math.floor(Math.random() * variations.length)];
+            const variations = campaign.messages || [campaign.message];
+            let chosenMsg = variations[Math.floor(Math.random() * variations.length)];
 
-        // Saudações Dinâmicas e Emojis (Anti-Spam)
-        const hr = new Date().getHours();
-        const saudacao = hr < 12 ? "Bom dia" : hr < 18 ? "Boa tarde" : "Boa noite";
-        const emjs = ["😊", "👋", "🚀", "✨", "✅", "📍", "🤝", "🙌"];
-        const randomEmoji = emjs[Math.floor(Math.random() * emjs.length)];
+            const hr = new Date().getHours();
+            const saudacao = hr < 12 ? "Bom dia" : hr < 18 ? "Boa tarde" : "Boa noite";
+            const emjs = ["😊", "👋", "🚀", "✨", "✅", "📍", "🤝", "🙌"];
+            const randomEmoji = emjs[Math.floor(Math.random() * emjs.length)];
 
-        // Substituição de Variáveis
-        chosenMsg = chosenMsg
-            .replace(/\{\{nome\}\}/gi, contactName)
-            .replace(/\{\{name\}\}/gi, contactName)
-            .replace(/\{\{saudacao\}\}/gi, saudacao)
-            .replace(/\{\{greet\}\}/gi, saudacao)
-            .replace(/\{\{emoji\}\}/gi, randomEmoji);
+            chosenMsg = chosenMsg
+                .replace(/\{\{nome\}\}/gi, contactName)
+                .replace(/\{\{name\}\}/gi, contactName)
+                .replace(/\{\{saudacao\}\}/gi, saudacao)
+                .replace(/\{\{greet\}\}/gi, saudacao)
+                .replace(/\{\{emoji\}\}/gi, randomEmoji);
 
-        // --- FIX: Suporte a Grupos ---
-        let jid = null;
-        // Se o número original já for um JID de grupo (@g.us), usamos ele diretamente
-        if (phone.includes("@g.us") || rawPhone.includes("@g.us")) {
-            jid = rawPhone;
-        }
-
-        // 2. Validar se tem WhatsApp (Se não for grupo)
-        if (!jid) {
-            const check = await callWuzapi("/user/check", "POST", { Phone: [phone] }, instId);
-            if (check.success && check.data && check.data.Users && check.data.Users[0].IsInWhatsapp) {
-                jid = check.data.Users[0].JID;
+            let jid = null;
+            if (phone.includes("@g.us") || rawPhone.includes("@g.us")) {
+                jid = rawPhone;
             }
-        }
 
-        if (jid) {
-            // 3. Enviar baseado no tipo de mídia
-            const body = { Phone: jid };
-            let endpoint = "/chat/send/text";
-
-            // Se for grupo, usa endpoint específico para mensagens de texto se necessário,
-            // mas WUZAPI geralmente aceita /chat/send/text com JID de grupo.
-            // Para mídias, o endpoint é o mesmo, apenas o Phone muda.
-
-            if (campaign.mediaType === 'text') {
-                body.Body = chosenMsg;
-                // WUZAPI pode exigir GroupJID para alguns endpoints específicos, mas /chat/send/text costuma funcionar
-                // Se der erro, pode ser necessário usar /group/send/text (não padrão) ou verificar a doc.
-                // Pela doc fornecida: /chat/send/text aceita Phone (que pode ser grupo)
-            } else {
-                // Usar campos específicos conforme documentação WUZAPI
-                if (chosenMsg) body.Caption = chosenMsg;
-
-                if (campaign.mediaType === 'photo') {
-                    endpoint = "/chat/send/image";
-                    body.Image = campaign.mediaData || campaign.mediaUrl; // Campo correto para imagens
-                } else if (campaign.mediaType === 'video') {
-                    endpoint = "/chat/send/video";
-                    body.Video = campaign.mediaData || campaign.mediaUrl; // Campo correto para vídeos
-                } else if (campaign.mediaType === 'audio') {
-                    endpoint = "/chat/send/audio";
-                    body.Audio = campaign.mediaData || campaign.mediaUrl; // Campo correto para áudios
-                } else if (campaign.mediaType === 'document') {
-                    endpoint = "/chat/send/document";
-                    body.Document = campaign.mediaData || campaign.mediaUrl; // Campo correto para documentos
-                    body.FileName = campaign.fileName || "arquivo";
+            if (!jid) {
+                const check = await callWuzapi("/user/check", "POST", { Phone: [phone] }, instId);
+                if (check.success && check.data && check.data.Users && check.data.Users[0].IsInWhatsapp) {
+                    jid = check.data.Users[0].JID;
                 }
             }
 
-            // Log do payload para debug (truncando base64)
-            log(`[DISPARO] Enviando ${campaign.mediaType} para ${phone}`);
-            log(`[DISPARO] Endpoint: ${endpoint}`);
-            const debugPayload = { ...body };
-            if (debugPayload.Image) debugPayload.Image = debugPayload.Image.substring(0, 50) + "...";
-            if (debugPayload.Video) debugPayload.Video = debugPayload.Video.substring(0, 50) + "...";
-            if (debugPayload.Audio) debugPayload.Audio = debugPayload.Audio.substring(0, 50) + "...";
-            if (debugPayload.Document) debugPayload.Document = debugPayload.Document.substring(0, 50) + "...";
-            log(`[DISPARO] Payload: ${JSON.stringify(debugPayload)}`);
+            if (jid) {
+                const body = { Phone: jid };
+                let endpoint = "/chat/send/text";
 
-            const result = await callWuzapi(endpoint, "POST", body, instId);
-
-            if (result.success) {
-                campaign.current++;
-                if (!campaign.successNumbers) campaign.successNumbers = [];
-                campaign.successNumbers.push(phone);
-                log(`[DISPARO] ✅ Enviado com sucesso para ${phone}`);
-            } else {
-                if (!campaign.failedNumbers) campaign.failedNumbers = [];
-                campaign.failedNumbers.push(phone);
-                log(`[DISPARO] ❌ Erro ao enviar para ${phone}: ${JSON.stringify(result)}`);
-            }
-        }
-
-        // Progresso e Persistência (Salvar no banco a cada 5 disparos)
-        if ((i + 1) % 5 === 0 || (i + 1) === campaign.total) {
-            if (campaign.lastMsgId) {
-                try { await bot.telegram.deleteMessage(chatId, campaign.lastMsgId); } catch (e) { }
-            }
-
-            // Se for campanha persistente, salvar progresso no banco
-            if (campaign.dbId) {
-                const updateData = {
-                    campaign_data: {
-                        ...campaign,
-                        currentIndex: i + 1,
-                        current: campaign.current,
-                        lastMsgId: null,
-                        successNumbers: campaign.successNumbers,
-                        failedNumbers: campaign.failedNumbers
+                if (campaign.mediaType === 'text') {
+                    body.Body = chosenMsg;
+                } else {
+                    if (chosenMsg) body.Caption = chosenMsg;
+                    if (campaign.mediaType === 'photo') {
+                        endpoint = "/chat/send/image";
+                        body.Image = campaign.mediaData || campaign.mediaUrl;
+                    } else if (campaign.mediaType === 'video') {
+                        endpoint = "/chat/send/video";
+                        body.Video = campaign.mediaData || campaign.mediaUrl;
+                    } else if (campaign.mediaType === 'audio') {
+                        endpoint = "/chat/send/audio";
+                        body.Audio = campaign.mediaData || campaign.mediaUrl;
+                    } else if (campaign.mediaType === 'document') {
+                        endpoint = "/chat/send/document";
+                        body.Document = campaign.mediaData || campaign.mediaUrl;
+                        body.FileName = campaign.fileName || "arquivo";
                     }
-                };
-                await supabase.from('scheduled_campaigns').update(updateData).eq('id', campaign.dbId);
+                }
+
+                log(`[DISPARO] Enviando ${campaign.mediaType} para ${phone}`);
+                const result = await callWuzapi(endpoint, "POST", body, instId);
+
+                if (result.success) {
+                    campaign.current++;
+                    if (!campaign.successNumbers) campaign.successNumbers = [];
+                    campaign.successNumbers.push(phone);
+                } else {
+                    if (!campaign.failedNumbers) campaign.failedNumbers = [];
+                    campaign.failedNumbers.push(phone);
+                    log(`[DISPARO] ❌ Erro ao enviar para ${phone}: ${JSON.stringify(result)}`);
+                }
             }
 
-            const pct = Math.round(((i + 1) / campaign.total) * 100);
-            const filled = "🟩".repeat(Math.floor(pct / 10));
-            const empty = "⬜".repeat(10 - Math.floor(pct / 10));
+            // Progresso e Persistência
+            if ((i + 1) % 5 === 0 || (i + 1) === campaign.total) {
+                if (campaign.lastMsgId) {
+                    try { await bot.telegram.deleteMessage(chatId, campaign.lastMsgId); } catch (e) { }
+                }
 
-            const lastMsg = `🚀 *Progresso do Disparo*\n\n` +
-                `${filled}${empty} ${pct}%\n\n` +
-                `📊 *Status:* ${i + 1} de ${campaign.total}\n` +
-                `✅ *Sucesso:* ${campaign.current}\n` +
-                `⏳ *Aguardando:* ${campaign.total - (i + 1)}\n` +
-                `📱 *Instância:* \`${instId}\``;
+                if (campaign.dbId) {
+                    await supabase.from('scheduled_campaigns').update({
+                        campaign_data: { ...campaign, currentIndex: i + 1, current: campaign.current }
+                    }).eq('id', campaign.dbId);
+                }
 
-            const isLast = (i + 1) === campaign.total;
-            const buttons = isLast ? [] : [[Markup.button.callback("⏸️ Pausar", "wa_pause_mass"), Markup.button.callback("⏹️ Parar", "wa_stop_mass")]];
+                const pct = Math.round(((i + 1) / campaign.total) * 100);
+                const filled = "🟩".repeat(Math.floor(pct / 10));
+                const empty = "⬜".repeat(10 - Math.floor(pct / 10));
 
-            const sent = await bot.telegram.sendMessage(chatId, lastMsg, {
-                parse_mode: "Markdown",
-                ...Markup.inlineKeyboard(buttons)
-            });
-            campaign.lastMsgId = sent.message_id;
-        }
+                const lastMsg = `🚀 *Progresso do Disparo*\n\n${filled}${empty} ${pct}%\n\n📊 *Status:* ${i + 1} de ${campaign.total}\n✅ *Sucesso:* ${campaign.current}\n📱 *Instância:* \`${instId}\``;
+                const isLast = (i + 1) === campaign.total;
+                const buttons = isLast ? [] : [[Markup.button.callback("⏸️ Pausar", "wa_pause_mass"), Markup.button.callback("⏹️ Parar", "wa_stop_mass")]];
 
-        // Delay
-        if (i < campaign.contacts.length - 1 && (campaign.status === 'RUNNING' || campaign.status === 'READY')) {
-            const min = parseInt(campaign.minDelay) || 5;
-            const max = parseInt(campaign.maxDelay) || 15;
-            const d = Math.floor(Math.random() * (max - min + 1) + min) * 1000;
+                const sent = await bot.telegram.sendMessage(chatId, lastMsg, {
+                    parse_mode: "Markdown",
+                    ...Markup.inlineKeyboard(buttons)
+                });
+                campaign.lastMsgId = sent.message_id;
+            }
 
-            log(`[DELAY] Dormindo por ${d / 1000}s antes do próximo contato...`);
-            await new Promise(r => setTimeout(r, d));
+            // Delay
+            if (i < campaign.contacts.length - 1 && (campaign.status === 'RUNNING' || campaign.status === 'READY')) {
+                const min = parseInt(campaign.minDelay) || 5;
+                const max = parseInt(campaign.maxDelay) || 15;
+                const d = Math.floor(Math.random() * (max - min + 1) + min) * 1000;
+                await new Promise(r => setTimeout(r, d));
+            }
+        } catch (e) {
+            log(`[DISPARO ERR] Falha no índice ${i}: ${e.message}`);
         }
     }
+}
 
-    if (campaign.status === 'RUNNING' && campaign.currentIndex === campaign.contacts.length - 1) {
-        const successRate = ((campaign.current / campaign.total) * 100).toFixed(1);
+if (campaign.status === 'RUNNING' && campaign.currentIndex === campaign.contacts.length - 1) {
+    const successRate = ((campaign.current / campaign.total) * 100).toFixed(1);
 
-        // Salvar relatório na sessão
-        const session = await getSession(chatId);
-        if (!session.reports) session.reports = {};
-        session.reports[campaign.instId] = {
-            total: campaign.total,
-            success: campaign.current,
-            failed: campaign.total - campaign.current,
-            successRate,
-            successNumbers: campaign.successNumbers || [],
-            failedNumbers: campaign.failedNumbers || [],
-            timestamp: new Date().toLocaleString('pt-BR')
-        };
-        await saveSession(chatId, session);
+    // Salvar relatório na sessão
+    const session = await getSession(chatId);
+    if (!session.reports) session.reports = {};
+    session.reports[campaign.instId] = {
+        total: campaign.total,
+        success: campaign.current,
+        failed: campaign.total - campaign.current,
+        successRate,
+        successNumbers: campaign.successNumbers || [],
+        failedNumbers: campaign.failedNumbers || [],
+        timestamp: new Date().toLocaleString('pt-BR')
+    };
+    await saveSession(chatId, session);
 
-        // Marcar como COMPLETED no banco se for uma campanha persistente
-        if (campaign.dbId) {
-            await supabase.from('scheduled_campaigns').update({ status: 'COMPLETED' }).eq('id', campaign.dbId);
-        }
-
-        if (campaign.lastMsgId) {
-            try { await bot.telegram.deleteMessage(chatId, campaign.lastMsgId); } catch (e) { }
-            campaign.lastMsgId = null;
-        }
-
-        const reportMsg = `✅ *Disparo Finalizado!*\n\n` +
-            `📊 *Estatísticas:*\n` +
-            `• Total de contatos: ${campaign.total}\n` +
-            `• Enviados com sucesso: ${campaign.current}\n` +
-            `• Taxa de sucesso: ${successRate}%\n` +
-            `• Instância: \`${campaign.instId}\``;
-
-        await bot.telegram.sendMessage(chatId, reportMsg, {
-            parse_mode: "Markdown",
-            ...Markup.inlineKeyboard([
-                [Markup.button.callback("📊 Ver Relatório Completo", `wa_report_${campaign.instId}`)],
-                [Markup.button.callback("🔙 Voltar ao Menu", `manage_${campaign.instId}`)]
-            ])
-        });
-        activeCampaigns.delete(chatId);
+    // Marcar como COMPLETED no banco se for uma campanha persistente
+    if (campaign.dbId) {
+        await supabase.from('scheduled_campaigns').update({ status: 'COMPLETED' }).eq('id', campaign.dbId);
     }
+
+    if (campaign.lastMsgId) {
+        try { await bot.telegram.deleteMessage(chatId, campaign.lastMsgId); } catch (e) { }
+        campaign.lastMsgId = null;
+    }
+
+    const reportMsg = `✅ *Disparo Finalizado!*\n\n` +
+        `📊 *Estatísticas:*\n` +
+        `• Total de contatos: ${campaign.total}\n` +
+        `• Enviados com sucesso: ${campaign.current}\n` +
+        `• Taxa de sucesso: ${successRate}%\n` +
+        `• Instância: \`${campaign.instId}\``;
+
+    await bot.telegram.sendMessage(chatId, reportMsg, {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([
+            [Markup.button.callback("📊 Ver Relatório Completo", `wa_report_${campaign.instId}`)],
+            [Markup.button.callback("🔙 Voltar ao Menu", `manage_${campaign.instId}`)]
+        ])
+    });
+    activeCampaigns.delete(chatId);
+}
 }
 
 bot.action("wa_pause_mass", async (ctx) => {
@@ -4757,58 +4717,51 @@ bot.action(/^wa_wiz_re_back_(.+)_(.+)$/, async (ctx) => {
 
 async function checkScheduledCampaigns() {
     try {
-        const now = new Date().toISOString();
         const { data, error } = await supabase
             .from('scheduled_campaigns')
             .select('*')
-            .eq('status', 'PENDING')
-            .lte('scheduled_for', now);
+            .or('status.eq.PENDING,status.eq.RUNNING'); // V1.251: Recuperar também as que pararam no meio
 
         if (error) throw error;
 
         for (const item of (data || [])) {
-            log(`[WORKER] Iniciando campanha agendada ${item.id} para ${item.chat_id} `);
+            // Se já estiver ativa em RAM, pular
+            if (activeCampaigns.has(Number(item.chat_id))) continue;
 
-            // Marcar como RUNNING no banco
-            await supabase
-                .from('scheduled_campaigns')
-                .update({ status: 'RUNNING' })
-                .eq('id', item.id);
+            // Se for PENDING e tiver horário, respeitar o horário
+            const nowIso = new Date().toISOString();
+            if (item.status === 'PENDING' && item.scheduled_for > nowIso) continue;
+
+            log(`[WORKER] Iniciando/Retomando campanha ${item.id} para ${item.chat_id} `);
+
+            // Marcar como RUNNING no banco se ainda não estiver
+            if (item.status === 'PENDING') {
+                await supabase
+                    .from('scheduled_campaigns')
+                    .update({ status: 'RUNNING' })
+                    .eq('id', item.id);
+            }
 
             const c = item.campaign_data;
             const camp = {
+                ...c,
+                dbId: item.id,
                 instId: item.inst_id,
-                contacts: c.contacts,
-                messages: c.messages,
-                message: c.message,
-                mediaType: c.mediaType,
-                mediaUrl: c.mediaUrl,
-                mediaData: c.mediaData,
-                fileName: c.fileName,
-                minDelay: c.minDelay,
-                maxDelay: c.maxDelay,
-                currentIndex: 0,
-                current: 0,
                 total: c.contacts.length,
-                status: 'READY',
-                lastMsgId: null,
-                successNumbers: [],
-                failedNumbers: []
+                status: 'READY'
             };
 
             activeCampaigns.set(Number(item.chat_id), camp);
 
-            // Avisar o usuário
+            // Avisar o usuário que retomou (se for RUNNING) ou iniciou (se for PENDING)
+            const text = item.status === 'RUNNING' ? `🔄 *Retomando Disparo Interrompido*\n\nSua campanha para \`${item.inst_id}\` foi retomada a partir do contato ${camp.currentIndex + 1}.` : `⏰ *Agendamento Ativado!*\n\nIniciando agora o disparo para \`${item.inst_id}\`.`;
+
             try {
-                await bot.telegram.sendMessage(item.chat_id, `⏰ * Agendamento Ativado! *\n\nIniciando agora o disparo para \`${item.inst_id}\`.`, { parse_mode: "Markdown" });
+                await bot.telegram.sendMessage(item.chat_id, text, { parse_mode: "Markdown" });
             } catch (e) { }
 
             runCampaign(Number(item.chat_id), item.inst_id).then(async () => {
-                // Ao finalizar, marcar como COMPLETED no banco
-                await supabase
-                    .from('scheduled_campaigns')
-                    .update({ status: 'COMPLETED' })
-                    .eq('id', item.id);
+                await supabase.from('scheduled_campaigns').update({ status: 'COMPLETED' }).eq('id', item.id);
             });
         }
     } catch (e) {
