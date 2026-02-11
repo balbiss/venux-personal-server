@@ -106,7 +106,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.241";
+const SERVER_VERSION = "1.242";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -2655,9 +2655,18 @@ bot.action(/^wa_ai_resume_(.+)_(.+)$/, async (ctx) => {
     const remoteJid = ctx.match[2];
 
     log(`[BOT] Retomando IA para ${remoteJid} na instância ${tokenId}`);
-    await supabase.from("ai_leads_tracking")
-        .update({ status: "RESPONDED", nudge_count: 0, last_interaction: new Date().toISOString() })
-        .eq("chat_id", remoteJid).eq("instance_id", tokenId);
+
+    // V1.242: Limpar pausa da sessão também
+    if (session.whatsapp.pausedLeads) {
+        delete session.whatsapp.pausedLeads[remoteJid];
+        await saveSession(session.chat_id || ctx.chat.id, session);
+    }
+
+    try {
+        await supabase.from("ai_leads_tracking")
+            .update({ status: "RESPONDED", nudge_count: 0, last_interaction: new Date().toISOString() })
+            .eq("chat_id", remoteJid).eq("instance_id", tokenId);
+    } catch (e) { }
 
     ctx.editMessageText(`✅ *IA Retomada!*\nA partir da próxima mensagem, a IA responderá o cliente \`${remoteJid}\` novamente.`, { parse_mode: "Markdown" });
 });
@@ -4369,8 +4378,11 @@ app.post("/webhook", async (req, res) => {
                         .eq("instance_id", tokenId)
                         .maybeSingle();
 
-                    if (tracking && (tracking.status === "HUMAN_ACTIVE" || tracking.status === "TRANSFERRED")) {
-                        log(`[WEBHOOK] IA Pausada para ${remoteJid} (Status: ${tracking.status}).`);
+                    // Fallback para sessão se a tabela DB falhar ou não identificar o silenciamento
+                    const isPausedInSession = session.whatsapp?.pausedLeads?.[remoteJid] === true;
+
+                    if (isPausedInSession || (tracking && (tracking.status === "HUMAN_ACTIVE" || tracking.status === "TRANSFERRED"))) {
+                        log(`[WEBHOOK] IA Pausada para ${remoteJid} (Status DB: ${tracking?.status || 'N/A'}, Sessão: ${isPausedInSession}).`);
                         return res.send({ ok: true });
                     }
 
@@ -4431,6 +4443,11 @@ app.post("/webhook", async (req, res) => {
                                             const readableLead = `${pushName} (${(senderAlt || remoteJid).split('@')[0]})`;
                                             log(`[WEBHOOK AI] IA solicitou transbordo para ${readableLead}`);
 
+                                            // V1.242: Pausa em DOIS lugares (DB e Sessão) para garantir silêncio imediato
+                                            if (!session.whatsapp.pausedLeads) session.whatsapp.pausedLeads = {};
+                                            session.whatsapp.pausedLeads[remoteJid] = true;
+                                            await saveSession(chatId, session);
+
                                             try {
                                                 await supabase.from("ai_leads_tracking").upsert({
                                                     chat_id: remoteJid,
@@ -4442,12 +4459,11 @@ app.post("/webhook", async (req, res) => {
 
                                             const notifyText = `⚠️ *Solicitação de Atendimento Humano*\n\n` +
                                                 `O cliente **${readableLead}** na instância *${inst.name}* precisa de ajuda.\n\n` +
-                                                `A IA foi pausada para este lead até que você a retome manualmente.`;
+                                                `A IA foi pausada para este lead no DB e na Sessão até que você a retome manualmente.`;
                                             bot.telegram.sendMessage(chatId, notifyText, {
                                                 parse_mode: "Markdown",
                                                 ...Markup.inlineKeyboard([[Markup.button.callback("✅ Retomar IA", `wa_ai_resume_${tokenId}_${remoteJid}`)]])
                                             });
-                                            // V1.241: REMOVIDO o return aqui para que a mensagem de "vou transferir" seja enviada.
                                         }
                                         if (aiResponse.includes("[QUALIFICADO]")) {
                                             const readableLead = `${pushName} (${(senderAlt || remoteJid).split('@')[0]})`;
@@ -4488,18 +4504,21 @@ app.post("/webhook", async (req, res) => {
                                                 await new Promise(r => setTimeout(r, Math.min(remaining, 4000)));
                                             }
 
-                                            await callWuzapi("/chat/send/text", "POST", { Phone: remoteJid, Body: chunk.trim() }, tokenId);
+                                            const cRes = await callWuzapi("/chat/send/text", "POST", { Phone: remoteJid, Body: chunk.trim() }, tokenId);
+                                            log(`[AI SEND] Resposta enviada para ${remoteJid}: ${cRes.success ? 'OK' : 'FALHA'}`);
                                         }
 
-                                        // V1.239+: Atualizar tracking com status explícito AI_SENT para o follow-up worker
-                                        try {
-                                            await supabase.from("ai_leads_tracking").update({
-                                                last_interaction: new Date().toISOString(),
-                                                nudge_count: 0,
-                                                status: "AI_SENT"
-                                            }).eq("chat_id", remoteJid).eq("instance_id", tokenId);
-                                        } catch (e) {
-                                            log(`[WEBHOOK AI ERR] Erro ao atualizar tracking (Tabela ai_leads_tracking pode estar ausente)`);
+                                        // V1.239+: Atualizar tracking (Se não for transferência, marcar como AI_SENT)
+                                        if (!aiResponse.includes("[TRANSFERIR]")) {
+                                            try {
+                                                await supabase.from("ai_leads_tracking").update({
+                                                    last_interaction: new Date().toISOString(),
+                                                    nudge_count: 0,
+                                                    status: "AI_SENT"
+                                                }).eq("chat_id", remoteJid).eq("instance_id", tokenId);
+                                            } catch (e) {
+                                                log(`[WEBHOOK AI ERR] Erro ao atualizar tracking (Tabela ai_leads_tracking pode estar ausente)`);
+                                            }
                                         }
                                     }
                                 } catch (err) {
