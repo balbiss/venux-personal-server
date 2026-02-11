@@ -54,8 +54,15 @@ async function getSession(chatId) {
         .eq('chat_id', id)
         .single();
 
-    if (error && error.code !== 'PGRST116') { // PGRST116 = NOT FOUND
-        log("Erro ao buscar sessão: " + error.message);
+    if (error) {
+        if (error.code === 'PGRST116') {
+            log(`[DB] Criando nova sessão padrão para ${id}`);
+        } else {
+            // V1.243: Proteção Crítica - Se houver erro de conexão, NÃO prossegue para criar padrão
+            // Isso evita sobrescrever sessões VIP com dados vazios em caso de instabilidade no Supabase.
+            log(`[DB ERR] Falha crítica ao buscar sessão ${id}: ${error.message}`);
+            throw new Error(`DB_FETCH_FAILED: ${error.message}`);
+        }
     }
 
     if (data) {
@@ -106,7 +113,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.242";
+const SERVER_VERSION = "1.243";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -4340,7 +4347,13 @@ app.post("/webhook", async (req, res) => {
 
                 const isPrivate = remoteJid.endsWith("@s.whatsapp.net") || remoteJid.endsWith("@lid");
                 if (isPrivate && !isGroup) {
-                    const session = await getSession(chatId);
+                    let session;
+                    try {
+                        session = await getSession(chatId);
+                    } catch (e) {
+                        log(`[WEBHOOK ERR] Abortando processamento para evitar corrupção de sessão: ${e.message}`);
+                        return res.send({ ok: true });
+                    }
                     const inst = session.whatsapp.instances.find(i => i.id === tokenId);
 
                     if (isFromMe) {
@@ -4443,27 +4456,31 @@ app.post("/webhook", async (req, res) => {
                                             const readableLead = `${pushName} (${(senderAlt || remoteJid).split('@')[0]})`;
                                             log(`[WEBHOOK AI] IA solicitou transbordo para ${readableLead}`);
 
-                                            // V1.242: Pausa em DOIS lugares (DB e Sessão) para garantir silêncio imediato
-                                            if (!session.whatsapp.pausedLeads) session.whatsapp.pausedLeads = {};
-                                            session.whatsapp.pausedLeads[remoteJid] = true;
-                                            await saveSession(chatId, session);
+                                            // V1.243: Processar notificações e updates em background para NÃO travar o envio da mensagem
+                                            (async () => {
+                                                try {
+                                                    if (!session.whatsapp.pausedLeads) session.whatsapp.pausedLeads = {};
+                                                    session.whatsapp.pausedLeads[remoteJid] = true;
+                                                    await saveSession(chatId, session);
 
-                                            try {
-                                                await supabase.from("ai_leads_tracking").upsert({
-                                                    chat_id: remoteJid,
-                                                    instance_id: tokenId,
-                                                    status: "HUMAN_ACTIVE",
-                                                    last_interaction: new Date().toISOString()
-                                                }, { onConflict: "chat_id, instance_id" });
-                                            } catch (e) { }
+                                                    await supabase.from("ai_leads_tracking").upsert({
+                                                        chat_id: remoteJid,
+                                                        instance_id: tokenId,
+                                                        status: "HUMAN_ACTIVE",
+                                                        last_interaction: new Date().toISOString()
+                                                    }, { onConflict: "chat_id, instance_id" });
 
-                                            const notifyText = `⚠️ *Solicitação de Atendimento Humano*\n\n` +
-                                                `O cliente **${readableLead}** na instância *${inst.name}* precisa de ajuda.\n\n` +
-                                                `A IA foi pausada para este lead no DB e na Sessão até que você a retome manualmente.`;
-                                            bot.telegram.sendMessage(chatId, notifyText, {
-                                                parse_mode: "Markdown",
-                                                ...Markup.inlineKeyboard([[Markup.button.callback("✅ Retomar IA", `wa_ai_resume_${tokenId}_${remoteJid}`)]])
-                                            });
+                                                    const notifyText = `⚠️ *Solicitação de Atendimento Humano*\n\n` +
+                                                        `O cliente **${readableLead}** na instância *${inst.name}* precisa de ajuda.\n\n` +
+                                                        `A IA foi pausada no DB e na Sessão.`;
+                                                    bot.telegram.sendMessage(chatId, notifyText, {
+                                                        parse_mode: "Markdown",
+                                                        ...Markup.inlineKeyboard([[Markup.button.callback("✅ Retomar IA", `wa_ai_resume_${tokenId}_${remoteJid}`)]])
+                                                    });
+                                                } catch (e) {
+                                                    log(`[WEBHOOK AI ERR] Erro ao processar transbordo em background: ${e.message}`);
+                                                }
+                                            })();
                                         }
                                         if (aiResponse.includes("[QUALIFICADO]")) {
                                             const readableLead = `${pushName} (${(senderAlt || remoteJid).split('@')[0]})`;
