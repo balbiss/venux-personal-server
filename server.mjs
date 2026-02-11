@@ -140,7 +140,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.248";
+const SERVER_VERSION = "1.249";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -1680,6 +1680,7 @@ async function runCampaign(chatId, instId) {
             .replace(/\{\{emoji\}\}/gi, randomEmoji);
 
         // --- FIX: Suporte a Grupos ---
+        let jid = null;
         // Se o número original já for um JID de grupo (@g.us), usamos ele diretamente
         if (phone.includes("@g.us") || rawPhone.includes("@g.us")) {
             jid = rawPhone;
