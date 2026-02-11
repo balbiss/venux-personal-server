@@ -140,7 +140,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.251";
+const SERVER_VERSION = "1.252";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -1809,7 +1809,6 @@ if (campaign.status === 'RUNNING' && campaign.currentIndex === campaign.contacts
         ])
     });
     activeCampaigns.delete(chatId);
-}
 }
 
 bot.action("wa_pause_mass", async (ctx) => {
