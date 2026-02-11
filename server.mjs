@@ -106,7 +106,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.240";
+const SERVER_VERSION = "1.241";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -4369,8 +4369,8 @@ app.post("/webhook", async (req, res) => {
                         .eq("instance_id", tokenId)
                         .maybeSingle();
 
-                    if (tracking && tracking.status === "HUMAN_ACTIVE") {
-                        log(`[WEBHOOK] IA Pausada para ${remoteJid} (Atendimento humano).`);
+                    if (tracking && (tracking.status === "HUMAN_ACTIVE" || tracking.status === "TRANSFERRED")) {
+                        log(`[WEBHOOK] IA Pausada para ${remoteJid} (Status: ${tracking.status}).`);
                         return res.send({ ok: true });
                     }
 
@@ -4422,11 +4422,24 @@ app.post("/webhook", async (req, res) => {
                                     });
 
                                     if (aiResponse) {
+                                        let finalResponse = aiResponse
+                                            .replace("[QUALIFICADO]", "")
+                                            .replace("[TRANSFERIR]", "")
+                                            .trim();
+
                                         if (aiResponse.includes("[TRANSFERIR]")) {
                                             const readableLead = `${pushName} (${(senderAlt || remoteJid).split('@')[0]})`;
                                             log(`[WEBHOOK AI] IA solicitou transbordo para ${readableLead}`);
-                                            await supabase.from("ai_leads_tracking").update({ status: "HUMAN_ACTIVE" })
-                                                .eq("chat_id", remoteJid).eq("instance_id", tokenId);
+
+                                            try {
+                                                await supabase.from("ai_leads_tracking").upsert({
+                                                    chat_id: remoteJid,
+                                                    instance_id: tokenId,
+                                                    status: "HUMAN_ACTIVE",
+                                                    last_interaction: new Date().toISOString()
+                                                }, { onConflict: "chat_id, instance_id" });
+                                            } catch (e) { }
+
                                             const notifyText = `⚠️ *Solicitação de Atendimento Humano*\n\n` +
                                                 `O cliente **${readableLead}** na instância *${inst.name}* precisa de ajuda.\n\n` +
                                                 `A IA foi pausada para este lead até que você a retome manualmente.`;
@@ -4434,10 +4447,8 @@ app.post("/webhook", async (req, res) => {
                                                 parse_mode: "Markdown",
                                                 ...Markup.inlineKeyboard([[Markup.button.callback("✅ Retomar IA", `wa_ai_resume_${tokenId}_${remoteJid}`)]])
                                             });
-                                            return;
+                                            // V1.241: REMOVIDO o return aqui para que a mensagem de "vou transferir" seja enviada.
                                         }
-
-                                        let finalResponse = aiResponse.replace("[QUALIFICADO]", "").trim();
                                         if (aiResponse.includes("[QUALIFICADO]")) {
                                             const readableLead = `${pushName} (${(senderAlt || remoteJid).split('@')[0]})`;
                                             log(`[WEBHOOK AI] Lead Qualificado: ${readableLead}`);
