@@ -106,7 +106,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.236";
+const SERVER_VERSION = "1.237";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -4293,14 +4293,38 @@ app.post("/webhook", async (req, res) => {
                     messageObj.videoMessage?.caption ||
                     messageObj.documentMessage?.caption ||
                     info.Body || "";
-                // V1.236: Extração robusta de áudio (Previne erro 400 no Whisper)
+                // V1.236+: Extração robusta de áudio (Previne erro 400 no Whisper)
                 let audioBase64 = rawData.Audio || body.Audio || (info.Audio) || null;
 
                 // Proteção Crítica: Se o que temos for uma URL do WhatsApp, o Whisper vai dar erro.
-                // Resetamos para null se for URL ou Path, pois não é base64 válido para o Buffer.
                 if (audioBase64 && (typeof audioBase64 !== 'string' || audioBase64.startsWith("http") || audioBase64.startsWith("/"))) {
-                    log(`[WEBHOOK] Mídia recebida como URL/Path. Ignorando transcrição direta.`);
+                    log(`[WEBHOOK] Mídia recebida como URL/Path. Verificando se podemos baixar...`);
                     audioBase64 = null;
+                }
+
+                // V1.237: Download de áudio se for metadata do Wuzapi
+                if (!audioBase64 && messageObj.audioMessage && (messageObj.audioMessage.url || messageObj.audioMessage.directPath)) {
+                    try {
+                        log(`[WEBHOOK] Baixando áudio do Wuzapi...`);
+                        const downloadResp = await callWuzapi("/chat/downloadaudio", "POST", {
+                            Url: messageObj.audioMessage.url || "",
+                            DirectPath: messageObj.audioMessage.directPath || "",
+                            MediaKey: messageObj.audioMessage.mediaKey || "",
+                            Mimetype: messageObj.audioMessage.mimetype || "audio/ogg",
+                            FileEncSHA256: messageObj.audioMessage.fileEncSha256 || "",
+                            FileSHA256: messageObj.audioMessage.fileSha256 || "",
+                            FileLength: messageObj.audioMessage.fileLength || 0
+                        }, tokenId);
+
+                        if (downloadResp && downloadResp.success && downloadResp.data && downloadResp.data.Data) {
+                            audioBase64 = downloadResp.data.Data;
+                            log(`[WEBHOOK] Áudio baixado com sucesso (${audioBase64.length} bytes).`);
+                        } else {
+                            log(`[WEBHOOK FAIL] Falha ao baixar áudio: ${JSON.stringify(downloadResp).substring(0, 100)}`);
+                        }
+                    } catch (e) {
+                        log(`[WEBHOOK ERR] Erro ao baixar áudio: ${e.message}`);
+                    }
                 }
 
                 log(`[WEBHOOK] Msg from: ${remoteJid} | Group: ${isGroup} | FromMe: ${isFromMe} | Text: ${text.substring(0, 50)}`);
