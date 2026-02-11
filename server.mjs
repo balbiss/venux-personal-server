@@ -140,7 +140,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.249";
+const SERVER_VERSION = "1.250";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -1465,7 +1465,9 @@ async function renderGroupSelection(ctx, instId) {
 
     const buttons = slice.map(g => {
         const icon = g.selected ? "✅" : "⬜";
-        return [Markup.button.callback(`${icon} ${g.name.substring(0, 25)}`, `wa_mass_grp_toggle_${instId}_${g.id}`)];
+        // V1.250: Usar Array.from() para fatiar nomes com emojis sem quebrar UTF-8
+        const safeName = Array.from(g.name || "Sem Nome").slice(0, 22).join('');
+        return [Markup.button.callback(`${icon} ${safeName}`, `wa_mass_grp_toggle_${instId}_${g.id}`)];
     });
 
     // Paginação
@@ -1485,13 +1487,13 @@ async function renderGroupSelection(ctx, instId) {
 
     buttons.push([Markup.button.callback("🔙 Voltar", `wa_mass_init_${instId}`)]);
 
-    const msgText = `📂 *Seleção de Grupos*\n\nTotal encontrados: ${groups.length}\nSelecionados: ${selectedCount}\n\nMarque os grupos para disparar:`;
+    const msgText = `📂 <b>Seleção de Grupos</b>\n\nTotal encontrados: ${groups.length}\nSelecionados: ${selectedCount}\n\nMarque os grupos para disparar:`;
 
     // Tentar editar, se falhar (ex: imagem antiga), enviar nova
     try {
-        await ctx.editMessageText(msgText, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
+        await ctx.editMessageText(msgText, { parse_mode: "HTML", ...Markup.inlineKeyboard(buttons) });
     } catch {
-        await ctx.reply(msgText, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
+        await ctx.reply(msgText, { parse_mode: "HTML", ...Markup.inlineKeyboard(buttons) });
     }
 }
 
