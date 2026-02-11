@@ -140,7 +140,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.245";
+const SERVER_VERSION = "1.246";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -878,8 +878,8 @@ bot.action("cmd_planos_menu", async (ctx) => {
 bot.action("cmd_suporte", async (ctx) => {
     safeAnswer(ctx);
     const config = await getSystemConfig();
-    ctx.editMessageText(`👤 *Suporte & Ajuda*\n\nPrecisa de ajuda? Entre em contato com o suporte oficial:\n\n👉 ${config.supportLink || "@SeuUsuarioDeSuporte"}`, {
-        parse_mode: "Markdown",
+    ctx.editMessageText(`👤 <b>Suporte & Ajuda</b>\n\nPrecisa de ajuda? Entre em contato com o suporte oficial:\n\n👉 ${config.supportLink || "@SeuUsuarioDeSuporte"}`, {
+        parse_mode: "HTML",
         ...Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar", "start")]])
     });
 });
@@ -893,8 +893,8 @@ bot.action("cmd_tutoriais", async (ctx) => {
         return ctx.reply("❌ *Acesso Restrito*\n\nA área de tutoriais é exclusiva para assinantes Pro ativos.", { parse_mode: "Markdown" });
     }
 
-    ctx.editMessageText(`📺 *Área de Tutoriais Exclusiva*\n\nAcesse nossa central de vídeos para aprender a usar todo o potencial do Connect:\n\n👉 ${config.tutorialLink || "Ainda não configurado"}`, {
-        parse_mode: "Markdown",
+    ctx.editMessageText(`📺 <b>Área de Tutoriais Exclusiva</b>\n\nAcesse nossa central de vídeos para aprender a usar todo o potencial do Connect:\n\n👉 ${config.tutorialLink || "Ainda não configurado"}`, {
+        parse_mode: "HTML",
         ...Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar", "start")]])
     });
 });
