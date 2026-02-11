@@ -140,7 +140,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.247";
+const SERVER_VERSION = "1.248";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -1679,17 +1679,18 @@ async function runCampaign(chatId, instId) {
             .replace(/\{\{greet\}\}/gi, saudacao)
             .replace(/\{\{emoji\}\}/gi, randomEmoji);
 
-        // 2. Validar se tem WhatsApp
-        const check = await callWuzapi("/user/check", "POST", { Phone: [phone] }, instId);
-        let jid = null;
-        if (check.success && check.data && check.data.Users && check.data.Users[0].IsInWhatsapp) {
-            jid = check.data.Users[0].JID;
-        }
-
         // --- FIX: Suporte a Grupos ---
         // Se o número original já for um JID de grupo (@g.us), usamos ele diretamente
         if (phone.includes("@g.us") || rawPhone.includes("@g.us")) {
-            jid = rawPhone; // Confia no JID extraído da API
+            jid = rawPhone;
+        }
+
+        // 2. Validar se tem WhatsApp (Se não for grupo)
+        if (!jid) {
+            const check = await callWuzapi("/user/check", "POST", { Phone: [phone] }, instId);
+            if (check.success && check.data && check.data.Users && check.data.Users[0].IsInWhatsapp) {
+                jid = check.data.Users[0].JID;
+            }
         }
 
         if (jid) {
@@ -1881,10 +1882,10 @@ bot.action("wa_stop_mass", async (ctx) => {
     }
 });
 
-// Handlers para Agendamento
-bot.action(/^wa_mass_confirm_start_(.+)$/, async (ctx) => {
+// Handlers para Agendamento / Envio Agora
+bot.action(/^(wa_mass_now_|wa_mass_confirm_start_)(.+)$/, async (ctx) => {
     safeAnswer(ctx);
-    const instId = ctx.match[1];
+    const instId = ctx.match[2];
     const { inst, session } = await checkOwnership(ctx, instId);
     if (!inst) return;
 
