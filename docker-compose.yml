@@ -8,9 +8,9 @@ services:
     ports:
       - "8788:8788"
     command: >
-      sh -c "echo 'Starting Connect deployment script v1.237...' && 
+      sh -c "echo 'Starting Connect deployment script v1.238...' && 
              apk add --no-cache git && 
-             echo 'Cloning fresh repository (v1.237)...' && 
+             echo 'Cloning fresh repository (v1.238)...' && 
              rm -rf /app_tmp && 
              git clone https://github.com/balbiss/venux-personal-server.git /app_tmp && 
              echo 'Updating application files...' && 
@@ -18,15 +18,15 @@ services:
              cp -rf /app_tmp/.* . 2>/dev/null || true && 
              echo 'Installing dependencies...' && 
              npm install --production && 
-             echo 'Starting application v1.237...' && 
+             echo 'Starting application v1.238...' && 
              mkdir -p /app/data && 
              touch /app/data/sessions.json && 
              ln -sf /app/data/sessions.json /app/sessions.json && 
              touch /app/data/bot.log && 
              ln -sf /app/data/bot.log /app/bot.log && 
-             echo '[BOT LOG] Versão: V1.237' && 
+             echo '[BOT LOG] Versão: V1.238' && 
              node server.mjs"
-    # Adicionei PERSIST_STATE: "true" para manter o status entre deploys de V1.237
+    # Adicionei PERSIST_STATE: "true" para manter o status entre deploys de V1.238
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}

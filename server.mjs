@@ -106,7 +106,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.237";
+const SERVER_VERSION = "1.238";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -4455,13 +4455,23 @@ app.post("/webhook", async (req, res) => {
 
                                         const chunks = finalResponse.split("\n\n").filter(c => c.trim().length > 0);
                                         for (const chunk of chunks) {
-                                            const delay = Math.min(Math.max(chunk.length * 60, 1500), 6000);
+                                            // V1.238: Simular digitação humana mais realista (~100ms por caractere)
+                                            // E garantir que o status "composing" (digitando) seja renovado
+                                            try { await callWuzapi("/chat/presence", "POST", { Phone: remoteJid, State: "composing" }, tokenId); } catch (e) { }
+
+                                            const delay = Math.min(Math.max(chunk.length * 100, 2500), 8000);
+                                            log(`[WEBHOOK AI] Simulando digitação (${chunk.length} chars) - Esperando ${delay}ms...`);
                                             await new Promise(r => setTimeout(r, delay));
+
                                             await callWuzapi("/chat/send/text", "POST", { Phone: remoteJid, Body: chunk.trim() }, tokenId);
+
+                                            // Pequeno delay entre chunks para não mandar tudo grudado
                                             if (chunks.indexOf(chunk) < chunks.length - 1) {
-                                                try { await callWuzapi("/chat/presence", "POST", { Phone: remoteJid, State: "composing" }, tokenId); } catch (e) { }
+                                                await new Promise(r => setTimeout(r, 1000));
                                             }
                                         }
+
+                                        // V1.235: Atualizar tracking após resposta da IA
 
                                         // V1.235: Atualizar last_interaction APÓS a IA responder para "zerar" o cronômetro de follow-up
                                         await supabase.from("ai_leads_tracking").update({
