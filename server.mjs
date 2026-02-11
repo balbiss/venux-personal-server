@@ -106,7 +106,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.238";
+const SERVER_VERSION = "1.239";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -4455,11 +4455,16 @@ app.post("/webhook", async (req, res) => {
 
                                         const chunks = finalResponse.split("\n\n").filter(c => c.trim().length > 0);
                                         for (const chunk of chunks) {
-                                            // V1.238: Simular digitação humana mais realista (~100ms por caractere)
-                                            // E garantir que o status "composing" (digitando) seja renovado
+                                            // V1.239: Delay inicial de "pensamento" antes do primeiro bloco
+                                            if (chunks.indexOf(chunk) === 0) {
+                                                try { await callWuzapi("/chat/presence", "POST", { Phone: remoteJid, State: "composing" }, tokenId); } catch (e) { }
+                                                await new Promise(r => setTimeout(r, 2000));
+                                            }
+
+                                            // V1.238+: Simular digitação humana mais realista (~120ms por caractere)
                                             try { await callWuzapi("/chat/presence", "POST", { Phone: remoteJid, State: "composing" }, tokenId); } catch (e) { }
 
-                                            const delay = Math.min(Math.max(chunk.length * 100, 2500), 8000);
+                                            const delay = Math.min(Math.max(chunk.length * 120, 3000), 10000);
                                             log(`[WEBHOOK AI] Simulando digitação (${chunk.length} chars) - Esperando ${delay}ms...`);
                                             await new Promise(r => setTimeout(r, delay));
 
@@ -4467,16 +4472,16 @@ app.post("/webhook", async (req, res) => {
 
                                             // Pequeno delay entre chunks para não mandar tudo grudado
                                             if (chunks.indexOf(chunk) < chunks.length - 1) {
-                                                await new Promise(r => setTimeout(r, 1000));
+                                                await new Promise(r => setTimeout(r, 1500));
+                                                try { await callWuzapi("/chat/presence", "POST", { Phone: remoteJid, State: "composing" }, tokenId); } catch (e) { }
                                             }
                                         }
 
-                                        // V1.235: Atualizar tracking após resposta da IA
-
-                                        // V1.235: Atualizar last_interaction APÓS a IA responder para "zerar" o cronômetro de follow-up
+                                        // V1.239: Atualizar tracking com status explícito AI_SENT para o follow-up worker
                                         await supabase.from("ai_leads_tracking").update({
                                             last_interaction: new Date().toISOString(),
-                                            nudge_count: 0
+                                            nudge_count: 0,
+                                            status: "AI_SENT"
                                         }).eq("chat_id", remoteJid).eq("instance_id", tokenId);
                                     }
                                 } catch (err) {
@@ -4742,12 +4747,15 @@ async function checkAiFollowups() {
             .neq("status", "TRANSFERRED")   // 🛑 Não incomodar leads já entregues
             .neq("status", "HUMAN_ACTIVE"); // 🛑 Não incomodar leads em atendimento humano
 
-        if (error) return;
+        if (error) {
+            log(`[FU DEBUG] Erro ao buscar leads: ${error.message}`);
+            return;
+        }
+
+        const leadsCount = (tracking || []).length;
+        if (leadsCount > 0) log(`[FU DEBUG] Processando ${leadsCount} leads potenciais...`);
 
         for (const lead of (tracking || [])) {
-            // Buscar a sessão para pegar as configs da instância
-            // Como as configs estão no session(telegramChatId), precisamos de uma forma de achar o dono da instância
-            // O tokenId (wa_CHATID_RAND) nos dá o chatId do Telegram
             const parts = lead.instance_id.split("_");
             if (parts.length < 2) continue;
             const tgChatId = parts[1];
@@ -4755,18 +4763,32 @@ async function checkAiFollowups() {
             const session = await getSession(tgChatId);
             const inst = session.whatsapp.instances.find(i => i.id === lead.instance_id);
 
-            if (!inst || !inst.fu_enabled) continue;
+            if (!inst) {
+                // log(`[FU DEBUG] Instância não encontrada para lead ${lead.chat_id}`);
+                continue;
+            }
+
+            if (!inst.fu_enabled) {
+                // log(`[FU DEBUG] Follow-up desativado para ${inst.name}`);
+                continue;
+            }
 
             const now = new Date();
             const lastInteraction = new Date(lead.last_interaction);
             const diffHours = (now - lastInteraction) / (1000 * 60 * 60);
+            const targetHours = inst.fu_hours || 24;
 
-            if (diffHours >= (inst.fu_hours || 24) && lead.nudge_count < (inst.fu_max || 1)) {
+            // Log de depuração para leads que estão no radar mas ainda não bateram o tempo
+            if (diffHours >= 0.01) { // Só logar se passou pelo menos 36 segundos para não saturar
+                // log(`[FU DEBUG] Lead ${lead.chat_id} | Status: ${lead.status} | Diff: ${diffHours.toFixed(3)}h | Alvo: ${targetHours}h`);
+            }
+
+            if (diffHours >= targetHours && lead.nudge_count < (inst.fu_max || 1)) {
                 const msgIndex = lead.nudge_count;
                 const messages = inst.fu_msgs || ["Oi! Ainda está por aí?"];
                 const messageToSend = messages[msgIndex] || messages[messages.length - 1];
 
-                log(`[FOLLOW-UP] Enviando nudge ${lead.nudge_count + 1} para ${lead.chat_id} (Inst: ${lead.instance_id})`);
+                log(`[FOLLOW-UP] Enviando nudge ${lead.nudge_count + 1} para ${lead.chat_id} (Inst: ${lead.instance_id}) após ${diffHours.toFixed(1)}h`);
 
                 const res = await callWuzapi("/chat/send/text", "POST", {
                     Phone: lead.chat_id,
