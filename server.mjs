@@ -106,7 +106,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.239";
+const SERVER_VERSION = "1.240";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -4455,34 +4455,41 @@ app.post("/webhook", async (req, res) => {
 
                                         const chunks = finalResponse.split("\n\n").filter(c => c.trim().length > 0);
                                         for (const chunk of chunks) {
-                                            // V1.239: Delay inicial de "pensamento" antes do primeiro bloco
-                                            if (chunks.indexOf(chunk) === 0) {
-                                                try { await callWuzapi("/chat/presence", "POST", { Phone: remoteJid, State: "composing" }, tokenId); } catch (e) { }
-                                                await new Promise(r => setTimeout(r, 2000));
+                                            const chunkIndex = chunks.indexOf(chunk);
+
+                                            // V1.240: Delay de "pensamento" inicial ou entre blocos
+                                            const thinkTime = chunkIndex === 0 ? 3000 : 1500;
+                                            log(`[WEBHOOK AI] IA pensando por ${thinkTime}ms...`);
+                                            await new Promise(r => setTimeout(r, thinkTime));
+
+                                            // V1.240: Loop de presença para manter o "digitando..." ativo
+                                            const typingDuration = Math.min(Math.max(chunk.length * 130, 4000), 12000);
+                                            log(`[WEBHOOK AI] Simulando digitação (${chunk.length} chars) por ${typingDuration}ms...`);
+
+                                            const startTime = Date.now();
+                                            while (Date.now() - startTime < typingDuration) {
+                                                try {
+                                                    const pRes = await callWuzapi("/chat/presence", "POST", { Phone: remoteJid, State: "composing" }, tokenId);
+                                                    // log(`[WEBHOOK AI] Presence: ${pRes.success ? 'OK' : 'FAIL'}`);
+                                                } catch (e) { }
+                                                // Espera 4 segundos antes de renovar o status (WP expira em ~10-15s)
+                                                const remaining = typingDuration - (Date.now() - startTime);
+                                                await new Promise(r => setTimeout(r, Math.min(remaining, 4000)));
                                             }
-
-                                            // V1.238+: Simular digitação humana mais realista (~120ms por caractere)
-                                            try { await callWuzapi("/chat/presence", "POST", { Phone: remoteJid, State: "composing" }, tokenId); } catch (e) { }
-
-                                            const delay = Math.min(Math.max(chunk.length * 120, 3000), 10000);
-                                            log(`[WEBHOOK AI] Simulando digitação (${chunk.length} chars) - Esperando ${delay}ms...`);
-                                            await new Promise(r => setTimeout(r, delay));
 
                                             await callWuzapi("/chat/send/text", "POST", { Phone: remoteJid, Body: chunk.trim() }, tokenId);
-
-                                            // Pequeno delay entre chunks para não mandar tudo grudado
-                                            if (chunks.indexOf(chunk) < chunks.length - 1) {
-                                                await new Promise(r => setTimeout(r, 1500));
-                                                try { await callWuzapi("/chat/presence", "POST", { Phone: remoteJid, State: "composing" }, tokenId); } catch (e) { }
-                                            }
                                         }
 
-                                        // V1.239: Atualizar tracking com status explícito AI_SENT para o follow-up worker
-                                        await supabase.from("ai_leads_tracking").update({
-                                            last_interaction: new Date().toISOString(),
-                                            nudge_count: 0,
-                                            status: "AI_SENT"
-                                        }).eq("chat_id", remoteJid).eq("instance_id", tokenId);
+                                        // V1.239+: Atualizar tracking com status explícito AI_SENT para o follow-up worker
+                                        try {
+                                            await supabase.from("ai_leads_tracking").update({
+                                                last_interaction: new Date().toISOString(),
+                                                nudge_count: 0,
+                                                status: "AI_SENT"
+                                            }).eq("chat_id", remoteJid).eq("instance_id", tokenId);
+                                        } catch (e) {
+                                            log(`[WEBHOOK AI ERR] Erro ao atualizar tracking (Tabela ai_leads_tracking pode estar ausente)`);
+                                        }
                                     }
                                 } catch (err) {
                                     log(`[ERR DEBOUNCE AI] ${err.message}`);
