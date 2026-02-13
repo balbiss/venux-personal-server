@@ -840,48 +840,47 @@ export default function App() {
                 </table>
               </div>
             </div>
-          </div>
-            
+
             {/* MODAL DE CORRETOR */}
-        <Modal isOpen={brokerModalOpen} onClose={() => setBrokerModalOpen(false)} title={editingBroker ? "Editar Corretor" : "Novo Corretor"}>
-          <div className="space-y-6">
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-white/60 ml-1">NOME COMPLETO</label>
-              <input
-                autoFocus
-                type="text"
-                className="w-full bg-black/40 border border-white/10 rounded-xl p-4 text-sm focus:border-primary/50 outline-none transition-all text-white placeholder:text-white/20"
-                placeholder="Ex: Ana Silva"
-                value={brokerForm.name}
-                onChange={(e) => setBrokerForm({ ...brokerForm, name: e.target.value })}
-              />
-            </div>
+            <Modal isOpen={brokerModalOpen} onClose={() => setBrokerModalOpen(false)} title={editingBroker ? "Editar Corretor" : "Novo Corretor"}>
+              <div className="space-y-6">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-white/60 ml-1">NOME COMPLETO</label>
+                  <input
+                    autoFocus
+                    type="text"
+                    className="w-full bg-black/40 border border-white/10 rounded-xl p-4 text-sm focus:border-primary/50 outline-none transition-all text-white placeholder:text-white/20"
+                    placeholder="Ex: Ana Silva"
+                    value={brokerForm.name}
+                    onChange={(e) => setBrokerForm({ ...brokerForm, name: e.target.value })}
+                  />
+                </div>
 
-            <div className="flex items-center gap-3 p-4 rounded-xl bg-white/5 border border-white/5">
-              <button
-                onClick={() => setBrokerForm({ ...brokerForm, active: !brokerForm.active })}
-                className={`w-10 h-6 rounded-full relative transition-colors ${brokerForm.active ? 'bg-success' : 'bg-white/10'}`}
-              >
-                <div className={`absolute top-1 bottom-1 w-4 h-4 rounded-full bg-white transition-all ${brokerForm.active ? 'left-5' : 'left-1'}`}></div>
-              </button>
-              <span className="text-sm font-medium text-white/80">
-                {brokerForm.active ? "Corretor Ativo para receber leads" : "Cadastro Inativo (Pausado)"}
-              </span>
-            </div>
+                <div className="flex items-center gap-3 p-4 rounded-xl bg-white/5 border border-white/5">
+                  <button
+                    onClick={() => setBrokerForm({ ...brokerForm, active: !brokerForm.active })}
+                    className={`w-10 h-6 rounded-full relative transition-colors ${brokerForm.active ? 'bg-success' : 'bg-white/10'}`}
+                  >
+                    <div className={`absolute top-1 bottom-1 w-4 h-4 rounded-full bg-white transition-all ${brokerForm.active ? 'left-5' : 'left-1'}`}></div>
+                  </button>
+                  <span className="text-sm font-medium text-white/80">
+                    {brokerForm.active ? "Corretor Ativo para receber leads" : "Cadastro Inativo (Pausado)"}
+                  </span>
+                </div>
 
-            <div className="flex justify-end gap-3 pt-4">
-              <button onClick={() => setBrokerModalOpen(false)} className="px-6 py-3 rounded-xl text-xs font-bold text-white/50 hover:text-white hover:bg-white/5 transition-colors">CANCELAR</button>
-              <button
-                onClick={handleSaveBroker}
-                disabled={saving}
-                className="bg-primary hover:bg-blue-600 text-white px-8 py-3 rounded-xl font-bold text-xs shadow-lg shadow-primary/20 flex items-center gap-2 transition-all"
-              >
-                {saving ? <RefreshCw className="animate-spin" size={16} /> : <CheckCircle2 size={16} />}
-                SALVAR DADOS
-              </button>
-            </div>
-          </div>
-        </Modal>
+                <div className="flex justify-end gap-3 pt-4">
+                  <button onClick={() => setBrokerModalOpen(false)} className="px-6 py-3 rounded-xl text-xs font-bold text-white/50 hover:text-white hover:bg-white/5 transition-colors">CANCELAR</button>
+                  <button
+                    onClick={handleSaveBroker}
+                    disabled={saving}
+                    className="bg-primary hover:bg-blue-600 text-white px-8 py-3 rounded-xl font-bold text-xs shadow-lg shadow-primary/20 flex items-center gap-2 transition-all"
+                  >
+                    {saving ? <RefreshCw className="animate-spin" size={16} /> : <CheckCircle2 size={16} />}
+                    SALVAR DADOS
+                  </button>
+                </div>
+              </div>
+            </Modal>
 
 
           </div>
