@@ -140,7 +140,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.261";
+const SERVER_VERSION = "1.262";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -4102,15 +4102,12 @@ setInterval(checkScheduledCampaigns, 60000);
 // --- Background Worker para Follow-ups de IA ---
 async function checkAiFollowups() {
     try {
-        // 1. Buscar todos os registros de tracking que estão aguardando (RESPONDED significa que o humano falou por último)
-        // No nosso caso, queremos leads que estão em silêncio após NOSSA última mensagem ou a mensagem deles.
-        // Simplificando: Qualquer lead cujo last_interaction seja antigo e nudge_count < max
+        // 1. Buscar apenas leads que estão aguardando o cliente (onde a IA ou o Nudge foi o último a falar)
         const { data: tracking, error } = await supabase
             .from("ai_leads_tracking")
             .select("*")
-            .lt("nudge_count", 5) // limite de segurança
-            .neq("status", "TRANSFERRED")   // 🛑 Não incomodar leads já entregues
-            .neq("status", "HUMAN_ACTIVE"); // 🛑 Não incomodar leads em atendimento humano
+            .lt("nudge_count", 5)
+            .or('status.eq.AI_SENT,status.eq.NUDGED'); // 🛑 Apenas se a última interação foi do bot
 
         if (error) {
             log(`[FU DEBUG] Erro ao buscar leads: ${error.message}`);
@@ -4137,8 +4134,8 @@ async function checkAiFollowups() {
                 continue;
             }
 
-            if (!inst.fu_enabled) {
-                // log(`[FU DEBUG] Follow-up desativado para ${inst.name}`);
+            if (!inst.ai_enabled || !inst.fu_enabled) {
+                // log(`[FU DEBUG] Follow-up ignorado: IA (${inst.ai_enabled}) ou FU (${inst.fu_enabled}) desativados.`);
                 continue;
             }
 
