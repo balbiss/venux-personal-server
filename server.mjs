@@ -140,7 +140,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.258";
+const SERVER_VERSION = "1.259";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -2803,7 +2803,7 @@ async function finishFunnel(tgChatId, instId, remoteJid, funnel, answers, pushNa
             chat_id: remoteJid,
             instance_id: instId,
             last_interaction: new Date().toISOString(),
-            status: "HUMAN_ACTIVE"
+            status: "TRANSFERRED"
         }, { onConflict: "chat_id, instance_id" });
 
         const notifyText = `🎯 *Funil de Qualificação Concluído!*\n\n` +
