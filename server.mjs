@@ -140,7 +140,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.273";
+const SERVER_VERSION = "1.274";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -4077,9 +4077,14 @@ app.post("/webhook", async (req, res) => {
                                         if (aiResponse.includes("[QUALIFICADO]")) {
                                             log(`[WEBHOOK AI] Lead Qualificado: ${readableLead}`);
 
-                                            // Pausar IA para este lead (SDR finalizado)
-                                            await supabase.from("ai_leads_tracking").update({ status: "TRANSFERRED" })
-                                                .eq("chat_id", remoteJid).eq("instance_id", tokenId);
+                                            // V1.274: Pausar IA para este lead (SDR finalizado) - Usar UPSERT para garantir persistência
+                                            await supabase.from("ai_leads_tracking").upsert({
+                                                chat_id: remoteJid,
+                                                instance_id: tokenId,
+                                                lead_name: readableLead,
+                                                last_interaction: new Date().toISOString(),
+                                                status: "TRANSFERRED"
+                                            }, { onConflict: "chat_id, instance_id" });
 
                                             log(`[AI QUALIFY] Notificando admin ${chatId} sobre lead ${readableLead}`);
                                             bot.telegram.sendMessage(chatId, `✅ *Lead Qualificado!* **${readableLead}**\n\nEncaminhando para o corretor da vez...`);
