@@ -140,7 +140,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.254";
+const SERVER_VERSION = "1.255";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -2436,7 +2436,6 @@ async function renderAiMenu(ctx, instId) {
         `🤝 *Temas para Humano:* \n_${humanTopics}_`;
 
     const buttons = [
-        [Markup.button.callback("🪄 Iniciar Configuração Mágica", `wa_ai_start_wizard_${instId}`)],
         [Markup.button.callback(isEnabled ? "🔴 Desativar IA" : "🟢 Ativar IA", `wa_toggle_ai_${instId}`)],
         [Markup.button.callback("📝 Editar System Prompt", `wa_set_ai_prompt_${instId}`)],
         [Markup.button.callback("🤝 Temas para Humano", `wa_set_ai_human_${instId}`)],
@@ -2463,43 +2462,6 @@ bot.action(/^wa_ai_menu_(.+)$/, async (ctx) => {
     await renderAiMenu(ctx, id);
 });
 
-bot.action(/^wa_ai_start_wizard_(.+)$/, async (ctx) => {
-    safeAnswer(ctx);
-    const id = ctx.match[1];
-    const { inst, session } = await checkOwnership(ctx, id);
-    if (!inst) return;
-
-    const text = "🪄 *Configurador Mágico*\n\n" +
-        "Esta opção irá configurar sua IA automaticamente respondendo algumas perguntas.\n\n" +
-        "Selecione o seu **Nicho de Negócio** abaixo:";
-
-    const buttons = [
-        [Markup.button.callback("🏠 Imobiliária / Corretor", `wa_ai_choose_niche_re_${id}`)],
-        [Markup.button.callback("🏥 Clínica / Consultório Médico", `wa_ai_choose_niche_mc_${id}`)],
-        [Markup.button.callback("🔙 Voltar", `wa_ai_menu_${id}`)]
-    ];
-
-    await ctx.editMessageText(text, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
-});
-
-bot.action(/^wa_ai_choose_niche_(re|mc)_(.+)$/, async (ctx) => {
-    safeAnswer(ctx);
-    const type = ctx.match[1];
-    const id = ctx.match[2];
-    const { inst, session } = await checkOwnership(ctx, id);
-    if (!inst) return;
-
-    if (inst) {
-        inst.niche_data = {}; // Reinicia para nova configuração
-        await syncSession(ctx, session);
-    }
-
-    if (type === "re") {
-        await triggerRealEstateWizard(ctx, id, 1);
-    } else {
-        await triggerMedicalWizard(ctx, id, 1);
-    }
-});
 
 bot.action(/^wa_toggle_ai_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
@@ -2713,7 +2675,8 @@ bot.action(/^wa_broker_add_(.+)$/, async (ctx) => {
 bot.action(/^wa_broker_del_list_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
+    const { inst: ownershipOk } = await checkOwnership(ctx, id);
+    if (!ownershipOk) return;
     const { data: brokers } = await supabase.from("real_estate_brokers").select("*");
 
     if (!brokers || brokers.length === 0) return ctx.answerCbQuery("❌ Nenhum corretor para remover.");
@@ -2727,7 +2690,8 @@ bot.action(/^wa_broker_del_list_(.+)$/, async (ctx) => {
 bot.action(/^wa_broker_confirm_del_(.+)_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const instId = ctx.match[1];
-    if (!await checkOwnership(ctx, instId)) return;
+    const { inst: ownershipOk } = await checkOwnership(ctx, instId);
+    if (!ownershipOk) return;
     const brokerId = ctx.match[2];
     await supabase.from("real_estate_brokers").delete().eq("id", brokerId);
     ctx.answerCbQuery("✅ Corretor removido!");
@@ -3406,166 +3370,10 @@ bot.on("text", async (ctx) => {
         } else {
             ctx.reply("❌ Erro ao criar instância na API Wuzapi.");
         }
-    } else if (session.stage && session.stage.startsWith("WA_WIZ_IMOB_AGENT_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_WIZ_IMOB_AGENT_", "");
-        if (!await checkOwnership(ctx, instId)) return;
-
-        session.wiz.data.nome_agente = ctx.message.text.trim();
-        session.stage = `WA_WIZ_IMOB_COMPANY_${instId}`;
-        await syncSession(ctx, session);
-        ctx.reply("2. Qual o **Nome da Imobiliária**?", Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar", `wa_wiz_re_back_${instId}_1`)]]));
-
-
-    } else if (session.stage && session.stage.startsWith("WA_WIZ_IMOB_COMPANY_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_WIZ_IMOB_COMPANY_", "");
-        if (!await checkOwnership(ctx, instId)) return;
-
-        session.wiz.data.nome_empresa = ctx.message.text.trim();
-        session.stage = `WA_WIZ_IMOB_TONE_${instId}`;
-        await syncSession(ctx, session);
-
-        const buttons = [
-            [Markup.button.callback("Profissional", `wa_wiz_set_${instId}_tom_Profissional`)],
-            [Markup.button.callback("Consultivo", `wa_wiz_set_${instId}_tom_Consultivo`)],
-            [Markup.button.callback("Amigável", `wa_wiz_set_${instId}_tom_Amigável`)]
-        ];
-        ctx.reply("3. Qual o **Tom de Voz** da IA?", Markup.inlineKeyboard(buttons));
-
-    } else if (session.stage && session.stage.startsWith("WA_WIZ_IMOB_REGIONS_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_WIZ_IMOB_REGIONS_", "");
-        if (!await checkOwnership(ctx, instId)) return;
-
-        session.wiz.data.regioes = ctx.message.text.trim();
-        session.stage = `WA_WIZ_IMOB_HOURS_${instId}`;
-        await syncSession(ctx, session);
-        ctx.reply("5. Qual seu **Horário de Atendimento**?");
-
-    } else if (session.stage && session.stage.startsWith("WA_WIZ_IMOB_HOURS_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_WIZ_IMOB_HOURS_", "");
-        if (!await checkOwnership(ctx, instId)) return;
-
-        session.wiz.data.horario = ctx.message.text.trim();
-        session.stage = `WA_WIZ_IMOB_SITE_${instId}`;
-        await syncSession(ctx, session);
-        ctx.reply("6. Site ou Instagram (opcional):");
-
-    } else if (session.stage && session.stage.startsWith("WA_WIZ_IMOB_SITE_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_WIZ_IMOB_SITE_", "");
-        if (!await checkOwnership(ctx, instId)) return;
-
-        session.wiz.data.site = ctx.message.text.trim();
-        session.stage = `WA_WIZ_IMOB_GREETING_${instId}`;
-        await syncSession(ctx, session);
-        ctx.reply("7. Digite a **Saudação Inicial** (ex: Olá, sou a IA da ImobX...):");
-
-    } else if (session.stage && session.stage.startsWith("WA_WIZ_IMOB_GREETING_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_WIZ_IMOB_GREETING_", "");
-        if (!await checkOwnership(ctx, instId)) return;
-
-        session.wiz.data.saudacao = ctx.message.text.trim();
-        session.stage = `WA_WIZ_IMOB_TECH_${instId}`;
-        await syncSession(ctx, session);
-        ctx.reply("8. **Resposta Técnica** sobre a empresa (Resumo do que fazem):");
-
-    } else if (session.stage && session.stage.startsWith("WA_WIZ_IMOB_TECH_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_WIZ_IMOB_TECH_", "");
-        if (!await checkOwnership(ctx, instId)) return;
-
-        session.wiz.data.tecnica = ctx.message.text.trim();
-        session.stage = `WA_WIZ_IMOB_MEDIA_${instId}`;
-        await syncSession(ctx, session);
-        ctx.reply("9. Regra para envio de **Fotos/Vídeos** (ex: Apenas após cadastro):");
-
-    } else if (session.stage && session.stage.startsWith("WA_WIZ_IMOB_MEDIA_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_WIZ_IMOB_MEDIA_", "");
-        if (!await checkOwnership(ctx, instId)) return;
-
-        session.wiz.data.regra_fotos = ctx.message.text.trim();
-        session.stage = `WA_WIZ_IMOB_CATALOG_${instId}`;
-        await syncSession(ctx, session);
-        ctx.reply("10. Link ou texto do **Catálogo de Imóveis**:");
-
-    } else if (session.stage && session.stage.startsWith("WA_WIZ_IMOB_CATALOG_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_WIZ_IMOB_CATALOG_", "");
-        if (!await checkOwnership(ctx, instId)) return;
-
-        session.wiz.data.catalogo = ctx.message.text.trim();
-        session.stage = `WA_WIZ_IMOB_STRAT_${instId}`;
-        await syncSession(ctx, session);
-        ctx.reply("11. **Instrução Estratégica** (como ela deve se comportar):");
-
-    } else if (session.stage && session.stage.startsWith("WA_WIZ_IMOB_STRAT_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_WIZ_IMOB_STRAT_", "");
-        if (!await checkOwnership(ctx, instId)) return;
-
-        session.wiz.data.instrucao = ctx.message.text.trim();
-
-        // Finalização Imobiliária
-        await finishWizard(ctx, instId, session.wiz);
-
-        // --- CONEXÃO COM WIZARD ANTIGO (PRESERVAR) ---
-    } else if (session.stage && session.stage.startsWith("WA_WIZ_NAME_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_WIZ_NAME_", "");
-        if (!await checkOwnership(ctx, instId)) return;
-        session.wiz_data = { name: ctx.message.text.trim() };
-        session.stage = `WA_WIZ_PRODUCT_${instId}`;
-        await syncSession(ctx, session);
-        const sent = await ctx.reply("📦 *Passo 2/3: Produto/Serviço*\n\nLegal! Agora me conte: o que você vende ou qual serviço sua empresa oferece?", { parse_mode: "Markdown" });
-        session.last_ui_id = sent.message_id;
-        await syncSession(ctx, session);
-
-    } else if (session.stage && session.stage.startsWith("WA_WIZ_PRODUCT_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_WIZ_PRODUCT_", "");
-        if (!await checkOwnership(ctx, instId)) return;
-        session.wiz_data.product = ctx.message.text.trim();
-        session.stage = `WA_WIZ_GOAL_${instId}`;
-        await syncSession(ctx, session);
-        const sent = await ctx.reply("🎯 *Passo 3/3: Objetivo*\n\nQual o objetivo principal deste WhatsApp? (Ex: Tirar dúvidas, agendar consultoria, vender produtos, suporte técnico)", { parse_mode: "Markdown" });
-        session.last_ui_id = sent.message_id;
-        await syncSession(ctx, session);
-
-    } else if (session.stage && session.stage.startsWith("WA_WIZ_GOAL_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_WIZ_GOAL_", "");
-        if (!await checkOwnership(ctx, instId)) return;
-        const goal = ctx.message.text.trim();
-        const { name, product } = session.wiz_data;
-
-        const generatedPrompt = `Você é o assistente virtual da empresa ${name}. ` +
-            `Seu foco principal é ${product}. ` +
-            `Seu objetivo no atendimento é ${goal}. ` +
-            `Sempre use um tom profissional, amigável e prestativo. ` +
-            `Responda de forma clara e objetiva.`;
-
-        // Salvar na instância
-        const inst = session.whatsapp.instances.find(i => i.id === instId);
-        if (inst) {
-            inst.ai_prompt = generatedPrompt;
-            inst.ai_enabled = true; // Ativar por padrão ao usar o mágico
-            await syncSession(ctx, session);
-        }
-        try { ctx.deleteMessage(); } catch (e) { } // Limpar resposta do usuário
-        session.stage = "READY";
-        delete session.wiz_data;
-        await syncSession(ctx, session);
-        ctx.reply("✨ *Configuração Concluída!*\n\nSeu prompt foi gerado e a IA foi ativada automaticamente.\n\n" +
-            `📝 *Prompt Gerado:* \n\`\`\`\n${generatedPrompt}\n\`\`\``, { parse_mode: "Markdown" });
-        await renderAiMenu(ctx, instId);
     } else if (session.stage && session.stage.startsWith("WA_BROKER_WAIT_NAME_")) {
         const instId = session.stage.replace("WA_BROKER_WAIT_NAME_", "");
-        if (!await checkOwnership(ctx, instId)) return;
+        const { inst: ownershipOk } = await checkOwnership(ctx, instId);
+        if (!ownershipOk) return;
         // Limite de corretores removido (Liberado)
         const name = ctx.message.text.trim();
         session.tempBroker = { name };
@@ -3575,7 +3383,8 @@ bot.on("text", async (ctx) => {
 
     } else if (session.stage && session.stage.startsWith("WA_BROKER_WAIT_PHONE_")) {
         const instId = session.stage.replace("WA_BROKER_WAIT_PHONE_", "");
-        if (!await checkOwnership(ctx, instId)) return;
+        const { inst: ownershipOk } = await checkOwnership(ctx, instId);
+        if (!ownershipOk) return;
 
         let rawPhone = ctx.message.text.trim().replace(/\D/g, "");
         if (rawPhone.length < 8) return ctx.reply("❌ Número inválido. Digite um número real (ex: 5511999998888).");
@@ -3613,108 +3422,6 @@ bot.on("text", async (ctx) => {
             await syncSession(ctx, session);
             await renderBrokersMenu(ctx, instId);
         }
-    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_RE_COMPANY_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_AI_CONF_RE_COMPANY_", "");
-        const inst = await checkOwnership(ctx, instId);
-        if (!inst) return;
-        if (inst) {
-            inst.niche_data.company_name = ctx.message.text.trim();
-            await triggerRealEstateWizard(ctx, instId, 2);
-        }
-    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_RE_GREETING_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_AI_CONF_RE_GREETING_", "");
-        const inst = await checkOwnership(ctx, instId);
-        if (!inst) return;
-        if (inst) {
-            inst.niche_data.greeting = ctx.message.text.trim();
-            await triggerRealEstateWizard(ctx, instId, 3);
-        }
-    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_RE_ADDRESS_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_AI_CONF_RE_ADDRESS_", "");
-        const inst = await checkOwnership(ctx, instId);
-        if (!inst) return;
-        if (inst) {
-            inst.niche_data.address = ctx.message.text.trim();
-            await triggerRealEstateWizard(ctx, instId, 4);
-        }
-    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_RE_PRODUCT_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_AI_CONF_RE_PRODUCT_", "");
-        const inst = await checkOwnership(ctx, instId);
-        if (!inst) return;
-        if (inst) {
-            inst.niche_data.products = ctx.message.text.trim();
-            await triggerRealEstateWizard(ctx, instId, 5);
-        }
-    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_RE_FUNNEL_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_AI_CONF_RE_FUNNEL_", "");
-        const inst = await checkOwnership(ctx, instId);
-        if (!inst) return;
-        if (inst) {
-            inst.niche_data.funnel = ctx.message.text.trim();
-            await triggerRealEstateWizard(ctx, instId, 6);
-        }
-    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_RE_BIO_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_AI_CONF_RE_BIO_", "");
-        const inst = await checkOwnership(ctx, instId);
-        if (!inst) return;
-        if (inst) {
-            inst.niche_data.bio = ctx.message.text.trim();
-            await triggerRealEstateWizard(ctx, instId, 7);
-        }
-    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_MC_COMPANY_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_AI_CONF_MC_COMPANY_", "");
-        const inst = await checkOwnership(ctx, instId);
-        if (!inst) return;
-        if (inst) {
-            inst.niche_data.company_name = ctx.message.text.trim();
-            await triggerMedicalWizard(ctx, instId, 2);
-        }
-    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_MC_SPECIALTIES_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_AI_CONF_MC_SPECIALTIES_", "");
-        const inst = await checkOwnership(ctx, instId);
-        if (!inst) return;
-        if (inst) {
-            inst.niche_data.specialties = ctx.message.text.trim();
-            await triggerMedicalWizard(ctx, instId, 3);
-        }
-    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_MC_PLANS_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_AI_CONF_MC_PLANS_", "");
-        const inst = await checkOwnership(ctx, instId);
-        if (!inst) return;
-        if (inst) {
-            inst.niche_data.plans = ctx.message.text.trim();
-            await triggerMedicalWizard(ctx, instId, 4);
-        }
-    } else if (session.stage && session.stage.startsWith("WA_AI_CONF_MC_BOOKING_")) {
-        await cleanup();
-        const instId = session.stage.replace("WA_AI_CONF_MC_BOOKING_", "");
-
-        const inst = await checkOwnership(ctx, instId);
-        if (!inst) return;
-        if (inst) {
-            inst.niche_data.rules = ctx.message.text.trim();
-            session.stage = "READY";
-            await syncSession(ctx, session);
-
-            const styles = [
-                [Markup.button.callback("😊 Acolhedor", `wa_ai_mc_style_${instId}_acolhedor`)],
-                [Markup.button.callback("💼 Profissional", `wa_ai_mc_style_${instId}_formal`)],
-                [Markup.button.callback("🔙 Voltar", `wa_ai_mc_back_${instId}_3`)]
-            ];
-            const sent = await ctx.reply("🎭 *Passo Final: Estilo de Conversa*\n\nEscolha o tom de voz da clínica:", Markup.inlineKeyboard(styles));
-            session.last_ui_id = sent.message_id;
-            await syncSession(ctx, session);
-
-        }
     } else if (session.stage && session.stage.startsWith("WA_AI_RESUME_TIME_VAL_")) {
         await cleanup();
         const instId = session.stage.replace("WA_AI_RESUME_TIME_VAL_", "");
@@ -3751,7 +3458,8 @@ bot.on("text", async (ctx) => {
     } else if (session.stage && session.stage.startsWith("WA_WAITING_MASS_CONTACTS_")) {
         await cleanup();
         const instId = session.stage.replace("WA_WAITING_MASS_CONTACTS_", "");
-        if (!await checkOwnership(ctx, instId)) return;
+        const { inst: ownershipOk } = await checkOwnership(ctx, instId);
+        if (!ownershipOk) return;
 
         const lines = ctx.message.text.split("\n").map(n => n.trim()).filter(n => n.length > 5);
         const contacts = lines.map(line => {
@@ -3787,7 +3495,8 @@ bot.on("text", async (ctx) => {
 
     } else if (session.stage && session.stage.startsWith("WA_WAITING_MASS_MSG_")) {
         const instId = session.stage.replace("WA_WAITING_MASS_MSG_", "");
-        if (!await checkOwnership(ctx, instId)) return;
+        const { inst: ownershipOk } = await checkOwnership(ctx, instId);
+        if (!ownershipOk) return;
 
         const rawMsg = ctx.message.text || "";
         const variations = rawMsg.split(";;;").map(v => v.trim()).filter(v => v.length > 0);
@@ -3809,7 +3518,8 @@ bot.on("text", async (ctx) => {
 
     } else if (session.stage && session.stage.startsWith("WA_WAITING_MASS_DELAY_")) {
         const instId = session.stage.replace("WA_WAITING_MASS_DELAY_", "");
-        if (!await checkOwnership(ctx, instId)) return;
+        const { inst: ownershipOk } = await checkOwnership(ctx, instId);
+        if (!ownershipOk) return;
         const parts = ctx.message.text.split("-");
         const min = parseInt(parts[0]);
         const max = parseInt(parts[1]);
@@ -3832,7 +3542,8 @@ bot.on("text", async (ctx) => {
 
     } else if (session.stage && session.stage.startsWith("WA_WAITING_MASS_SCHEDULE_")) {
         const instId = session.stage.replace("WA_WAITING_MASS_SCHEDULE_", "");
-        if (!await checkOwnership(ctx, instId)) return;
+        const { inst: ownershipOk } = await checkOwnership(ctx, instId);
+        if (!ownershipOk) return;
         const dateStr = ctx.message.text.trim();
 
         // Regex simples para DD/MM/AAAA HH:MM
@@ -3889,7 +3600,8 @@ bot.on("text", async (ctx) => {
 
     } else if (session.stage && session.stage.startsWith("WA_FUNNEL_WAIT_PRES_")) {
         const instId = session.stage.replace("WA_FUNNEL_WAIT_PRES_", "");
-        if (!await checkOwnership(ctx, instId)) return;
+        const { inst: ownershipOk } = await checkOwnership(ctx, instId);
+        if (!ownershipOk) return;
         const text = ctx.message.text.trim();
         await supabase.from("qualification_funnels").update({ presentation: text }).eq("instance_id", instId);
         session.stage = "READY";
@@ -3899,7 +3611,8 @@ bot.on("text", async (ctx) => {
 
     } else if (session.stage && session.stage.startsWith("WA_FUNNEL_WAIT_QUES_")) {
         const instId = session.stage.replace("WA_FUNNEL_WAIT_QUES_", "");
-        if (!await checkOwnership(ctx, instId)) return;
+        const { inst: ownershipOk } = await checkOwnership(ctx, instId);
+        if (!ownershipOk) return;
         const text = ctx.message.text.trim();
         const { data: funnel } = await supabase.from("qualification_funnels").select("*").eq("instance_id", instId).maybeSingle();
         let questions = funnel?.questions || [];
@@ -3912,7 +3625,8 @@ bot.on("text", async (ctx) => {
 
     } else if (session.stage && session.stage.startsWith("WA_WAITING_PAIR_PHONE_")) {
         const instId = session.stage.replace("WA_WAITING_PAIR_PHONE_", "");
-        if (!await checkOwnership(ctx, instId)) return;
+        const { inst: ownershipOk } = await checkOwnership(ctx, instId);
+        if (!ownershipOk) return;
         const rawPhone = ctx.message.text.trim();
         const phone = rawPhone.replace(/\D/g, ""); // Limpa qualquer caractere não numérico
 
@@ -3947,7 +3661,8 @@ bot.on("text", async (ctx) => {
 
     } else if (session.stage && session.stage.startsWith("WA_WAITING_WEBHOOK_URL_")) {
         const instId = session.stage.replace("WA_WAITING_WEBHOOK_URL_", "");
-        if (!await checkOwnership(ctx, instId)) return;
+        const { inst: ownershipOk } = await checkOwnership(ctx, instId);
+        if (!ownershipOk) return;
         const url = ctx.message.text.trim();
         session.stage = "READY";
         await syncSession(ctx, session);
@@ -3995,7 +3710,8 @@ bot.on("text", async (ctx) => {
         await renderAiMenu(ctx, instId);
     } else if (session.stage && session.stage.startsWith("WA_WAITING_FU_HOURS_")) {
         const instId = session.stage.replace("WA_WAITING_FU_HOURS_", "");
-        if (!await checkOwnership(ctx, instId)) return;
+        const { inst: ownershipOk } = await checkOwnership(ctx, instId);
+        if (!ownershipOk) return;
         const text = ctx.message.text.toLowerCase().trim();
         let val = 0;
         let label = "";
@@ -4024,7 +3740,8 @@ bot.on("text", async (ctx) => {
         }
     } else if (session.stage && session.stage.startsWith("WA_WAITING_FU_MAX_")) {
         const instId = session.stage.replace("WA_WAITING_FU_MAX_", "");
-        if (!await checkOwnership(ctx, instId)) return;
+        const { inst: ownershipOk } = await checkOwnership(ctx, instId);
+        if (!ownershipOk) return;
         const val = parseInt(ctx.message.text);
         if (isNaN(val)) return ctx.reply("⚠️ Por favor, envie um número válido.");
 
@@ -4038,7 +3755,8 @@ bot.on("text", async (ctx) => {
         }
     } else if (session.stage && session.stage.startsWith("WA_WAITING_FU_MSGS_")) {
         const instId = session.stage.replace("WA_WAITING_FU_MSGS_", "");
-        if (!await checkOwnership(ctx, instId)) return;
+        const { inst: ownershipOk } = await checkOwnership(ctx, instId);
+        if (!ownershipOk) return;
         const msgs = ctx.message.text.split(";").map(m => m.trim()).filter(m => m.length > 0);
         if (msgs.length === 0) return ctx.reply("⚠️ Nenhuma mensagem válida detectada. Use `;` para separar.");
 
@@ -4052,7 +3770,8 @@ bot.on("text", async (ctx) => {
         }
     } else if (session.stage && session.stage.startsWith("WA_WAITING_AI_HUMAN_")) {
         const instId = session.stage.replace("WA_WAITING_AI_HUMAN_", "");
-        if (!await checkOwnership(ctx, instId)) return;
+        const { inst: ownershipOk } = await checkOwnership(ctx, instId);
+        if (!ownershipOk) return;
         const topics = ctx.message.text.trim();
         const inst = session.whatsapp.instances.find(i => i.id === instId);
         if (inst) {
@@ -4077,7 +3796,8 @@ async function handleMassMedia(ctx, type, fileId, caption, fileName, fileSize) {
     if (!isContactImport && !isMessageContent) return;
 
     const instId = session.stage.replace(isContactImport ? "WA_WAITING_MASS_CONTACTS_" : "WA_WAITING_MASS_MSG_", "");
-    if (!await checkOwnership(ctx, instId)) return;
+    const { inst: ownershipOk } = await checkOwnership(ctx, instId);
+    if (!ownershipOk) return;
 
     // Verificação de tamanho (Limite 20MB da API do Telegram Bot)
     const MAX_SIZE = 20 * 1024 * 1024;
@@ -4558,158 +4278,7 @@ bot.telegram.setMyCommands([
 ]).then(() => log("✅ Menu de Comandos atualizado com sucesso no Telegram"))
     .catch(err => log(`❌ Erro ao atualizar Menu de Comandos: ${err.message}`));
 
-async function triggerRealEstateWizard(ctx, instId, step) {
-    const session = await getSession(ctx.chat.id);
-    session.wiz = session.wiz || { data: {}, step };
-    session.wiz.step = step;
 
-    const back = (s) => Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar", s)]]);
-
-    if (step === 1) {
-        session.stage = `WA_AI_CONF_RE_COMPANY_${instId}`;
-        await syncSession(ctx, session);
-        return ctx.reply("1. Qual o **Nome da Empresa/Imobiliária**?", back(`wa_ai_menu_${instId}`));
-    } else if (step === 2) {
-        session.stage = `WA_AI_CONF_RE_GREETING_${instId}`;
-        await syncSession(ctx, session);
-        return ctx.reply("2. Qual a **Saudação Inicial**?", back(`wa_ai_re_back_${instId}_1`));
-    } else if (step === 3) {
-        session.stage = `WA_AI_CONF_RE_ADDRESS_${instId}`;
-        await syncSession(ctx, session);
-        return ctx.reply("3. Qual o **Endereço/Região de Atendimento**?", back(`wa_ai_re_back_${instId}_2`));
-    } else if (step === 4) {
-        session.stage = `WA_AI_CONF_RE_PRODUCT_${instId}`;
-        await syncSession(ctx, session);
-        return ctx.reply("4. Quais seus principais **Produtos/Nichos** (ex: venda, locação, alto padrão)?", back(`wa_ai_re_back_${instId}_3`));
-    } else if (step === 5) {
-        session.stage = `WA_AI_CONF_RE_FUNNEL_${instId}`;
-        await syncSession(ctx, session);
-        return ctx.reply("5. Qual o seu principal **Objetivo** no atendimento (ex: agendar visita, captar leads)?", back(`wa_ai_re_back_${instId}_4`));
-    } else if (step === 6) {
-        session.stage = `WA_AI_CONF_RE_BIO_${instId}`;
-        await syncSession(ctx, session);
-        return ctx.reply("6. Conte um pouco sobre a **História/Bio** da empresa:", back(`wa_ai_re_back_${instId}_5`));
-    } else if (step === 7) {
-        session.stage = "READY";
-        await syncSession(ctx, session);
-        const styles = [
-            [Markup.button.callback("😊 Amigável e com Emojis", `wa_ai_re_style_${instId}_amigavel`)],
-            [Markup.button.callback("💼 Formal e Profissional", `wa_ai_re_style_${instId}_formal`)],
-            [Markup.button.callback("🎯 Direto e Persuasivo", `wa_ai_re_style_${instId}_direto`)],
-            [Markup.button.callback("🔙 Voltar", `wa_ai_re_back_${instId}_6`)]
-        ];
-        return ctx.reply("🎭 *Passo Final: Estilo de Conversa*\n\nEscolha como a IA deve falar:", Markup.inlineKeyboard(styles));
-    }
-}
-
-async function triggerMedicalWizard(ctx, instId, step) {
-    const session = await getSession(ctx.chat.id);
-    session.wiz = session.wiz || { data: {}, step };
-    session.wiz.step = step;
-
-    const back = (s) => Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar", s)]]);
-
-    if (step === 1) {
-        session.stage = `WA_AI_CONF_MC_COMPANY_${instId}`;
-        await syncSession(ctx, session);
-        return ctx.reply("1. Qual o **Nome da Clínica/Consultório**?", back(`wa_ai_menu_${instId}`));
-    } else if (step === 2) {
-        session.stage = `WA_AI_CONF_MC_SPECIALTIES_${instId}`;
-        await syncSession(ctx, session);
-        return ctx.reply("2. Quais as **Especialidades** atendidas?", back(`wa_ai_mc_back_${instId}_1`));
-    } else if (step === 3) {
-        session.stage = `WA_AI_CONF_MC_PLANS_${instId}`;
-        await syncSession(ctx, session);
-        return ctx.reply("3. Quais **Convênios** você aceita? (ou apenas particular)", back(`wa_ai_mc_back_${instId}_2`));
-    } else if (step === 4) {
-        session.stage = `WA_AI_CONF_MC_BOOKING_${instId}`;
-        await syncSession(ctx, session);
-        return ctx.reply("4. Link ou orientação para **Agendamento**:", back(`wa_ai_mc_back_${instId}_3`));
-    } else if (step === 5) {
-        session.stage = "READY";
-        await syncSession(ctx, session);
-        const styles = [
-            [Markup.button.callback("😊 Acolhedor", `wa_ai_mc_style_${instId}_acolhedor`)],
-            [Markup.button.callback("💼 Profissional", `wa_ai_mc_style_${instId}_formal`)],
-            [Markup.button.callback("🔙 Voltar", `wa_ai_mc_back_${instId}_4`)]
-        ];
-        return ctx.reply("🎭 *Passo Final: Estilo de Conversa*\n\nEscolha o tom de voz da clínica:", Markup.inlineKeyboard(styles));
-    }
-}
-
-async function finishWizard(ctx, instId, wiz) {
-    const session = await getSession(ctx.chat.id);
-    const inst = session.whatsapp.instances.find(i => i.id === instId);
-    if (!inst) return;
-
-    let prompt = "";
-    // Garantir que d usa niche_data que foi preenchido nos handlers de texto
-    const d = inst.niche_data || {};
-    const style = wiz.style || 'profissional';
-
-    if (d.specialties) {
-        // Medical
-        inst.niche = 'medical';
-        prompt = `Você é o assistente virtual da clínica ${d.company_name || 'nossa clínica'}. ` +
-            `Especialidades: ${d.specialties || 'atendimento médico'}. ` +
-            `Convênios: ${d.plans || 'particulares'}. ` +
-            `Agendamento: ${d.booking || 'nosso canal'}. ` +
-            `Seu tom de voz deve ser ${style}. ` +
-            `Responda de forma empática e ajude o paciente a agendar uma consulta.`;
-    } else {
-        // Real Estate
-        inst.niche = 'real_estate';
-        prompt = `Você é o corretor virtual da ${d.company_name || 'nossa imobiliária'}. ` +
-            `Atendemos em: ${d.address || 'nossa região'}. ` +
-            `Produtos: ${d.products || 'imóveis'}. ` +
-            `Objetivo: ${d.funnel || 'atendimento'}. ` +
-            `Bio: ${d.bio || 'especialista imobiliário'}. ` +
-            `Seu tom de voz deve ser ${style}. ` +
-            `Tente qualificar o lead e encaminhá-lo para um corretor humano quando necessário.`;
-    }
-
-    inst.ai_prompt = prompt;
-    inst.ai_enabled = true;
-    session.stage = "READY";
-    delete session.wiz;
-    await syncSession(ctx, session);
-
-    ctx.reply("✨ *Configuração Concluída!*\n\nSua IA foi configurada e ativada automaticamente com base nas suas respostas.", { parse_mode: "Markdown" });
-    await renderAiMenu(ctx, instId);
-}
-
-bot.action(/^wa_ai_re_style_(.+)_(.+)$/, async (ctx) => {
-    safeAnswer(ctx);
-    const instId = ctx.match[1];
-    const style = ctx.match[2];
-    const session = await getSession(ctx.chat.id);
-    if (!session.wiz) session.wiz = { data: {} };
-    session.wiz.style = style;
-    await finishWizard(ctx, instId, session.wiz);
-});
-
-bot.action(/^wa_ai_mc_style_(.+)_(.+)$/, async (ctx) => {
-    safeAnswer(ctx);
-    const instId = ctx.match[1];
-    const style = ctx.match[2];
-    const session = await getSession(ctx.chat.id);
-    if (!session.wiz) session.wiz = { data: {} };
-    session.wiz.style = style;
-    await finishWizard(ctx, instId, session.wiz);
-});
-
-bot.action(/^wa_wiz_re_back_(.+)_(.+)$/, async (ctx) => {
-    safeAnswer(ctx);
-    const instId = ctx.match[1];
-    const step = parseInt(ctx.match[2]);
-    // Este é para o Wizard antigo se ainda for usado
-    const session = await getSession(ctx.chat.id);
-    if (step === 1) {
-        session.stage = `WA_WIZ_IMOB_AGENT_${instId}`;
-        await syncSession(ctx, session);
-        ctx.reply("1. Qual o **Nome do Agente/Consultor**?");
-    }
-});
 
 // --- Background Worker para Campanhas Agendadas ---
 
