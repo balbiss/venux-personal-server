@@ -19,7 +19,10 @@ import {
   Menu,
   X,
   FileText,
-  Upload
+  Upload,
+  Pencil,
+  Trash2,
+  Power
 } from 'lucide-react';
 import {
   LineChart,
@@ -58,6 +61,11 @@ export default function App() {
   const [knowledgeOpen, setKnowledgeOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [importingPdf, setImportingPdf] = useState(false);
+
+  // States para Corretores
+  const [brokerModalOpen, setBrokerModalOpen] = useState(false);
+  const [editingBroker, setEditingBroker] = useState(null);
+  const [brokerForm, setBrokerForm] = useState({ name: '', active: true });
 
   // V1.265: Autenticação persistente
   useEffect(() => {
@@ -251,6 +259,93 @@ export default function App() {
         alert("✅ Arquivo Importado!");
       };
       reader.readAsText(file);
+    }
+  };
+
+  // --- FUNÇÕES DE CORRETORES (CRUD) ---
+
+  const handleOpenBrokerModal = (broker = null) => {
+    if (broker) {
+      setEditingBroker(broker);
+      setBrokerForm({ name: broker.name, active: broker.is_active });
+    } else {
+      setEditingBroker(null);
+      setBrokerForm({ name: '', active: true });
+    }
+    setBrokerModalOpen(true);
+  };
+
+  const handleSaveBroker = async () => {
+    if (!brokerForm.name.trim() || !user) return;
+    setSaving(true);
+
+    try {
+      if (editingBroker) {
+        // Editar
+        const { error } = await supabase
+          .from('real_estate_brokers')
+          .update({ name: brokerForm.name, is_active: brokerForm.active })
+          .eq('id', editingBroker.id);
+
+        if (error) throw error;
+        alert("✅ Corretor atualizado!");
+      } else {
+        // Criar
+        const { error } = await supabase
+          .from('real_estate_brokers')
+          .insert([{
+            name: brokerForm.name,
+            is_active: brokerForm.active,
+            tg_chat_id: user.id // Vincula ao admin logado
+          }]);
+
+        if (error) throw error;
+        alert("✅ Corretor criado com sucesso!");
+      }
+
+      setBrokerModalOpen(false);
+      fetchInitialData(); // Recarrega lista
+    } catch (e) {
+      console.error(e);
+      alert("❌ Erro ao salvar corretor.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleToggleBrokerStatus = async (broker) => {
+    try {
+      const newStatus = !broker.is_active;
+      const { error } = await supabase
+        .from('real_estate_brokers')
+        .update({ is_active: newStatus })
+        .eq('id', broker.id);
+
+      if (error) throw error;
+
+      // Atualiza localmente para feedback rápido
+      setBrokers(prev => prev.map(b => b.id === broker.id ? { ...b, is_active: newStatus } : b));
+
+    } catch (e) {
+      console.error(e);
+      alert("❌ Erro ao alterar status.");
+    }
+  };
+
+  const handleDeleteBroker = async (id) => {
+    if (!confirm("Tem certeza que deseja excluir este corretor?")) return;
+    try {
+      const { error } = await supabase
+        .from('real_estate_brokers')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+      alert("🗑️ Corretor excluído.");
+      fetchInitialData();
+    } catch (e) {
+      console.error(e);
+      alert("❌ Erro ao excluir.");
     }
   };
 
@@ -661,7 +756,10 @@ export default function App() {
                 <h2 className="text-xl lg:text-3xl font-display font-bold tracking-tight">Corretores</h2>
                 <p className="text-white/40 text-[10px] lg:text-xs">Gestão de plantão e distribuição.</p>
               </header>
-              <button className="bg-primary hover:bg-blue-600 px-4 py-2.5 rounded-xl font-bold text-[10px] lg:text-xs flex items-center gap-2 transition-all">
+              <button
+                onClick={() => handleOpenBrokerModal()}
+                className="bg-primary hover:bg-blue-600 px-4 py-2.5 rounded-xl font-bold text-[10px] lg:text-xs flex items-center gap-2 transition-all shadow-lg shadow-primary/20"
+              >
                 <UserPlus size={16} />
                 <span className="hidden lg:inline">NOVO CORRETOR</span>
                 <span className="lg:hidden">NOVO</span>
@@ -677,6 +775,7 @@ export default function App() {
                       <th className="p-4 lg:p-5">Status</th>
                       <th className="p-4 lg:p-5">Leads Recebidos</th>
                       <th className="p-4 lg:p-5">Fila</th>
+                      <th className="p-4 lg:p-5 text-right">Ações</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
@@ -710,12 +809,81 @@ export default function App() {
                         <td className="p-4 lg:p-5">
                           {idx === 0 && <span className="text-blue-400 text-[8px] font-black border border-blue-400/30 px-2 py-0.5 rounded-full">VEZ ATUAL</span>}
                         </td>
+                        <td className="p-4 lg:p-5 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={() => handleToggleBrokerStatus(broker)}
+                              title={broker.is_active ? "Desativar" : "Ativar"}
+                              className={`p-2 rounded-lg transition-colors ${broker.is_active ? 'text-success hover:bg-success/10' : 'text-white/20 hover:text-white hover:bg-white/5'}`}
+                            >
+                              <Power size={16} />
+                            </button>
+                            <button
+                              onClick={() => handleOpenBrokerModal(broker)}
+                              className="p-2 text-blue-400 hover:bg-blue-400/10 rounded-lg transition-colors"
+                              title="Editar"
+                            >
+                              <Pencil size={16} />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteBroker(broker.id)}
+                              className="p-2 text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
+                              title="Excluir"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             </div>
+          </div>
+            
+            {/* MODAL DE CORRETOR */}
+        <Modal isOpen={brokerModalOpen} onClose={() => setBrokerModalOpen(false)} title={editingBroker ? "Editar Corretor" : "Novo Corretor"}>
+          <div className="space-y-6">
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-white/60 ml-1">NOME COMPLETO</label>
+              <input
+                autoFocus
+                type="text"
+                className="w-full bg-black/40 border border-white/10 rounded-xl p-4 text-sm focus:border-primary/50 outline-none transition-all text-white placeholder:text-white/20"
+                placeholder="Ex: Ana Silva"
+                value={brokerForm.name}
+                onChange={(e) => setBrokerForm({ ...brokerForm, name: e.target.value })}
+              />
+            </div>
+
+            <div className="flex items-center gap-3 p-4 rounded-xl bg-white/5 border border-white/5">
+              <button
+                onClick={() => setBrokerForm({ ...brokerForm, active: !brokerForm.active })}
+                className={`w-10 h-6 rounded-full relative transition-colors ${brokerForm.active ? 'bg-success' : 'bg-white/10'}`}
+              >
+                <div className={`absolute top-1 bottom-1 w-4 h-4 rounded-full bg-white transition-all ${brokerForm.active ? 'left-5' : 'left-1'}`}></div>
+              </button>
+              <span className="text-sm font-medium text-white/80">
+                {brokerForm.active ? "Corretor Ativo para receber leads" : "Cadastro Inativo (Pausado)"}
+              </span>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-4">
+              <button onClick={() => setBrokerModalOpen(false)} className="px-6 py-3 rounded-xl text-xs font-bold text-white/50 hover:text-white hover:bg-white/5 transition-colors">CANCELAR</button>
+              <button
+                onClick={handleSaveBroker}
+                disabled={saving}
+                className="bg-primary hover:bg-blue-600 text-white px-8 py-3 rounded-xl font-bold text-xs shadow-lg shadow-primary/20 flex items-center gap-2 transition-all"
+              >
+                {saving ? <RefreshCw className="animate-spin" size={16} /> : <CheckCircle2 size={16} />}
+                SALVAR DADOS
+              </button>
+            </div>
+          </div>
+        </Modal>
+
+
           </div>
         )}
       </main>
