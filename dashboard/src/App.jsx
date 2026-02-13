@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import {
   Users,
@@ -16,7 +17,9 @@ import {
   Lock,
   ChevronRight,
   Menu,
-  X
+  X,
+  FileText,
+  Upload
 } from 'lucide-react';
 import {
   LineChart,
@@ -44,8 +47,10 @@ export default function App() {
   const [instances, setInstances] = useState([]);
   const [selectedInstId, setSelectedInstId] = useState('');
   const [prompt, setPrompt] = useState('');
+  const [knowledgeBase, setKnowledgeBase] = useState('');
   const [saving, setSaving] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [importingPdf, setImportingPdf] = useState(false);
 
   // V1.265: Autenticação persistente
   useEffect(() => {
@@ -161,6 +166,7 @@ export default function App() {
         if (mappedInsts.length > 0) {
           setSelectedInstId(mappedInsts[0].id);
           setPrompt(mappedInsts[0].ai_prompt || '');
+          setKnowledgeBase(mappedInsts[0].ai_knowledge_base || '');
         }
       }
 
@@ -186,18 +192,58 @@ export default function App() {
         const instIndex = updatedData.whatsapp.instances.findIndex(i => i.id === selectedInstId);
         if (instIndex !== -1) {
           updatedData.whatsapp.instances[instIndex].ai_prompt = prompt;
+          updatedData.whatsapp.instances[instIndex].ai_knowledge_base = knowledgeBase;
+
           await supabase
             .from('bot_sessions')
             .update({ data: updatedData })
             .eq('chat_id', user.id);
 
-          alert("✅ Prompt atualizado!");
+          alert("✅ IA Atualizada com Sucesso!");
         }
       }
     } catch (e) {
       alert("❌ Erro ao salvar.");
+      console.error(e);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleFileUpload = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    if (file.type === 'application/pdf') {
+      try {
+        setImportingPdf(true);
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await window.pdfjsLib.getDocument(arrayBuffer).promise;
+        let fullText = '';
+
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const textContent = await page.getTextContent();
+          const pageText = textContent.items.map(item => item.str).join(' ');
+          fullText += `\n--- Página ${i} ---\n${pageText}\n`;
+        }
+
+        setKnowledgeBase(prev => prev + (prev ? '\n\n' : '') + fullText);
+        alert("✅ PDF Importado! O texto foi adicionado à Base de Conhecimento.");
+      } catch (err) {
+        alert("❌ Erro ao ler PDF. Verifique se o arquivo é válido.");
+        console.error(err);
+      } finally {
+        setImportingPdf(false);
+      }
+    } else {
+      // Tentar ler como texto (TXT, MD, CSV)
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setKnowledgeBase(prev => prev + (prev ? '\n\n' : '') + e.target.result);
+        alert("✅ Arquivo Importado!");
+      };
+      reader.readAsText(file);
     }
   };
 
@@ -402,6 +448,7 @@ export default function App() {
                       const id = e.target.value;
                       setSelectedInstId(id);
                       setPrompt(instances.find(i => i.id === id)?.ai_prompt || '');
+                      setKnowledgeBase(instances.find(i => i.id === id)?.ai_knowledge_base || '');
                     }}
                   >
                     {instances.map(inst => (
@@ -417,19 +464,55 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="lg:col-span-3 glass-card p-5 lg:p-6 space-y-4 border-white/5">
-                <div className="flex justify-between items-center">
-                  <label className="text-xs font-bold flex items-center gap-2 text-white/60 uppercase">
-                    <MessageSquare size={14} className="text-primary" />
-                    Prompt do Sistema (Instruções)
-                  </label>
+              <div className="lg:col-span-3 space-y-6">
+                {/* SYSTEM PROMPT CARD */}
+                <div className="glass-card p-5 lg:p-6 space-y-4 border-white/5">
+                  <div className="flex justify-between items-center">
+                    <label className="text-xs font-bold flex items-center gap-2 text-white/60 uppercase">
+                      <MessageSquare size={14} className="text-primary" />
+                      Prompt do Sistema (Instruções)
+                    </label>
+                  </div>
+                  <textarea
+                    className="w-full h-[250px] lg:h-[300px] bg-black/20 border border-white/5 rounded-xl p-4 lg:p-6 font-mono text-[13px] leading-relaxed focus:ring-1 focus:ring-primary/20 outline-none transition-all scrollbar-hide text-white/80"
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                    placeholder="Defina as regras da sua IA aqui..."
+                  />
                 </div>
-                <textarea
-                  className="w-full h-[300px] lg:h-[400px] bg-black/20 border border-white/5 rounded-xl p-4 lg:p-6 font-mono text-[13px] leading-relaxed focus:ring-1 focus:ring-primary/20 outline-none transition-all scrollbar-hide text-white/80"
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                  placeholder="Defina as regras da sua IA aqui..."
-                />
+
+                {/* KNOWLEDGE BASE CARD */}
+                <div className="glass-card p-5 lg:p-6 space-y-4 border-white/5">
+                  <div className="flex justify-between items-center">
+                    <label className="text-xs font-bold flex items-center gap-2 text-white/60 uppercase">
+                      <FileText size={14} className="text-success" />
+                      Base de Conhecimento (RAG)
+                    </label>
+
+                    <label className="cursor-pointer bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-2 transition-all border border-white/5 hover:border-white/10">
+                      {importingPdf ? <RefreshCw className="animate-spin" size={12} /> : <Upload size={12} />}
+                      {importingPdf ? "LENDO PDF..." : "IMPORTAR PDF/TXT"}
+                      <input
+                        type="file"
+                        accept=".pdf,.txt,.md,.csv"
+                        className="hidden"
+                        onChange={handleFileUpload}
+                        disabled={importingPdf}
+                      />
+                    </label>
+                  </div>
+
+                  <p className="text-[10px] text-white/30">
+                    O conteúdo abaixo será usado pela IA como fonte de verdade para responder perguntas específicas.
+                  </p>
+
+                  <textarea
+                    className="w-full h-[200px] bg-black/20 border border-white/5 rounded-xl p-4 lg:p-6 font-mono text-[13px] leading-relaxed focus:ring-1 focus:ring-success/20 outline-none transition-all scrollbar-hide text-white/80"
+                    value={knowledgeBase}
+                    onChange={(e) => setKnowledgeBase(e.target.value)}
+                    placeholder="Cole aqui informações sobre preços, tabela de vendas, metragens, diferenciais, etc..."
+                  />
+                </div>
 
                 <div className="flex flex-col lg:flex-row items-center justify-between pt-4 gap-4">
                   <button
@@ -438,9 +521,9 @@ export default function App() {
                     className="w-full lg:w-auto bg-primary hover:bg-blue-600 disabled:opacity-50 px-8 py-3.5 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 shadow-xl shadow-primary/20"
                   >
                     {saving ? <RefreshCw className="animate-spin" size={16} /> : <Send size={16} />}
-                    ATUALIZAR IA
+                    SALVAR TUDO
                   </button>
-                  <p className="text-[10px] text-white/10 font-bold uppercase tracking-tight">Sync v1.265</p>
+                  <p className="text-[10px] text-white/10 font-bold uppercase tracking-tight">Sync v1.268 (RAG Ready)</p>
                 </div>
               </div>
             </div>
