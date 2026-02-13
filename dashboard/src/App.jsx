@@ -317,9 +317,9 @@ export default function App() {
         </button>      </div>
 
       {/* Sidebar - Desktop & Mobile Overlay */}
-      <aside className={`fixed inset-0 z-30 lg:static bg-[#0B0E14] lg:bg-transparent w-full lg:w-72 border-r border-white/5 flex flex-col transition-transform duration-300 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
-        <div className="p-8 hidden lg:block">
-          <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-500 via-blue-400 to-purple-500 bg-clip-text text-transparent tracking-tighter">
+      <aside className={`fixed inset-0 z-30 lg:static bg-[#0B0E14] lg:bg-transparent w-full lg:w-64 border-r border-white/5 flex flex-col transition-transform duration-300 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
+        <div className="p-6 hidden lg:block">
+          <h1 className="text-xl font-bold bg-gradient-to-r from-blue-500 via-blue-400 to-purple-500 bg-clip-text text-transparent tracking-tighter">
             VENUX AI
           </h1>
         </div>
@@ -363,29 +363,29 @@ export default function App() {
       <main className="flex-1 overflow-y-auto p-4 pt-20 lg:p-10 scrollbar-thin scrollbar-thumb-white/10">
         {activeTab === 'dashboard' && (
           <div className="space-y-6 lg:space-y-8 max-w-6xl mx-auto">
-            <header className="flex justify-between items-end pb-4">
+            <header className="flex justify-between items-end pb-2">
               <div>
-                <h2 className="text-2xl lg:text-3xl font-semibold tracking-tight text-white mb-1">Painel de Controle</h2>
-                <p className="text-white/40 text-sm font-medium">Visão geral da performance em tempo real.</p>
+                <h2 className="text-xl lg:text-2xl font-semibold tracking-tight text-white mb-0.5">Painel de Controle</h2>
+                <p className="text-white/40 text-xs font-medium">Visão geral da performance em tempo real.</p>
               </div>
-              <button onClick={fetchInitialData} className="p-2.5 hover:bg-white/5 rounded-xl transition-colors border border-transparent hover:border-white/5 active:scale-95">
-                <RefreshCw size={20} className="text-white/40 group-hover:text-white/70" />
+              <button onClick={fetchInitialData} className="p-2 hover:bg-white/5 rounded-lg transition-colors border border-transparent hover:border-white/5 active:scale-95">
+                <RefreshCw size={18} className="text-white/40 group-hover:text-white/70" />
               </button>
             </header>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
-              <StatCard title="Leads Totais" value={stats.total} icon={<MessageSquare size={20} />} color="blue" />
-              <StatCard title="Qualificados" value={stats.qualified} icon={<CheckCircle2 size={20} />} color="green" />
-              <StatCard title="Conversão" value={`${stats.conversion}%`} icon={<TrendingUp size={20} />} color="purple" />
-              <StatCard title="Corretores" value={stats.activeBrokers} icon={<Users size={20} />} color="orange" />
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
+              <StatCard title="Leads Totais" value={stats.total} icon={<MessageSquare size={18} />} color="blue" />
+              <StatCard title="Qualificados" value={stats.qualified} icon={<CheckCircle2 size={18} />} color="green" />
+              <StatCard title="Conversão" value={`${stats.conversion}%`} icon={<TrendingUp size={18} />} color="purple" />
+              <StatCard title="Corretores" value={stats.activeBrokers} icon={<Users size={18} />} color="orange" />
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-2 glass-card p-6 lg:p-8">
-                <h3 className="text-sm font-semibold mb-8 flex items-center gap-2 text-white/70 uppercase tracking-widest">
+              <div className="lg:col-span-2 glass-card p-4 lg:p-5">
+                <h3 className="text-xs font-semibold mb-4 flex items-center gap-2 text-white/70 uppercase tracking-widest">
                   <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]"></div>
                   Fluxo de Atendimento
                 </h3>
-                <div className="h-[300px] w-full">
+                <div className="h-[200px] w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={chartData}>
                       <defs>
@@ -398,14 +398,14 @@ export default function App() {
                       <XAxis
                         dataKey="name"
                         stroke="#ffffff20"
-                        fontSize={11}
+                        fontSize={10}
                         tickLine={false}
                         axisLine={false}
                         dy={10}
                       />
                       <YAxis
                         stroke="#ffffff20"
-                        fontSize={11}
+                        fontSize={10}
                         tickLine={false}
                         axisLine={false}
                         dx={-10}
@@ -414,28 +414,28 @@ export default function App() {
                         contentStyle={{
                           backgroundColor: '#151921',
                           border: '1px solid rgba(255,255,255,0.1)',
-                          borderRadius: '12px',
+                          borderRadius: '8px',
                           color: '#fff',
-                          fontSize: '12px',
+                          fontSize: '11px',
                           boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
                         }}
                       />
-                      <Area type="monotone" dataKey="leads" stroke="#3B82F6" strokeWidth={3} fillOpacity={1} fill="url(#colorLeads)" />
+                      <Area type="monotone" dataKey="leads" stroke="#3B82F6" strokeWidth={2} fillOpacity={1} fill="url(#colorLeads)" />
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>
               </div>
 
-              <div className="glass-card p-6 lg:p-8 flex flex-col">
-                <h3 className="text-sm font-semibold mb-8 text-white/70 uppercase tracking-widest text-center">Distribuição</h3>
-                <div className="flex-1 flex items-center justify-center min-h-[200px]">
-                  <ResponsiveContainer width="100%" height={220}>
+              <div className="glass-card p-4 lg:p-5 flex flex-col">
+                <h3 className="text-xs font-semibold mb-4 text-white/70 uppercase tracking-widest text-center">Distribuição</h3>
+                <div className="flex-1 flex items-center justify-center min-h-[160px]">
+                  <ResponsiveContainer width="100%" height={180}>
                     <PieChart>
                       <Pie
                         data={pieData}
-                        innerRadius={65}
-                        outerRadius={85}
-                        paddingAngle={5}
+                        innerRadius={50}
+                        outerRadius={70}
+                        paddingAngle={4}
                         dataKey="value"
                         stroke="none"
                       >
@@ -447,8 +447,9 @@ export default function App() {
                         contentStyle={{
                           backgroundColor: '#151921',
                           border: '1px solid rgba(255,255,255,0.1)',
-                          borderRadius: '12px',
-                          color: '#fff'
+                          borderRadius: '8px',
+                          color: '#fff',
+                          fontSize: '11px'
                         }}
                         itemStyle={{ color: '#fff' }}
                       />
