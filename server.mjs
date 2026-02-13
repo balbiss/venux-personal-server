@@ -140,7 +140,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.257";
+const SERVER_VERSION = "1.258";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -4211,7 +4211,7 @@ app.post("/webhook", async (req, res) => {
                                                     await supabase.from("ai_leads_tracking").upsert({
                                                         chat_id: remoteJid,
                                                         instance_id: tokenId,
-                                                        status: "HUMAN_ACTIVE",
+                                                        status: "TRANSFERRED",
                                                         last_interaction: new Date().toISOString()
                                                     }, { onConflict: "chat_id, instance_id" });
 
@@ -4232,7 +4232,7 @@ app.post("/webhook", async (req, res) => {
                                             log(`[WEBHOOK AI] Lead Qualificado: ${readableLead}`);
 
                                             // Pausar IA para este lead (SDR finalizado)
-                                            await supabase.from("ai_leads_tracking").update({ status: "HUMAN_ACTIVE" })
+                                            await supabase.from("ai_leads_tracking").update({ status: "TRANSFERRED" })
                                                 .eq("chat_id", remoteJid).eq("instance_id", tokenId);
 
                                             log(`[AI QUALIFY] Notificando admin ${chatId} sobre lead ${readableLead}`);
