@@ -140,7 +140,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.260";
+const SERVER_VERSION = "1.261";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -1131,7 +1131,6 @@ async function renderManageMenu(ctx, id) {
     }
 
     buttons.push([Markup.button.callback("🤖 Configurar IA SDR", `wa_ai_menu_${id}`)]);
-    buttons.push([Markup.button.callback("⚙️ Funil de Qualificação", `wa_funnel_menu_${id}`)]);
 
     buttons.push([Markup.button.callback("👥 Rodízio de Atendimento", `wa_brokers_menu_${id}`)]);
 
@@ -1195,149 +1194,6 @@ bot.action(/^wa_endpoints_(.+)$/, async (ctx) => {
         ])
     });
 });
-
-
-// --- Módulo de Funil de Qualificação (Sem IA) ---
-// --- SISTEMA DE PERGUNTAS SIMPLES (SIMPLIFICADO) ---
-
-async function renderFunnelMenu(ctx, instId) {
-    const { data: funnel } = await supabase.from("qualification_funnels").select("*").eq("instance_id", instId).maybeSingle();
-    const isActive = funnel?.is_active || false;
-    const questionsCount = funnel?.questions?.length || 0;
-    const hasPresentation = !!funnel?.presentation;
-
-    let text = `⚙️ *Funil de Qualificação* (${instId})\n\n`;
-    text += `O funil simples fará uma série de perguntas ao lead antes de liberar o atendimento.\n\n`;
-    text += `🟢 *Status:* ${isActive ? "✅ Ativado" : "❌ Desativado"}\n`;
-    text += `📝 *Apresentação:* ${hasPresentation ? "✅ Configurada" : "❌ Pendente"}\n`;
-    text += `❓ *Perguntas:* ${questionsCount} no fluxo\n`;
-    text += `🏁 *Ação Final:* \`${funnel?.final_action || "human"}\`\n\n`;
-    text += `Escolha uma opção:`;
-
-    const buttons = [
-        [Markup.button.callback(isActive ? "🔴 Desativar Funil" : "🟢 Ativar Funil", `wa_funnel_toggle_${instId}`)],
-        [Markup.button.callback("📝 Def. Apresentação", `wa_funnel_set_pres_${instId}`)],
-        [Markup.button.callback("❓ Gerenciar Perguntas", `wa_funnel_questions_${instId}`)],
-        [Markup.button.callback("🏁 Definir Ação Final", `wa_funnel_set_act_${instId}`)],
-        [Markup.button.callback("⬅️ Voltar", `manage_${instId}`)]
-    ];
-
-    await safeEdit(ctx, text, Markup.inlineKeyboard(buttons));
-}
-
-async function renderFunnelQuestionsMenu(ctx, instId) {
-    const { data: funnel } = await supabase.from("qualification_funnels").select("*").eq("instance_id", instId).maybeSingle();
-    const questions = funnel?.questions || [];
-
-    let text = `❓ *Gerenciar Perguntas*\n\n`;
-    if (questions.length === 0) {
-        text += `_Nenhuma pergunta cadastrada._\n\n`;
-    } else {
-        questions.forEach((q, i) => {
-            text += `${i + 1}. ${q.text}\n`;
-        });
-        text += `\n`;
-    }
-
-    const buttons = [
-        [Markup.button.callback("➕ Adicionar Pergunta", `wa_funnel_add_ques_${instId}`)],
-        [Markup.button.callback("🗑️ Remover Última", `wa_funnel_pop_ques_${instId}`)],
-        [Markup.button.callback("🔙 Voltar", `wa_funnel_menu_${instId}`)]
-    ];
-
-    await safeEdit(ctx, text, Markup.inlineKeyboard(buttons));
-}
-
-bot.action(/^wa_funnel_menu_(.+)$/, async (ctx) => {
-    safeAnswer(ctx);
-    const id = ctx.match[1];
-    const { inst, session } = await checkOwnership(ctx, id);
-    if (!inst) return;
-    await renderFunnelMenu(ctx, id);
-});
-
-bot.action(/^wa_funnel_toggle_(.+)$/, async (ctx) => {
-    safeAnswer(ctx);
-    const id = ctx.match[1];
-    const { inst, session } = await checkOwnership(ctx, id);
-    if (!inst) return;
-    const { data: funnel } = await supabase.from("qualification_funnels").select("*").eq("instance_id", id).maybeSingle();
-    if (!funnel) {
-        await supabase.from("qualification_funnels").insert({ instance_id: id, is_active: true });
-    } else {
-        await supabase.from("qualification_funnels").update({ is_active: !funnel.is_active }).eq("id", funnel.id);
-    }
-    await renderFunnelMenu(ctx, id);
-});
-
-bot.action(/^wa_funnel_set_pres_(.+)$/, async (ctx) => {
-    safeAnswer(ctx);
-    const id = ctx.match[1];
-    const { inst, session } = await checkOwnership(ctx, id);
-    if (!inst) return;
-    session.stage = `WA_FUNNEL_WAIT_PRES_${id}`;
-    await syncSession(ctx, session);
-    ctx.reply("📝 *Mensagem de Apresentação*\n\nDigite o texto que o robô falará ao iniciar o funil:");
-});
-
-bot.action(/^wa_funnel_questions_(.+)$/, async (ctx) => {
-    safeAnswer(ctx);
-    const id = ctx.match[1];
-    const { inst, session } = await checkOwnership(ctx, id);
-    if (!inst) return;
-    await renderFunnelQuestionsMenu(ctx, id);
-});
-
-bot.action(/^wa_funnel_add_ques_(.+)$/, async (ctx) => {
-    safeAnswer(ctx);
-    const id = ctx.match[1];
-    const { inst, session } = await checkOwnership(ctx, id);
-    if (!inst) return;
-    session.stage = `WA_FUNNEL_WAIT_QUES_${id}`;
-    await syncSession(ctx, session);
-    ctx.reply("➕ *Nova Pergunta*\n\nDigite a pergunta que deseja adicionar ao final da lista:");
-});
-
-bot.action(/^wa_funnel_pop_ques_(.+)$/, async (ctx) => {
-    safeAnswer(ctx);
-    const id = ctx.match[1];
-    const { inst, session } = await checkOwnership(ctx, id);
-    if (!inst) return;
-    const { data: funnel } = await supabase.from("qualification_funnels").select("*").eq("instance_id", id).maybeSingle();
-    let questions = funnel?.questions || [];
-    if (questions.length > 0) {
-        questions.pop();
-        await supabase.from("qualification_funnels").update({ questions }).eq("id", funnel.id);
-        ctx.answerCbQuery("✅ Última pergunta removida");
-    }
-    await renderFunnelQuestionsMenu(ctx, id);
-});
-
-bot.action(/^wa_funnel_set_act_(.+)$/, async (ctx) => {
-    safeAnswer(ctx);
-    const id = ctx.match[1];
-    const { inst, session } = await checkOwnership(ctx, id);
-    if (!inst) return;
-    const text = "🏁 *Definir Ação Final*\n\nO que o robô deve fazer após o lead terminar o funil?";
-    const buttons = [
-        [Markup.button.callback("👤 Transbordo Humano", `wa_funnel_set_f_${id}_human`)],
-        [Markup.button.callback("👥 Rodízio de Corretores", `wa_funnel_set_f_${id}_broker_rotation`)],
-        [Markup.button.callback("🔙 Voltar", `wa_funnel_menu_${id}`)]
-    ];
-    await safeEdit(ctx, text, Markup.inlineKeyboard(buttons));
-});
-
-bot.action(/^wa_funnel_set_f_(.+)_(.+)$/, async (ctx) => {
-    safeAnswer(ctx);
-    const id = ctx.match[1];
-    const act = ctx.match[2];
-    const { inst, session } = await checkOwnership(ctx, id);
-    if (!inst) return;
-    await supabase.from("qualification_funnels").update({ final_action: act }).eq("instance_id", id);
-    ctx.answerCbQuery("✅ Ação final atualizada");
-    await renderFunnelMenu(ctx, id);
-});
-
 
 
 // --- Módulo de Disparo em Massa ---
@@ -2713,113 +2569,6 @@ bot.action(/^wa_broker_confirm_del_(.+)_(.+)$/, async (ctx) => {
 
 
 
-// --- Módulo de Funil de Qualificação (Lógica de Execução) ---
-async function handleFunnel(tgChatId, instId, remoteJid, text, pushName) {
-    try {
-        const { data: funnel } = await supabase.from("qualification_funnels").select("*").eq("instance_id", instId).eq("is_active", true).maybeSingle();
-        if (!funnel) return false;
-
-        let { data: state } = await supabase.from("funnel_leads_state").select("*").eq("instance_id", instId).eq("remote_jid", remoteJid).maybeSingle();
-        if (state && state.status !== 'active') return false;
-
-        const questions = funnel.questions || [];
-        const presentation = funnel.presentation;
-
-        const simulateDelay = async (seconds) => {
-            await callWuzapi("/chat/presence", "POST", { Phone: remoteJid, Type: "composing" }, instId);
-            await new Promise(r => setTimeout(r, (seconds || 2) * 1000));
-        };
-
-        if (!state) {
-            log(`[FUNNEL] Iniciando funil simples para ${remoteJid}`);
-            if (presentation) {
-                await simulateDelay(2);
-                await callWuzapi("/chat/send/text", "POST", { Phone: remoteJid, Body: presentation }, instId);
-                await new Promise(r => setTimeout(r, 1000));
-            }
-
-            if (questions.length > 0) {
-                await simulateDelay(2);
-                await callWuzapi("/chat/send/text", "POST", { Phone: remoteJid, Body: questions[0].text }, instId);
-                await supabase.from("funnel_leads_state").insert({
-                    instance_id: instId,
-                    remote_jid: remoteJid,
-                    funnel_id: funnel.id,
-                    current_step: 0,
-                    status: 'active',
-                    answers: {}
-                });
-                return true;
-            } else {
-                // Sem perguntas, finaliza direto
-                await finishFunnel(tgChatId, instId, remoteJid, funnel, {}, pushName);
-                return true;
-            }
-        }
-
-        // Se já existe estado, trata a resposta à pergunta atual
-        const currentStep = state.current_step;
-        const answers = state.answers || {};
-        const currentQuestion = questions[currentStep];
-
-        if (currentQuestion) {
-            answers[currentQuestion.text] = text;
-        }
-
-        const nextStep = currentStep + 1;
-        if (nextStep < questions.length) {
-            log(`[FUNNEL] Avançando para pergunta ${nextStep} para ${remoteJid}`);
-            await simulateDelay(2);
-            await callWuzapi("/chat/send/text", "POST", { Phone: remoteJid, Body: questions[nextStep].text }, instId);
-            await supabase.from("funnel_leads_state").update({
-                current_step: nextStep,
-                answers,
-                last_interaction: new Date().toISOString()
-            }).eq("id", state.id);
-        } else {
-            log(`[FUNNEL] Concluído para ${remoteJid}`);
-            await finishFunnel(tgChatId, instId, remoteJid, funnel, answers, pushName);
-            await supabase.from("funnel_leads_state").update({
-                status: 'completed',
-                answers,
-                last_interaction: new Date().toISOString()
-            }).eq("id", state.id);
-        }
-
-        return true;
-    } catch (e) {
-        log(`[ERR FUNNEL-SIMPLE] ${e.message}`);
-        return false;
-    }
-}
-
-async function finishFunnel(tgChatId, instId, remoteJid, funnel, answers, pushName) {
-    const action = funnel.final_action || "human";
-    const summary = Object.entries(answers).map(([q, a]) => `*${q}:* ${a}`).join("\n");
-    const readableLead = `${pushName} (${remoteJid.split('@')[0]})`;
-
-    log(`[FUNNEL] Finalizando funil para ${remoteJid}. Ação: ${action}`);
-
-    if (action === "human") {
-        await supabase.from("ai_leads_tracking").upsert({
-            chat_id: remoteJid,
-            instance_id: instId,
-            last_interaction: new Date().toISOString(),
-            status: "TRANSFERRED"
-        }, { onConflict: "chat_id, instance_id" });
-
-        const notifyText = `🎯 *Funil de Qualificação Concluído!*\n\n` +
-            `O cliente **${readableLead}** terminou o funil automático.\n\n` +
-            `📝 *Dados Coletados:*\n${summary || "_Nenhum dado._"}\n\n` +
-            `👉 *Ação:* Transbordo humano ativado.`;
-
-        bot.telegram.sendMessage(tgChatId, notifyText, { parse_mode: "Markdown" });
-    } else if (action === "broker_rotation") {
-        const notifyText = `🎯 *Funil Concluído!* **${readableLead}**\n\nEncaminhando para o rodízio de corretores...`;
-        bot.telegram.sendMessage(tgChatId, notifyText, { parse_mode: "Markdown" });
-        await distributeLead(tgChatId, remoteJid, instId, readableLead, summary || "Lead qualificado via funil manual.");
-    }
-}
 
 // Função para processar IA (Suporta Texto, Áudio/Whisper e Histórico/Memória)
 async function handleAiSdr({ text, audioBase64, history = [], systemPrompt, chatId, instanceId }) {
@@ -3635,30 +3384,6 @@ bot.on("text", async (ctx) => {
 
         ctx.reply(`✅ *Disparo Agendado!*\n\n📅 Data: \`${dateStr}\`\n🚀 Instância: \`${instId}\`\n\nO sistema iniciará o envio automaticamente no horário marcado.`);
 
-    } else if (session.stage && session.stage.startsWith("WA_FUNNEL_WAIT_PRES_")) {
-        const instId = session.stage.replace("WA_FUNNEL_WAIT_PRES_", "");
-        const { inst: ownershipOk } = await checkOwnership(ctx, instId);
-        if (!ownershipOk) return;
-        const text = ctx.message.text.trim();
-        await supabase.from("qualification_funnels").update({ presentation: text }).eq("instance_id", instId);
-        session.stage = "READY";
-        await syncSession(ctx, session);
-        ctx.reply("✅ *Mensagem de Apresentação salva!*", { parse_mode: "Markdown" });
-        await renderFunnelMenu(ctx, instId);
-
-    } else if (session.stage && session.stage.startsWith("WA_FUNNEL_WAIT_QUES_")) {
-        const instId = session.stage.replace("WA_FUNNEL_WAIT_QUES_", "");
-        const { inst: ownershipOk } = await checkOwnership(ctx, instId);
-        if (!ownershipOk) return;
-        const text = ctx.message.text.trim();
-        const { data: funnel } = await supabase.from("qualification_funnels").select("*").eq("instance_id", instId).maybeSingle();
-        let questions = funnel?.questions || [];
-        questions.push({ text, type: 'text' });
-        await supabase.from("qualification_funnels").update({ questions }).eq("id", funnel.id);
-        session.stage = "READY";
-        await syncSession(ctx, session);
-        ctx.reply("✅ *Pergunta adicionada com sucesso!*", { parse_mode: "Markdown" });
-        await renderFunnelQuestionsMenu(ctx, instId);
 
     } else if (session.stage && session.stage.startsWith("WA_WAITING_PAIR_PHONE_")) {
         const instId = session.stage.replace("WA_WAITING_PAIR_PHONE_", "");
@@ -4154,9 +3879,6 @@ app.post("/webhook", async (req, res) => {
                         status: "RESPONDED"
                     }, { onConflict: "chat_id, instance_id" });
 
-                    // --- 3. Processar Funil de Qualificação Manual (Se ativo) ---
-                    const funnelProcessed = await handleFunnel(chatId, tokenId, remoteJid, text, pushName);
-                    if (funnelProcessed) return res.send({ ok: true });
 
                     if (inst && inst.ai_enabled) {
                         if (text || audioBase64) {
