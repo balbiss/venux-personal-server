@@ -140,7 +140,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.276-debug";
+const SERVER_VERSION = "1.277";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -2771,12 +2771,11 @@ async function distributeLead(tgChatId, leadJid, instId, leadName, summary) {
                 ...Markup.inlineKeyboard([[Markup.button.callback("✅ Retomar IA", `wa_ai_resume_${instId}_${leadJid}`)]])
             });
 
-            // V1.275: Parar a IA para este contato mesmo assim - UPSERT para garantir persistência
+            // V1.277: Parar a IA para este contato mesmo assim - UPSERT sem lead_name
             const upsertResult = await supabase.from("ai_leads_tracking")
                 .upsert({
                     chat_id: leadJid,
                     instance_id: instId,
-                    lead_name: leadName,
                     last_interaction: new Date().toISOString(),
                     status: "TRANSFERRED"
                 }, { onConflict: "chat_id, instance_id" });
@@ -4081,11 +4080,10 @@ app.post("/webhook", async (req, res) => {
                                         if (aiResponse.includes("[QUALIFICADO]")) {
                                             log(`[WEBHOOK AI] Lead Qualificado: ${readableLead}`);
 
-                                            // V1.274: Pausar IA para este lead (SDR finalizado) - Usar UPSERT para garantir persistência
+                                            // V1.277: Pausar IA para este lead (SDR finalizado) - UPSERT sem lead_name
                                             const qualifyUpsert = await supabase.from("ai_leads_tracking").upsert({
                                                 chat_id: remoteJid,
                                                 instance_id: tokenId,
-                                                lead_name: readableLead,
                                                 last_interaction: new Date().toISOString(),
                                                 status: "TRANSFERRED"
                                             }, { onConflict: "chat_id, instance_id" });
