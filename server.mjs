@@ -140,7 +140,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.264";
+const SERVER_VERSION = "1.265";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
