@@ -140,7 +140,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.271";
+const SERVER_VERSION = "1.272";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -2521,7 +2521,7 @@ bot.action(/^wa_list_paused_leads_(.+)$/, async (ctx) => {
 
     const buttons = [];
     leads.forEach(lead => {
-        const phone = lead.chat_id.split("@")[0];
+        const displayName = lead.lead_name || lead.chat_id.split("@")[0];
         const date = new Date(lead.last_interaction).toLocaleString("pt-BR", {
             day: '2-digit',
             month: '2-digit',
@@ -2529,11 +2529,10 @@ bot.action(/^wa_list_paused_leads_(.+)$/, async (ctx) => {
             minute: '2-digit'
         });
         const typeIcon = lead.status === 'TRANSFERRED' ? '👤' : '✋';
-        const namePart = lead.lead_name ? ` - ${lead.lead_name}` : "";
 
         // Linha de Info (inteira para caber tudo)
         buttons.push([
-            Markup.button.callback(`${typeIcon} ${phone}${namePart} (${date})`, `noop`)
+            Markup.button.callback(`${typeIcon} ${displayName} (${date})`, `noop`)
         ]);
         // Linha de Ação
         buttons.push([
@@ -2772,7 +2771,11 @@ async function distributeLead(tgChatId, leadJid, instId, leadName, summary) {
 
             // Parar a IA para este contato mesmo assim
             await supabase.from("ai_leads_tracking")
-                .update({ status: "TRANSFERRED", last_interaction: new Date().toISOString() })
+                .update({
+                    status: "TRANSFERRED",
+                    last_interaction: new Date().toISOString(),
+                    lead_name: leadName
+                })
                 .eq("instance_id", instId)
                 .eq("chat_id", leadJid);
             return;
@@ -2805,7 +2808,11 @@ async function distributeLead(tgChatId, leadJid, instId, leadName, summary) {
 
         // Marcar como TRANSFERRED para parar a IA para sempre
         await supabase.from("ai_leads_tracking")
-            .update({ status: "TRANSFERRED", last_interaction: new Date().toISOString() })
+            .update({
+                status: "TRANSFERRED",
+                last_interaction: new Date().toISOString(),
+                lead_name: leadName
+            })
             .eq("instance_id", instId)
             .eq("chat_id", leadJid); // Consistency: using chat_id instead of remote_jid if possible
 
@@ -3878,6 +3885,12 @@ app.post("/webhook", async (req, res) => {
                 const remoteJid = info.RemoteJID || info.Chat || info.Sender || info.SenderAlt || "";
                 const pushName = info.PushName || "Desconhecido";
                 const senderAlt = info.SenderAlt || "";
+
+                // V1.272: Garantir identificação legível (Nome + Telefone Real)
+                // Se o JID for mascarado (LID), o SenderAlt geralmente contém o telefone real.
+                const realPhone = (senderAlt || remoteJid).split('@')[0];
+                const readableLead = `${pushName} (${realPhone})`;
+
                 const isFromMe = info.IsFromMe || false;
                 const isGroup = info.IsGroup || remoteJid.includes("@g.us");
 
@@ -3956,6 +3969,7 @@ app.post("/webhook", async (req, res) => {
                         await supabase.from("ai_leads_tracking").upsert({
                             chat_id: remoteJid,
                             instance_id: tokenId,
+                            lead_name: readableLead,
                             last_interaction: new Date().toISOString(),
                             status: "HUMAN_ACTIVE"
                         }, { onConflict: "chat_id, instance_id" });
@@ -3990,6 +4004,7 @@ app.post("/webhook", async (req, res) => {
                     await supabase.from("ai_leads_tracking").upsert({
                         chat_id: remoteJid,
                         instance_id: tokenId,
+                        lead_name: readableLead,
                         last_interaction: new Date().toISOString(),
                         nudge_count: 0,
                         status: "RESPONDED"
@@ -4038,7 +4053,6 @@ app.post("/webhook", async (req, res) => {
                                             .trim();
 
                                         if (aiResponse.includes("[TRANSFERIR]")) {
-                                            const readableLead = `${pushName} (${(senderAlt || remoteJid).split('@')[0]})`;
                                             log(`[WEBHOOK AI] IA solicitou transbordo para ${readableLead}`);
 
                                             // V1.243: Processar notificações e updates em background para NÃO travar o envio da mensagem
@@ -4061,7 +4075,6 @@ app.post("/webhook", async (req, res) => {
                                             })();
                                         }
                                         if (aiResponse.includes("[QUALIFICADO]")) {
-                                            const readableLead = `${pushName} (${(senderAlt || remoteJid).split('@')[0]})`;
                                             log(`[WEBHOOK AI] Lead Qualificado: ${readableLead}`);
 
                                             // Pausar IA para este lead (SDR finalizado)
