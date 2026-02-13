@@ -140,7 +140,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.266";
+const SERVER_VERSION = "1.268";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -2260,16 +2260,17 @@ ${knowledgeBase}
 2. ANTI-REPETIÇÃO (CRÍTICO): LEIA O HISTÓRICO. Se o cliente já respondeu, NÃO pergunte de novo. Assuma a resposta e avance.
 3. PACIÊNCIA: Faça EXATAMENTE UMA pergunta por mensagem.
 
-# TRANSBORDO HUMANO (CRÍTICO)
-Se o cliente falar sobre os seguintes temas, use a tag [TRANSFERIR] imediatamente:
+# TRANSBORDO HUMANO (ALTISSIMA PRIORIDADE)
+Se o cliente pedir para falar com humano, atendente, ou citar os seguintes temas, VOCÊ DEVE ENCERRAR A RESPOSTA COM a tag [TRANSFERIR]:
 "${humanTopics}"
 
 # QUALIFICAÇÃO DE LEADS (RODÍZIO)
-Ao identificar que o cliente está pronto ou qualificado conforme seu objetivo, você DEVE incluir a tag [QUALIFICADO] no final da resposta. Isso é essencial para que o sistema funcione.
+Ao identificar que o cliente está pronto ou qualificado, encerre com [QUALIFICADO].
 
-# FINALIZAÇÃO (Tags Obrigatórias)
-- Para transbordo humano: use [TRANSFERIR]
-- Para lead qualificado (pronto para venda/rodízio): use [QUALIFICADO]
+# FORMATO DE RESPOSTA (OBRIGATÓRIO)
+- Se for transbordo: "Sua mensagem de despedida... [TRANSFERIR]"
+- Se for qualificado: "Sua mensagem de agendamento... [QUALIFICADO]"
+- Caso contrário: Apenas a resposta.
 `;
 }
 
@@ -2652,6 +2653,13 @@ async function handleAiSdr({ text, audioBase64, history = [], systemPrompt, chat
                 role: "assistant",
                 content: aiResponse
             });
+        }
+
+        // Fallback de Segurança: Se o usuário pediu humano explicitamente e a IA não gerou a tag, forçar.
+        const userIntentHuman = userMessage.toLowerCase().match(/\b(humano|atendente|falar com alguem|falar com alguém|pessoa|atendimento|suporte)\b/);
+        if (userIntentHuman && !aiResponse.includes("[TRANSFERIR]") && !aiResponse.includes("[QUALIFICADO]")) {
+            log(`[AI SDR] Detectado pedido de humano sem tag da IA. Forçando [TRANSFERIR].`);
+            return aiResponse + "\n\n[TRANSFERIR]";
         }
 
         return aiResponse;
