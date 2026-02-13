@@ -140,7 +140,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.272";
+const SERVER_VERSION = "1.273";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -4116,8 +4116,8 @@ app.post("/webhook", async (req, res) => {
                                             log(`[AI SEND] Resposta enviada para ${remoteJid}: ${cRes.success ? 'OK' : 'FALHA'}`);
                                         }
 
-                                        // V1.239+: Atualizar tracking (Se não for transferência, marcar como AI_SENT)
-                                        if (!aiResponse.includes("[TRANSFERIR]")) {
+                                        // V1.273: Atualizar tracking (Se não for transferência OU qualificação, marcar como AI_SENT)
+                                        if (!aiResponse.includes("[TRANSFERIR]") && !aiResponse.includes("[QUALIFICADO]")) {
                                             try {
                                                 await supabase.from("ai_leads_tracking").update({
                                                     last_interaction: new Date().toISOString(),
