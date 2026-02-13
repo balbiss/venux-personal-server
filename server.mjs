@@ -4338,3 +4338,4 @@ app.listen(PORT, "0.0.0.0", () => {
     const publicUrl = process.env.WEBHOOK_URL ? process.env.WEBHOOK_URL.replace("/webhook", "") : `http://localhost:${PORT}`;
     log(`Acesse via: ${publicUrl}/qr-client`);
 });
+
