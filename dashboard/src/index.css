@@ -1,35 +1,36 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 
 @theme {
-  --color-background: #0B0E14;
-  --color-foreground: #F8FAFC;
-  --color-card: #151921;
+  --color-background: #0E1621;
+  --color-foreground: #F5F5F5;
+  --color-card: #17212B;
   --color-primary: #3B82F6;
   --color-secondary: #64748B;
-  --color-accent: #8B5CF6;
-  --color-success: #10B981;
-  --color-warning: #F59E0B;
-  --color-danger: #EF4444;
+  --color-accent: #2AABEE;
+  --color-success: #00C851;
+  --color-warning: #FFBB33;
+  --color-danger: #FF4444;
 
-  --background-image-glass-gradient: linear-gradient(180deg, rgba(21, 25, 33, 0.7) 0%, rgba(21, 25, 33, 0.4) 100%);
+  --font-sans: 'Inter', sans-serif;
+
   --background-image-glow-gradient: linear-gradient(180deg, rgba(59, 130, 246, 0.15) 0%, rgba(59, 130, 246, 0.05) 100%);
 }
 
 @utility glass-card {
-  background-image: var(--background-image-glass-gradient);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(12px);
-  border-radius: 1rem;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  background-color: var(--color-card);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
 }
 
 @utility glass-card-hover {
   transition: all 0.3s ease;
 
   &:hover {
-    border-color: rgba(59, 130, 246, 0.4);
-    box-shadow: 0 0 15px rgba(59, 130, 246, 0.15);
-    background-image: var(--background-image-glow-gradient);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+    border-color: rgba(59, 130, 246, 0.3);
   }
 }
 
@@ -37,6 +38,6 @@ body {
   margin: 0;
   background-color: var(--color-background);
   color: var(--color-foreground);
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }

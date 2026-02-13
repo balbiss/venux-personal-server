@@ -317,9 +317,9 @@ export default function App() {
         </button>      </div>
 
       {/* Sidebar - Desktop & Mobile Overlay */}
-      <aside className={`fixed inset-0 z-30 lg:static bg-[#0B0E14] lg:bg-transparent w-full lg:w-64 border-r border-white/5 flex flex-col transition-transform duration-300 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
+      <aside className={`fixed inset-0 z-30 lg:static bg-[#0E1621] lg:bg-transparent w-full lg:w-64 border-r border-white/5 flex flex-col transition-transform duration-300 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
         <div className="p-6 hidden lg:block">
-          <h1 className="text-xl font-bold bg-gradient-to-r from-blue-500 via-blue-400 to-purple-500 bg-clip-text text-transparent tracking-tighter">
+          <h1 className="text-xl font-bold bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-600 bg-clip-text text-transparent tracking-tighter">
             VENUX AI
           </h1>
         </div>
@@ -381,30 +381,30 @@ export default function App() {
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="lg:col-span-2 glass-card p-4 lg:p-5">
-                <h3 className="text-xs font-semibold mb-4 flex items-center gap-2 text-white/70 uppercase tracking-widest">
-                  <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]"></div>
+                <h3 className="text-xs font-semibold mb-6 flex items-center gap-2 text-white/70 uppercase tracking-widest">
+                  <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.8)]"></div>
                   Fluxo de Atendimento
                 </h3>
-                <div className="h-[200px] w-full">
+                <div className="h-[240px] w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={chartData}>
                       <defs>
                         <linearGradient id="colorLeads" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.3} />
-                          <stop offset="95%" stopColor="#3B82F6" stopOpacity={0} />
+                          <stop offset="5%" stopColor="#22d3ee" stopOpacity={0.3} />
+                          <stop offset="95%" stopColor="#22d3ee" stopOpacity={0} />
                         </linearGradient>
                       </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" vertical={false} />
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.03)" vertical={false} />
                       <XAxis
                         dataKey="name"
-                        stroke="#ffffff20"
+                        stroke="rgba(255,255,255,0.2)"
                         fontSize={10}
                         tickLine={false}
                         axisLine={false}
                         dy={10}
                       />
                       <YAxis
-                        stroke="#ffffff20"
+                        stroke="rgba(255,255,255,0.2)"
                         fontSize={10}
                         tickLine={false}
                         axisLine={false}
@@ -412,30 +412,38 @@ export default function App() {
                       />
                       <Tooltip
                         contentStyle={{
-                          backgroundColor: '#151921',
-                          border: '1px solid rgba(255,255,255,0.1)',
-                          borderRadius: '8px',
+                          backgroundColor: '#17212B',
+                          border: '1px solid rgba(255,255,255,0.05)',
+                          borderRadius: '12px',
                           color: '#fff',
-                          fontSize: '11px',
-                          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                          fontSize: '12px',
+                          boxShadow: '0 8px 30px rgba(0, 0, 0, 0.4)'
                         }}
                       />
-                      <Area type="monotone" dataKey="leads" stroke="#3B82F6" strokeWidth={2} fillOpacity={1} fill="url(#colorLeads)" />
+                      <Area
+                        type="monotone"
+                        dataKey="leads"
+                        stroke="#22d3ee"
+                        strokeWidth={3}
+                        fillOpacity={1}
+                        fill="url(#colorLeads)"
+                        style={{ filter: 'drop-shadow(0 0 6px rgba(34, 211, 238, 0.4))' }}
+                      />
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>
               </div>
 
-              <div className="glass-card p-4 lg:p-5 flex flex-col">
-                <h3 className="text-xs font-semibold mb-4 text-white/70 uppercase tracking-widest text-center">Distribuição</h3>
+              <div className="glass-card p-6 flex flex-col">
+                <h3 className="text-xs font-semibold mb-6 text-white/70 uppercase tracking-widest text-center">Distribuição</h3>
                 <div className="flex-1 flex items-center justify-center min-h-[160px]">
                   <ResponsiveContainer width="100%" height={180}>
                     <PieChart>
                       <Pie
                         data={pieData}
-                        innerRadius={50}
-                        outerRadius={70}
-                        paddingAngle={4}
+                        innerRadius={60}
+                        outerRadius={75}
+                        paddingAngle={6}
                         dataKey="value"
                         stroke="none"
                       >
@@ -645,17 +653,23 @@ function NavItem({ icon, label, active, onClick }) {
   return (
     <button
       onClick={onClick}
-      className={`w-full flex items-center gap-4 p-4 rounded-xl transition-all duration-300 group ${active
-        ? 'bg-primary/10 text-primary'
-        : 'text-white/40 hover:bg-white/5 hover:text-white'
+      className={`w-full flex items-center gap-4 p-3.5 mx-2 rounded-xl transition-all duration-300 group relative overflow-hidden ${active
+        ? 'bg-white/[0.04] text-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.05)]'
+        : 'text-white/40 hover:bg-white/[0.02] hover:text-white'
         }`}
+      style={{ width: 'calc(100% - 16px)' }}
     >
-      <div className={`transition-all duration-300 ${active ? 'scale-110 drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]' : 'group-hover:scale-110'}`}>
+      {active && (
+        <div className="absolute left-0 top-1/2 -translate-y-1/2 h-8 w-1 bg-cyan-500 rounded-r-full shadow-[0_0_12px_rgba(6,182,212,0.8)]"></div>
+      )}
+
+      <div className={`transition-all duration-300 pl-2 ${active ? 'text-cyan-400 drop-shadow-[0_0_8px_rgba(34,211,238,0.5)]' : 'group-hover:text-white'}`}>
         {icon}
       </div>
-      <span className={`text-sm tracking-wide ${active ? 'font-bold' : 'font-medium'}`}>{label}</span>
+      <span className={`text-[13px] tracking-wide ${active ? 'font-semibold' : 'font-medium'}`}>{label}</span>
+
       {active && (
-        <div className="ml-auto w-1.5 h-1.5 rounded-full bg-primary shadow-[0_0_8px_#3B82F6]"></div>
+        <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/10 to-transparent pointer-events-none"></div>
       )}
     </button>
   );
@@ -663,26 +677,28 @@ function NavItem({ icon, label, active, onClick }) {
 
 function StatCard({ title, value, icon, color = "blue" }) {
   const colors = {
-    blue: "text-blue-500 bg-blue-500/10 group-hover:bg-blue-500/20",
-    green: "text-green-500 bg-green-500/10 group-hover:bg-green-500/20",
-    purple: "text-purple-500 bg-purple-500/10 group-hover:bg-purple-500/20",
-    orange: "text-orange-500 bg-orange-500/10 group-hover:bg-orange-500/20",
+    blue: "text-cyan-400 bg-cyan-400/10 group-hover:bg-cyan-400/20",
+    green: "text-emerald-400 bg-emerald-400/10 group-hover:bg-emerald-400/20",
+    purple: "text-violet-400 bg-violet-400/10 group-hover:bg-violet-400/20",
+    orange: "text-amber-400 bg-amber-400/10 group-hover:bg-amber-400/20",
   };
 
   return (
-    <div className="glass-card p-6 flex flex-col justify-between hover:border-primary/30 transition-all duration-500 group relative overflow-hidden">
-      <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-white/5 to-transparent rounded-bl-[100px] opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"></div>
+    <div className="glass-card p-6 flex flex-col justify-between glass-card-hover group relative overflow-hidden h-full">
+      <div className="absolute -top-10 -right-10 w-32 h-32 bg-gradient-to-br from-white/5 to-transparent rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none blur-xl"></div>
 
       <div className="flex justify-between items-start mb-4">
-        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-colors duration-300 ${colors[color]}`}>
+        <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-all duration-300 ${colors[color]} backdrop-blur-sm`}>
           {icon}
         </div>
-        {/* <span className="text-xs font-bold text-green-400 bg-green-400/10 px-2 py-1 rounded-full">+12%</span> */}
       </div>
 
       <div>
-        <span className="text-white/40 text-xs font-bold uppercase tracking-widest block mb-1">{title}</span>
-        <div className="text-3xl font-bold text-white tracking-tight">{value}</div>
+        <span className="text-white/40 text-[11px] font-bold uppercase tracking-widest block mb-1">{title}</span>
+        <div className="text-2xl font-bold text-white tracking-tight flex items-baseline gap-1">
+          {value}
+          <span className="text-[10px] font-normal text-white/20">/mês</span>
+        </div>
       </div>
     </div>
   );
