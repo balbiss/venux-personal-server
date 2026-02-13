@@ -140,7 +140,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.274";
+const SERVER_VERSION = "1.275";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -2769,15 +2769,15 @@ async function distributeLead(tgChatId, leadJid, instId, leadName, summary) {
                 ...Markup.inlineKeyboard([[Markup.button.callback("✅ Retomar IA", `wa_ai_resume_${instId}_${leadJid}`)]])
             });
 
-            // Parar a IA para este contato mesmo assim
+            // V1.275: Parar a IA para este contato mesmo assim - UPSERT para garantir persistência
             await supabase.from("ai_leads_tracking")
-                .update({
-                    status: "TRANSFERRED",
+                .upsert({
+                    chat_id: leadJid,
+                    instance_id: instId,
+                    lead_name: leadName,
                     last_interaction: new Date().toISOString(),
-                    lead_name: leadName
-                })
-                .eq("instance_id", instId)
-                .eq("chat_id", leadJid);
+                    status: "TRANSFERRED"
+                }, { onConflict: "chat_id, instance_id" });
             return;
         }
 
@@ -2806,15 +2806,15 @@ async function distributeLead(tgChatId, leadJid, instId, leadName, summary) {
             `🔔 *Instância:* ${instId}\n` +
             `👉 *Ação:* Lead qualificado e entregue. A IA foi encerrada para este contato.`;
 
-        // Marcar como TRANSFERRED para parar a IA para sempre
+        // V1.275: Marcar como TRANSFERRED para parar a IA para sempre - UPSERT para garantir persistência
         await supabase.from("ai_leads_tracking")
-            .update({
-                status: "TRANSFERRED",
+            .upsert({
+                chat_id: leadJid,
+                instance_id: instId,
+                lead_name: leadName,
                 last_interaction: new Date().toISOString(),
-                lead_name: leadName
-            })
-            .eq("instance_id", instId)
-            .eq("chat_id", leadJid); // Consistency: using chat_id instead of remote_jid if possible
+                status: "TRANSFERRED"
+            }, { onConflict: "chat_id, instance_id" }); // Consistency: using chat_id instead of remote_jid if possible
 
         const rawPhone = broker.phone;
         const cleanPhone = rawPhone.replace(/\D/g, "");
