@@ -140,7 +140,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.255";
+const SERVER_VERSION = "1.256";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -1133,10 +1133,7 @@ async function renderManageMenu(ctx, id) {
     buttons.push([Markup.button.callback("🤖 Configurar IA SDR", `wa_ai_menu_${id}`)]);
     buttons.push([Markup.button.callback("⚙️ Funil de Qualificação", `wa_funnel_menu_${id}`)]);
 
-    // Mostra corretores apenas se for nicho imobiliária
-    if (inst && inst.niche === 'real_estate') {
-        buttons.push([Markup.button.callback("👥 Gerenciar Corretores", `wa_brokers_menu_${id}`)]);
-    }
+    buttons.push([Markup.button.callback("👥 Rodízio de Atendimento", `wa_brokers_menu_${id}`)]);
 
     buttons.push([Markup.button.callback("🚪 Logout", `wa_logout_${id}`), Markup.button.callback("🗑️ Deletar", `wa_del_${id}`)]);
     buttons.push([Markup.button.callback("🔙 Voltar", "cmd_instancias")]);
@@ -2634,12 +2631,12 @@ bot.action(/^wa_ai_resume_(.+)_(.+)$/, async (ctx) => {
 async function renderBrokersMenu(ctx, instId) {
     const { data: brokers } = await supabase.from("real_estate_brokers").select("*");
 
-    let text = `👤 *Gerenciamento de Corretores*\n\n` +
-        `Cadastre os corretores que participarão do rodízio de leads para a instância \`${instId}\`.\n\n` +
-        `📋 *Lista de Corretores:* \n`;
+    let text = `👤 *Rodízio de Atendimento* (${instId})\n\n` +
+        `Cadastre os atendentes/vendedores que participarão do rodízio de leads para esta instância.\n\n` +
+        `📋 *Lista de Atendentes:* \n`;
 
     if (!brokers || brokers.length === 0) {
-        text += "_Nenhum corretor cadastrado._";
+        text += "_Nenhum atendente cadastrado._";
     } else {
         brokers.forEach((b, i) => {
             text += `${i + 1}. *${b.name}* (${b.phone}) ${b.status === 'active' ? '🟢' : '🔴'}\n`;
@@ -2647,8 +2644,8 @@ async function renderBrokersMenu(ctx, instId) {
     }
 
     const buttons = [
-        [Markup.button.callback("➕ Adicionar Corretor", `wa_broker_add_${instId}`)],
-        [Markup.button.callback("🗑️ Remover Corretor", `wa_broker_del_list_${instId}`)],
+        [Markup.button.callback("➕ Adicionar Atendente", `wa_broker_add_${instId}`)],
+        [Markup.button.callback("🗑️ Remover Atendente", `wa_broker_del_list_${instId}`)],
         [Markup.button.callback("🔙 Voltar", `manage_${instId}`)]
     ];
 
@@ -2658,7 +2655,8 @@ async function renderBrokersMenu(ctx, instId) {
 bot.action(/^wa_brokers_menu_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
+    const { inst: ownershipOk } = await checkOwnership(ctx, id);
+    if (!ownershipOk) return;
     await renderBrokersMenu(ctx, id);
 });
 
@@ -2669,7 +2667,7 @@ bot.action(/^wa_broker_add_(.+)$/, async (ctx) => {
     if (!inst) return;
     session.stage = `WA_BROKER_WAIT_NAME_${id}`;
     await syncSession(ctx, session);
-    ctx.reply("📝 Digite o **NOME** do corretor:");
+    ctx.reply("📝 Digite o **NOME** do atendente/vendedor:");
 });
 
 bot.action(/^wa_broker_del_list_(.+)$/, async (ctx) => {
@@ -3018,7 +3016,8 @@ async function checkAutoResume() {
 bot.action(/^wa_logout_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
+    const { inst: ownershipOk } = await checkOwnership(ctx, id);
+    if (!ownershipOk) return;
     const res = await callWuzapi(`/session/logout`, "POST", null, id);
     ctx.answerCbQuery(res.success ? "✅ Logout ok." : "❌ Falha no logout.");
     await renderManageMenu(ctx, id);
@@ -3027,7 +3026,8 @@ bot.action(/^wa_logout_(.+)$/, async (ctx) => {
 bot.action(/^wa_del_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
+    const { inst: ownershipOk } = await checkOwnership(ctx, id);
+    if (!ownershipOk) return;
 
     // 1. Tentar descobrir o ID interno real do WUZAPI
     const stats = await callWuzapi(`/session/status`, "GET", null, id);
@@ -3067,7 +3067,8 @@ bot.action(/^wa_del_(.+)$/, async (ctx) => {
 bot.action(/^wa_force_del_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
-    if (!await checkOwnership(ctx, id)) return;
+    const { inst: ownershipOk } = await checkOwnership(ctx, id);
+    if (!ownershipOk) return;
     const session = await getSession(ctx.chat.id);
     session.whatsapp.instances = session.whatsapp.instances.filter(i => i.id !== id);
     await syncSession(ctx, session);
