@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@500;600;700;800&display=swap');
 @import "tailwindcss";
 
 @theme {
@@ -13,6 +13,7 @@
   --color-danger: #FF4444;
 
   --font-sans: 'Inter', sans-serif;
+  --font-display: 'Outfit', sans-serif;
 
   --background-image-glow-gradient: linear-gradient(180deg, rgba(59, 130, 246, 0.15) 0%, rgba(59, 130, 246, 0.05) 100%);
 }
@@ -40,4 +41,14 @@ body {
   color: var(--color-foreground);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.font-display {
+  font-family: var(--font-display);
 }

@@ -54,6 +54,8 @@ export default function App() {
   const [prompt, setPrompt] = useState('');
   const [knowledgeBase, setKnowledgeBase] = useState('');
   const [saving, setSaving] = useState(false);
+  const [promptsOpen, setPromptsOpen] = useState(false);
+  const [knowledgeOpen, setKnowledgeOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [importingPdf, setImportingPdf] = useState(false);
 
@@ -258,10 +260,10 @@ export default function App() {
       <div className="h-screen w-full flex items-center justify-center bg-[#0a0a0a] p-6">
         <div className="max-w-md w-full glass-card p-10 space-y-8 border-white/5">
           <div className="text-center space-y-2">
-            <h1 className="text-5xl font-bold bg-gradient-to-r from-blue-500 via-blue-400 to-purple-500 bg-clip-text text-transparent tracking-tighter">
+            <h1 className="text-5xl font-display font-bold bg-gradient-to-r from-blue-500 via-blue-400 to-purple-500 bg-clip-text text-transparent tracking-tighter">
               VENUX AI
             </h1>
-            <p className="text-white/40 text-xs uppercase tracking-[6px] font-medium">SDR Central Dashboard</p>
+            <p className="text-white/40 text-xs uppercase tracking-[6px] font-medium font-display">SDR Central Dashboard</p>
           </div>
 
           <form onSubmit={handleLogin} className="space-y-6">
@@ -319,7 +321,7 @@ export default function App() {
       {/* Sidebar - Desktop & Mobile Overlay */}
       <aside className={`fixed inset-0 z-30 lg:static bg-[#0E1621] lg:bg-transparent w-full lg:w-64 border-r border-white/5 flex flex-col transition-transform duration-300 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
         <div className="p-6 hidden lg:block">
-          <h1 className="text-xl font-bold bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-600 bg-clip-text text-transparent tracking-tighter">
+          <h1 className="text-xl font-display font-bold bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-600 bg-clip-text text-transparent tracking-tighter">
             VENUX AI
           </h1>
         </div>
@@ -365,7 +367,7 @@ export default function App() {
           <div className="space-y-6 lg:space-y-8 max-w-6xl mx-auto">
             <header className="flex justify-between items-end pb-2">
               <div>
-                <h2 className="text-xl lg:text-2xl font-semibold tracking-tight text-white mb-0.5">Painel de Controle</h2>
+                <h2 className="text-xl lg:text-2xl font-display font-bold tracking-tight text-white mb-0.5">Painel de Controle</h2>
                 <p className="text-white/40 text-xs font-medium">Visão geral da performance em tempo real.</p>
               </div>
               <button onClick={fetchInitialData} className="p-2 hover:bg-white/5 rounded-lg transition-colors border border-transparent hover:border-white/5 active:scale-95">
@@ -481,102 +483,174 @@ export default function App() {
         )}
 
         {activeTab === 'ia' && (
-          <div className="space-y-6 max-w-4xl mx-auto">
-            <header>
-              <h2 className="text-xl lg:text-3xl font-extrabold tracking-tight">Cérebro da Operação</h2>
-              <p className="text-white/40 text-[10px] lg:text-xs">Configure como a IA deve interagir com seus leads.</p>
+          <div className="space-y-8 max-w-5xl mx-auto">
+            <header className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-4">
+              <div>
+                <h2 className="text-2xl lg:text-3xl font-display font-bold tracking-tight text-white">Cérebro da Operação</h2>
+                <p className="text-white/40 text-xs mt-1">Configure o comportamento e conhecimento da sua IA.</p>
+              </div>
+
+              <div className="glass-card px-4 py-2 flex items-center gap-3 border-white/5 bg-black/20">
+                <span className="text-[10px] font-bold text-white/30 uppercase tracking-wider">Instância:</span>
+                <select
+                  className="bg-transparent text-sm font-bold text-cyan-400 outline-none cursor-pointer"
+                  value={selectedInstId}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    setSelectedInstId(id);
+                    setPrompt(instances.find(i => i.id === id)?.ai_prompt || '');
+                    setKnowledgeBase(instances.find(i => i.id === id)?.ai_knowledge_base || '');
+                  }}
+                >
+                  {instances.map(inst => (
+                    <option key={inst.id} value={inst.id} className="bg-[#17212B] text-white">{inst.name}</option>
+                  ))}
+                </select>
+              </div>
             </header>
 
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-              <div className="lg:col-span-1 space-y-4">
-                <div className="glass-card p-4 border-white/5">
-                  <label className="text-[9px] font-black text-white/30 uppercase tracking-[2px] mb-2 block">Número Conectado</label>
-                  <select
-                    className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-xs outline-none focus:border-primary transition-all cursor-pointer"
-                    value={selectedInstId}
-                    onChange={(e) => {
-                      const id = e.target.value;
-                      setSelectedInstId(id);
-                      setPrompt(instances.find(i => i.id === id)?.ai_prompt || '');
-                      setKnowledgeBase(instances.find(i => i.id === id)?.ai_knowledge_base || '');
-                    }}
-                  >
-                    {instances.map(inst => (
-                      <option key={inst.id} value={inst.id} className="bg-[#1a1a1a]">{inst.name}</option>
-                    ))}
-                  </select>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* CARD PROMPT SISTEMA */}
+              <div className="glass-card p-8 flex flex-col items-center text-center space-y-6 hover:border-primary/30 transition-all group relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-bl-[100px] -mr-10 -mt-10 transition-all group-hover:bg-primary/10"></div>
+
+                <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center text-primary mb-2 group-hover:scale-110 transition-transform duration-500 shadow-[0_0_30px_rgba(59,130,246,0.15)]">
+                  <MessageSquare size={32} />
                 </div>
 
-                <div className="glass-card p-5 border-l-2 border-primary bg-primary/5">
-                  <p className="text-[11px] text-white/60 leading-relaxed italic">
-                    "Instruções claras geram conversões altas. Lembre de definir o tom de voz do corretor."
+                <div className="space-y-2">
+                  <h3 className="text-xl font-display font-bold text-white">Prompt do Sistema</h3>
+                  <p className="text-white/40 text-xs leading-relaxed max-w-[300px] mx-auto">
+                    Defina a personalidade, tom de voz e regras de engajamento do seu corretor virtual.
                   </p>
                 </div>
+
+                <div className="w-full bg-black/20 rounded-xl p-4 text-left border border-white/5">
+                  <p className="text-[11px] font-mono text-white/50 line-clamp-3">
+                    {prompt || "// Nenhuma instrução definida..."}
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => setPromptsOpen(true)}
+                  className="w-full py-4 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/20 text-white font-bold text-xs tracking-wider transition-all flex items-center justify-center gap-2 group-hover:bg-primary group-hover:border-primary group-hover:text-white"
+                >
+                  EDITAR INSTRUÇÕES
+                  <ChevronRight size={14} />
+                </button>
               </div>
 
-              <div className="lg:col-span-3 space-y-6">
-                {/* SYSTEM PROMPT CARD */}
-                <div className="glass-card p-5 lg:p-6 space-y-4 border-white/5">
-                  <div className="flex justify-between items-center">
-                    <label className="text-xs font-bold flex items-center gap-2 text-white/60 uppercase">
-                      <MessageSquare size={14} className="text-primary" />
-                      Prompt do Sistema (Instruções)
-                    </label>
-                  </div>
-                  <textarea
-                    className="w-full h-[250px] lg:h-[300px] bg-black/20 border border-white/5 rounded-xl p-4 lg:p-6 font-mono text-[13px] leading-relaxed focus:ring-1 focus:ring-primary/20 outline-none transition-all scrollbar-hide text-white/80"
-                    value={prompt}
-                    onChange={(e) => setPrompt(e.target.value)}
-                    placeholder="Defina as regras da sua IA aqui..."
-                  />
+              {/* CARD KNOWLEDGE BASE */}
+              <div className="glass-card p-8 flex flex-col items-center text-center space-y-6 hover:border-success/30 transition-all group relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-success/5 rounded-bl-[100px] -mr-10 -mt-10 transition-all group-hover:bg-success/10"></div>
+
+                <div className="w-16 h-16 rounded-2xl bg-success/10 flex items-center justify-center text-success mb-2 group-hover:scale-110 transition-transform duration-500 shadow-[0_0_30px_rgba(16,185,129,0.15)]">
+                  <FileText size={32} />
                 </div>
 
-                {/* KNOWLEDGE BASE CARD */}
-                <div className="glass-card p-5 lg:p-6 space-y-4 border-white/5">
-                  <div className="flex justify-between items-center">
-                    <label className="text-xs font-bold flex items-center gap-2 text-white/60 uppercase">
-                      <FileText size={14} className="text-success" />
-                      Base de Conhecimento (RAG)
-                    </label>
-
-                    <label className="cursor-pointer bg-white/5 hover:bg-white/10 px-3 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-2 transition-all border border-white/5 hover:border-white/10">
-                      {importingPdf ? <RefreshCw className="animate-spin" size={12} /> : <Upload size={12} />}
-                      {importingPdf ? "LENDO PDF..." : "IMPORTAR PDF/TXT"}
-                      <input
-                        type="file"
-                        accept=".pdf,.txt,.md,.csv"
-                        className="hidden"
-                        onChange={handleFileUpload}
-                        disabled={importingPdf}
-                      />
-                    </label>
-                  </div>
-
-                  <p className="text-[10px] text-white/30">
-                    O conteúdo abaixo será usado pela IA como fonte de verdade para responder perguntas específicas.
+                <div className="space-y-2">
+                  <h3 className="text-xl font-display font-bold text-white">Base de Conhecimento</h3>
+                  <p className="text-white/40 text-xs leading-relaxed max-w-[300px] mx-auto">
+                    Centralize informações sobre empreendimentos, tabelas e FAQs para a IA consultar.
                   </p>
-
-                  <textarea
-                    className="w-full h-[200px] bg-black/20 border border-white/5 rounded-xl p-4 lg:p-6 font-mono text-[13px] leading-relaxed focus:ring-1 focus:ring-success/20 outline-none transition-all scrollbar-hide text-white/80"
-                    value={knowledgeBase}
-                    onChange={(e) => setKnowledgeBase(e.target.value)}
-                    placeholder="Cole aqui informações sobre preços, tabela de vendas, metragens, diferenciais, etc..."
-                  />
                 </div>
 
-                <div className="flex flex-col lg:flex-row items-center justify-between pt-4 gap-4">
-                  <button
-                    onClick={savePrompt}
-                    disabled={saving}
-                    className="w-full lg:w-auto bg-primary hover:bg-blue-600 disabled:opacity-50 px-8 py-3.5 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 shadow-xl shadow-primary/20"
-                  >
-                    {saving ? <RefreshCw className="animate-spin" size={16} /> : <Send size={16} />}
-                    SALVAR TUDO
-                  </button>
-                  <p className="text-[10px] text-white/10 font-bold uppercase tracking-tight">Sync v1.268 (RAG Ready)</p>
+                <div className="w-full bg-black/20 rounded-xl p-4 text-left border border-white/5">
+                  <p className="text-[11px] font-mono text-white/50 line-clamp-3">
+                    {knowledgeBase || "// Nenhuma base de conhecimento..."}
+                  </p>
                 </div>
+
+                <button
+                  onClick={() => setKnowledgeOpen(true)}
+                  className="w-full py-4 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/20 text-white font-bold text-xs tracking-wider transition-all flex items-center justify-center gap-2 group-hover:bg-success group-hover:border-success group-hover:text-white"
+                >
+                  GERENCIAR BASE (RAG)
+                  <ChevronRight size={14} />
+                </button>
               </div>
             </div>
+
+            {/* MODAL PROMPTS */}
+            <Modal isOpen={promptsOpen} onClose={() => setPromptsOpen(false)} title="Editor de Prompt do Sistema">
+              <div className="space-y-6">
+                <div className="flex justify-between items-center bg-blue-500/10 p-4 rounded-xl border border-blue-500/20">
+                  <div className="flex gap-3">
+                    <div className="mt-1"><MessageSquare size={18} className="text-blue-400" /></div>
+                    <div>
+                      <h4 className="text-sm font-bold text-blue-100">Instruções de Comportamento</h4>
+                      <p className="text-xs text-blue-200/60 mt-1">Use Markdown (#, ##, -) para organizar as regras.</p>
+                    </div>
+                  </div>
+                </div>
+
+                <textarea
+                  className="w-full h-[50vh] bg-[#0B0E14] border border-white/10 rounded-xl p-6 font-mono text-sm leading-relaxed focus:ring-2 focus:ring-blue-500/50 outline-none transition-all text-white/80 resize-none"
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  placeholder="# Identidade\nVocê é um especialista..."
+                />
+
+                <div className="flex justify-end gap-3 pt-2">
+                  <button onClick={() => setPromptsOpen(false)} className="px-6 py-3 rounded-xl text-xs font-bold text-white/50 hover:text-white hover:bg-white/5 transition-colors">CANCELAR</button>
+                  <button
+                    onClick={() => { savePrompt(); setPromptsOpen(false); }}
+                    disabled={saving}
+                    className="bg-blue-600 hover:bg-blue-500 text-white px-8 py-3 rounded-xl font-bold text-xs shadow-lg shadow-blue-600/20 flex items-center gap-2 transition-all"
+                  >
+                    {saving ? <RefreshCw className="animate-spin" size={16} /> : <CheckCircle2 size={16} />}
+                    SALVAR ALTERAÇÕES
+                  </button>
+                </div>
+              </div>
+            </Modal>
+
+            {/* MODAL KNOWLEDGE */}
+            <Modal isOpen={knowledgeOpen} onClose={() => setKnowledgeOpen(false)} title="Base de Conhecimento (RAG)">
+              <div className="space-y-6">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-emerald-500/10 p-4 rounded-xl border border-emerald-500/20">
+                  <div className="flex gap-3">
+                    <div className="mt-1"><FileText size={18} className="text-emerald-400" /></div>
+                    <div>
+                      <h4 className="text-sm font-bold text-emerald-100">Conteúdo de Referência</h4>
+                      <p className="text-xs text-emerald-200/60 mt-1">A IA usará este texto para responder dúvidas específicas.</p>
+                    </div>
+                  </div>
+
+                  <label className="cursor-pointer bg-emerald-500/20 hover:bg-emerald-500/30 px-4 py-2 rounded-lg text-[10px] font-bold text-emerald-300 flex items-center gap-2 transition-all border border-emerald-500/20">
+                    {importingPdf ? <RefreshCw className="animate-spin" size={12} /> : <Upload size={12} />}
+                    {importingPdf ? "PROCESSANDO..." : "IMPORTAR PDF/TXT"}
+                    <input
+                      type="file"
+                      accept=".pdf,.txt,.md,.csv"
+                      className="hidden"
+                      onChange={handleFileUpload}
+                      disabled={importingPdf}
+                    />
+                  </label>
+                </div>
+
+                <textarea
+                  className="w-full h-[50vh] bg-[#0B0E14] border border-white/10 rounded-xl p-6 font-mono text-sm leading-relaxed focus:ring-2 focus:ring-emerald-500/50 outline-none transition-all text-white/80 resize-none"
+                  value={knowledgeBase}
+                  onChange={(e) => setKnowledgeBase(e.target.value)}
+                  placeholder="Cole aqui a tabela de preços, diferenciais, etc..."
+                />
+
+                <div className="flex justify-end gap-3 pt-2">
+                  <button onClick={() => setKnowledgeOpen(false)} className="px-6 py-3 rounded-xl text-xs font-bold text-white/50 hover:text-white hover:bg-white/5 transition-colors">CANCELAR</button>
+                  <button
+                    onClick={() => { savePrompt(); setKnowledgeOpen(false); }}
+                    disabled={saving}
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white px-8 py-3 rounded-xl font-bold text-xs shadow-lg shadow-emerald-600/20 flex items-center gap-2 transition-all"
+                  >
+                    {saving ? <RefreshCw className="animate-spin" size={16} /> : <CheckCircle2 size={16} />}
+                    SALVAR BASE
+                  </button>
+                </div>
+              </div>
+            </Modal>
+
           </div>
         )}
 
@@ -584,7 +658,7 @@ export default function App() {
           <div className="space-y-6 max-w-6xl mx-auto">
             <div className="flex justify-between items-center">
               <header>
-                <h2 className="text-xl lg:text-3xl font-extrabold tracking-tight">Corretores</h2>
+                <h2 className="text-xl lg:text-3xl font-display font-bold tracking-tight">Corretores</h2>
                 <p className="text-white/40 text-[10px] lg:text-xs">Gestão de plantão e distribuição.</p>
               </header>
               <button className="bg-primary hover:bg-blue-600 px-4 py-2.5 rounded-xl font-bold text-[10px] lg:text-xs flex items-center gap-2 transition-all">
@@ -695,9 +769,27 @@ function StatCard({ title, value, icon, color = "blue" }) {
 
       <div>
         <span className="text-white/40 text-[11px] font-bold uppercase tracking-widest block mb-1">{title}</span>
-        <div className="text-2xl font-bold text-white tracking-tight flex items-baseline gap-1">
+        <div className="text-2xl font-display font-bold text-white tracking-tight flex items-baseline gap-1">
           {value}
-          <span className="text-[10px] font-normal text-white/20">/mês</span>
+          <span className="text-[10px] font-normal text-white/20 font-sans">/mês</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+function Modal({ isOpen, onClose, title, children }) {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm transition-all animate-in fade-in duration-200">
+      <div className="glass-card w-full max-w-4xl shadow-2xl relative flex flex-col max-h-[90vh] bg-[#17212B] border-white/10 animate-in zoom-in-95 duration-200">
+        <div className="flex justify-between items-center p-6 border-b border-white/5 bg-white/[0.02]">
+          <h3 className="text-xl font-display font-bold text-white">{title}</h3>
+          <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-full text-white/50 hover:text-white transition-colors">
+            <X size={20} />
+          </button>
+        </div>
+        <div className="p-6 overflow-y-auto flex-1 custom-scrollbar">
+          {children}
         </div>
       </div>
     </div>
