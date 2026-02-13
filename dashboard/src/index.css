@@ -1,24 +1,36 @@
 @import "tailwindcss";
 
 @theme {
-  --color-background: #0a0a0a;
-  --color-foreground: #ededed;
-  --color-card: #121212;
-  --color-primary: #3b82f6;
-  --color-secondary: #1f1f1f;
-  --color-accent: #60a5fa;
-  --color-success: #22c55e;
-  --color-warning: #f59e0b;
-  --color-danger: #ef4444;
+  --color-background: #0B0E14;
+  --color-foreground: #F8FAFC;
+  --color-card: #151921;
+  --color-primary: #3B82F6;
+  --color-secondary: #64748B;
+  --color-accent: #8B5CF6;
+  --color-success: #10B981;
+  --color-warning: #F59E0B;
+  --color-danger: #EF4444;
 
-  --background-image-glass-gradient: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.01) 100%);
+  --background-image-glass-gradient: linear-gradient(180deg, rgba(21, 25, 33, 0.7) 0%, rgba(21, 25, 33, 0.4) 100%);
+  --background-image-glow-gradient: linear-gradient(180deg, rgba(59, 130, 246, 0.15) 0%, rgba(59, 130, 246, 0.05) 100%);
 }
 
 @utility glass-card {
   background-image: var(--background-image-glass-gradient);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   backdrop-filter: blur(12px);
-  border-radius: 0.75rem;
+  border-radius: 1rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+@utility glass-card-hover {
+  transition: all 0.3s ease;
+
+  &:hover {
+    border-color: rgba(59, 130, 246, 0.4);
+    box-shadow: 0 0 15px rgba(59, 130, 246, 0.15);
+    background-image: var(--background-image-glow-gradient);
+  }
 }
 
 body {
@@ -26,4 +38,5 @@ body {
   background-color: var(--color-background);
   color: var(--color-foreground);
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }

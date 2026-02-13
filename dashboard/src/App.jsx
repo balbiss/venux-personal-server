@@ -31,7 +31,12 @@ import {
   ResponsiveContainer,
   PieChart,
   Pie,
-  Cell
+  Cell,
+  Area,
+  AreaChart,
+  Defs,
+  LinearGradient,
+  Stop
 } from 'recharts';
 import { supabase } from './supabase';
 
@@ -253,10 +258,10 @@ export default function App() {
       <div className="h-screen w-full flex items-center justify-center bg-[#0a0a0a] p-6">
         <div className="max-w-md w-full glass-card p-10 space-y-8 border-white/5">
           <div className="text-center space-y-2">
-            <h1 className="text-4xl font-black bg-gradient-to-r from-blue-400 to-accent bg-clip-text text-transparent italic tracking-tighter">
+            <h1 className="text-5xl font-bold bg-gradient-to-r from-blue-500 via-blue-400 to-purple-500 bg-clip-text text-transparent tracking-tighter">
               VENUX AI
             </h1>
-            <p className="text-white/30 text-[10px] uppercase tracking-[4px]">SDR Central Dashboard</p>
+            <p className="text-white/40 text-xs uppercase tracking-[6px] font-medium">SDR Central Dashboard</p>
           </div>
 
           <form onSubmit={handleLogin} className="space-y-6">
@@ -303,19 +308,18 @@ export default function App() {
   return (
     <div className="flex h-screen bg-background text-foreground overflow-hidden">
       {/* Mobile Header */}
-      <div className="lg:hidden fixed top-0 w-full z-20 bg-background/80 backdrop-blur-md border-b border-white/5 p-4 flex justify-between items-center">
-        <h1 className="text-lg font-black bg-gradient-to-r from-blue-400 to-accent bg-clip-text text-transparent italic tracking-tight">
+      <div className="lg:hidden fixed top-0 w-full z-20 bg-[#0B0E14]/80 backdrop-blur-md border-b border-white/5 p-4 flex justify-between items-center">
+        <h1 className="text-lg font-bold bg-gradient-to-r from-blue-500 to-purple-500 bg-clip-text text-transparent tracking-tight">
           VENUX AI
         </h1>
-        <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="p-2 text-white">
+        <button onClick={() => setMobileMenuOpen(!mobileMenuOpen)} className="p-2 text-white/70 hover:text-white transition-colors">
           {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
-        </button>
-      </div>
+        </button>      </div>
 
       {/* Sidebar - Desktop & Mobile Overlay */}
-      <aside className={`fixed inset-0 z-30 lg:static bg-black/95 lg:bg-black/20 w-full lg:w-64 border-r border-white/5 flex flex-col transition-transform duration-300 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
-        <div className="p-6 hidden lg:block">
-          <h1 className="text-xl font-black bg-gradient-to-r from-blue-400 to-accent bg-clip-text text-transparent italic tracking-tight">
+      <aside className={`fixed inset-0 z-30 lg:static bg-[#0B0E14] lg:bg-transparent w-full lg:w-72 border-r border-white/5 flex flex-col transition-transform duration-300 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
+        <div className="p-8 hidden lg:block">
+          <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-500 via-blue-400 to-purple-500 bg-clip-text text-transparent tracking-tighter">
             VENUX AI
           </h1>
         </div>
@@ -359,57 +363,94 @@ export default function App() {
       <main className="flex-1 overflow-y-auto p-4 pt-20 lg:p-10 scrollbar-thin scrollbar-thumb-white/10">
         {activeTab === 'dashboard' && (
           <div className="space-y-6 lg:space-y-8 max-w-6xl mx-auto">
-            <header className="flex justify-between items-end">
+            <header className="flex justify-between items-end pb-4">
               <div>
-                <h2 className="text-xl lg:text-3xl font-extrabold tracking-tight">Painel de Controle</h2>
-                <p className="text-white/40 text-[10px] lg:text-xs">Acompanhamento em tempo real da conta {user?.id}.</p>
+                <h2 className="text-2xl lg:text-3xl font-semibold tracking-tight text-white mb-1">Painel de Controle</h2>
+                <p className="text-white/40 text-sm font-medium">Visão geral da performance em tempo real.</p>
               </div>
-              <button onClick={fetchInitialData} className="p-2 hover:bg-white/5 rounded-full transition-colors">
-                <RefreshCw size={18} className="text-white/20" />
+              <button onClick={fetchInitialData} className="p-2.5 hover:bg-white/5 rounded-xl transition-colors border border-transparent hover:border-white/5 active:scale-95">
+                <RefreshCw size={20} className="text-white/40 group-hover:text-white/70" />
               </button>
             </header>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-5">
-              <StatCard title="Leads Totais" value={stats.total} icon={<MessageSquare className="text-blue-400" size={20} />} />
-              <StatCard title="Qualificados" value={stats.qualified} icon={<CheckCircle2 className="text-success" size={20} />} />
-              <StatCard title="Conversão" value={`${stats.conversion}%`} icon={<TrendingUp className="text-accent" size={20} />} />
-              <StatCard title="Corretores" value={stats.activeBrokers} icon={<Users size={20} />} />
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
+              <StatCard title="Leads Totais" value={stats.total} icon={<MessageSquare size={20} />} color="blue" />
+              <StatCard title="Qualificados" value={stats.qualified} icon={<CheckCircle2 size={20} />} color="green" />
+              <StatCard title="Conversão" value={`${stats.conversion}%`} icon={<TrendingUp size={20} />} color="purple" />
+              <StatCard title="Corretores" value={stats.activeBrokers} icon={<Users size={20} />} color="orange" />
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-              <div className="lg:col-span-2 glass-card p-4 lg:p-6 border-white/5">
-                <h3 className="text-xs font-bold mb-6 flex items-center gap-2 text-white/60">
-                  <BarChart3 size={16} className="text-primary" />
-                  ATIVIDADE DA SEMANA
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2 glass-card p-6 lg:p-8">
+                <h3 className="text-sm font-semibold mb-8 flex items-center gap-2 text-white/70 uppercase tracking-widest">
+                  <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]"></div>
+                  Fluxo de Atendimento
                 </h3>
-                <div className="h-[250px] w-full">
+                <div className="h-[300px] w-full">
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={chartData}>
+                    <AreaChart data={chartData}>
+                      <defs>
+                        <linearGradient id="colorLeads" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.3} />
+                          <stop offset="95%" stopColor="#3B82F6" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" vertical={false} />
-                      <XAxis dataKey="name" stroke="#ffffff20" fontSize={10} tickLine={false} axisLine={false} />
-                      <YAxis stroke="#ffffff20" fontSize={10} tickLine={false} axisLine={false} />
-                      <Tooltip
-                        contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '10px', color: '#fff', fontSize: '12px' }}
+                      <XAxis
+                        dataKey="name"
+                        stroke="#ffffff20"
+                        fontSize={11}
+                        tickLine={false}
+                        axisLine={false}
+                        dy={10}
                       />
-                      <Line type="smooth" dataKey="leads" stroke="#3b82f6" strokeWidth={2} dot={false} name="Total" />
-                      <Line type="smooth" dataKey="qualified" stroke="#10b981" strokeWidth={2} dot={false} name="Qualificados" />
-                    </LineChart>
+                      <YAxis
+                        stroke="#ffffff20"
+                        fontSize={11}
+                        tickLine={false}
+                        axisLine={false}
+                        dx={-10}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: '#151921',
+                          border: '1px solid rgba(255,255,255,0.1)',
+                          borderRadius: '12px',
+                          color: '#fff',
+                          fontSize: '12px',
+                          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                        }}
+                      />
+                      <Area type="monotone" dataKey="leads" stroke="#3B82F6" strokeWidth={3} fillOpacity={1} fill="url(#colorLeads)" />
+                    </AreaChart>
                   </ResponsiveContainer>
                 </div>
               </div>
 
-              <div className="glass-card p-4 lg:p-6 flex flex-col border-white/5">
-                <h3 className="text-xs font-bold mb-6 text-white/60 uppercase">Distribuição</h3>
+              <div className="glass-card p-6 lg:p-8 flex flex-col">
+                <h3 className="text-sm font-semibold mb-8 text-white/70 uppercase tracking-widest text-center">Distribuição</h3>
                 <div className="flex-1 flex items-center justify-center min-h-[200px]">
-                  <ResponsiveContainer width="100%" height={200}>
+                  <ResponsiveContainer width="100%" height={220}>
                     <PieChart>
-                      <Pie data={pieData} innerRadius={55} outerRadius={75} paddingAngle={4} dataKey="value">
+                      <Pie
+                        data={pieData}
+                        innerRadius={65}
+                        outerRadius={85}
+                        paddingAngle={5}
+                        dataKey="value"
+                        stroke="none"
+                      >
                         {pieData.map((entry, index) => (
                           <Cell key={`cell-${index}`} fill={entry.color} />
                         ))}
                       </Pie>
                       <Tooltip
-                        contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '10px' }}
+                        contentStyle={{
+                          backgroundColor: '#151921',
+                          border: '1px solid rgba(255,255,255,0.1)',
+                          borderRadius: '12px',
+                          color: '#fff'
+                        }}
+                        itemStyle={{ color: '#fff' }}
                       />
                     </PieChart>
                   </ResponsiveContainer>
@@ -603,27 +644,45 @@ function NavItem({ icon, label, active, onClick }) {
   return (
     <button
       onClick={onClick}
-      className={`w-full flex items-center gap-3 p-3 lg:p-3 rounded-xl transition-all duration-300 ${active
-        ? 'bg-primary/10 text-primary border border-primary/20'
-        : 'text-white/20 hover:bg-white/5 hover:text-white'
+      className={`w-full flex items-center gap-4 p-4 rounded-xl transition-all duration-300 group ${active
+        ? 'bg-primary/10 text-primary'
+        : 'text-white/40 hover:bg-white/5 hover:text-white'
         }`}
     >
-      <div className={`${active ? 'scale-110' : 'scale-100'} transition-transform duration-300`}>
+      <div className={`transition-all duration-300 ${active ? 'scale-110 drop-shadow-[0_0_8px_rgba(59,130,246,0.5)]' : 'group-hover:scale-110'}`}>
         {icon}
       </div>
-      <span className="font-black text-xs uppercase tracking-tight">{label}</span>
+      <span className={`text-sm tracking-wide ${active ? 'font-bold' : 'font-medium'}`}>{label}</span>
+      {active && (
+        <div className="ml-auto w-1.5 h-1.5 rounded-full bg-primary shadow-[0_0_8px_#3B82F6]"></div>
+      )}
     </button>
   );
 }
 
-function StatCard({ title, value, icon }) {
+function StatCard({ title, value, icon, color = "blue" }) {
+  const colors = {
+    blue: "text-blue-500 bg-blue-500/10 group-hover:bg-blue-500/20",
+    green: "text-green-500 bg-green-500/10 group-hover:bg-green-500/20",
+    purple: "text-purple-500 bg-purple-500/10 group-hover:bg-purple-500/20",
+    orange: "text-orange-500 bg-orange-500/10 group-hover:bg-orange-500/20",
+  };
+
   return (
-    <div className="glass-card p-4 lg:p-5 group transition-all duration-300 hover:border-primary/20 bg-black/10">
-      <div className="flex justify-between items-start mb-2 lg:mb-3">
-        <span className="text-white/20 text-[9px] font-black uppercase tracking-widest">{title}</span>
-        <div className="bg-white/5 p-1.5 lg:p-2 rounded-lg group-hover:bg-primary/10 transition-colors">{icon}</div>
+    <div className="glass-card p-6 flex flex-col justify-between hover:border-primary/30 transition-all duration-500 group relative overflow-hidden">
+      <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-white/5 to-transparent rounded-bl-[100px] opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"></div>
+
+      <div className="flex justify-between items-start mb-4">
+        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-colors duration-300 ${colors[color]}`}>
+          {icon}
+        </div>
+        {/* <span className="text-xs font-bold text-green-400 bg-green-400/10 px-2 py-1 rounded-full">+12%</span> */}
       </div>
-      <div className="text-xl lg:text-2xl font-black tracking-tighter">{value}</div>
+
+      <div>
+        <span className="text-white/40 text-xs font-bold uppercase tracking-widest block mb-1">{title}</span>
+        <div className="text-3xl font-bold text-white tracking-tight">{value}</div>
+      </div>
     </div>
   );
 }
