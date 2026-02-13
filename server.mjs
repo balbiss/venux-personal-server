@@ -3649,7 +3649,16 @@ bot.on("voice", async (ctx) => handleMassMedia(ctx, 'audio', ctx.message.voice.f
 bot.on("document", async (ctx) => handleMassMedia(ctx, 'document', ctx.message.document.file_id, ctx.message.caption, ctx.message.document.file_name, ctx.message.document.file_size));
 
 // -- Server Endpoints --
-app.get("/", (req, res) => res.send("Connect Bot Alive"));
+app.get("/health", (req, res) => res.json({ status: "ok", version: SERVER_VERSION }));
+
+// 🌐 Servir Dashboard Web (Lovable)
+const DASHBOARD_DIST = path.join(__dirname, "dashboard", "dist");
+app.use(express.static(DASHBOARD_DIST));
+
+// Roteamento SPA: redireciona todas as rotas não-API para o index.html do dashboard
+app.get(/^\/(?!webhook|health|uploads|static).*/, (req, res) => {
+    res.sendFile(path.join(DASHBOARD_DIST, "index.html"));
+});
 
 // Rota para o QR Client White-Label
 app.get("/qr-client", (req, res) => {
