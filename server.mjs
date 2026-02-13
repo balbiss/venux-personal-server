@@ -140,7 +140,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.270";
+const SERVER_VERSION = "1.271";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -2522,12 +2522,22 @@ bot.action(/^wa_list_paused_leads_(.+)$/, async (ctx) => {
     const buttons = [];
     leads.forEach(lead => {
         const phone = lead.chat_id.split("@")[0];
-        const date = new Date(lead.last_interaction).toLocaleString("pt-BR", { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-        const typeIcon = lead.status === 'TRANSFERRED' ? '👤' : '✋'; // 👤 = Transbordo, ✋ = Intervenção
+        const date = new Date(lead.last_interaction).toLocaleString("pt-BR", {
+            day: '2-digit',
+            month: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+        const typeIcon = lead.status === 'TRANSFERRED' ? '👤' : '✋';
+        const namePart = lead.lead_name ? ` - ${lead.lead_name}` : "";
 
+        // Linha de Info (inteira para caber tudo)
         buttons.push([
-            Markup.button.callback(`${typeIcon} ${phone} (${date})`, `noop`),
-            Markup.button.callback("✅ Retomar", `wa_ai_resume_${instId}_${lead.chat_id}`)
+            Markup.button.callback(`${typeIcon} ${phone}${namePart} (${date})`, `noop`)
+        ]);
+        // Linha de Ação
+        buttons.push([
+            Markup.button.callback("✅ Retomar IA agora", `wa_ai_resume_${instId}_${lead.chat_id}`)
         ]);
     });
 
