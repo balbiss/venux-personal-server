@@ -140,7 +140,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.269";
+const SERVER_VERSION = "1.270";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -1133,6 +1133,7 @@ async function renderManageMenu(ctx, id) {
     buttons.push([Markup.button.callback("🤖 Configurar IA SDR", `wa_ai_menu_${id}`)]);
 
     buttons.push([Markup.button.callback("👥 Rodízio de Atendimento", `wa_brokers_menu_${id}`)]);
+    buttons.push([Markup.button.callback("📋 Leads em Atendimento", `wa_list_paused_leads_${id}`)]);
 
     buttons.push([Markup.button.callback("🚪 Logout", `wa_logout_${id}`), Markup.button.callback("🗑️ Deletar", `wa_del_${id}`)]);
     buttons.push([Markup.button.callback("🔙 Voltar", "cmd_instancias")]);
@@ -2481,7 +2482,61 @@ bot.action(/^wa_ai_resume_(.+)_(.+)$/, async (ctx) => {
             .eq("chat_id", remoteJid).eq("instance_id", tokenId);
     } catch (e) { }
 
-    ctx.editMessageText(`✅ *IA Retomada!*\nA partir da próxima mensagem, a IA responderá o cliente \`${remoteJid}\` novamente.`, { parse_mode: "Markdown" });
+    ctx.editMessageText(`✅ *IA Retomada!*\nA partir da próxima mensagem, a IA responderá o cliente \`${remoteJid}\` novamente.`, {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar para Lista", `wa_list_paused_leads_${tokenId}`)]])
+    });
+});
+
+bot.action(/^wa_list_paused_leads_(.+)$/, async (ctx) => {
+    safeAnswer(ctx);
+    const instId = ctx.match[1];
+    const { inst, session } = await checkOwnership(ctx, instId);
+    if (!inst) return;
+
+    // Buscar leads com status de pausa (TRANSFERRED ou HUMAN_ACTIVE)
+    const { data: leads, error } = await supabase
+        .from("ai_leads_tracking")
+        .select("*")
+        .eq("instance_id", instId)
+        .in("status", ["TRANSFERRED", "HUMAN_ACTIVE"])
+        .order("last_interaction", { ascending: false })
+        .limit(20);
+
+    if (error) {
+        log(`[LIST PAUSED ERR] ${error.message}`);
+        return ctx.reply("❌ Erro ao buscar leads pausados.");
+    }
+
+    if (!leads || leads.length === 0) {
+        return ctx.editMessageText(`📋 *Leads em Atendimento (${instId})*\n\n✅ Nenhum lead pausado no momento. A IA está ativa para todos os contatos qualificados.`, {
+            parse_mode: "Markdown",
+            ...Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar", `manage_${instId}`)]])
+        });
+    }
+
+    let msg = `📋 *Leads em Atendimento Humano (${instId})*\n\n` +
+        `Estes contatos estão **PAUSADOS** na IA (Transbordo ou Intervenção Humana).\n` +
+        `Clique em "Retomar" para devolver o controle à IA.\n\n`;
+
+    const buttons = [];
+    leads.forEach(lead => {
+        const phone = lead.chat_id.split("@")[0];
+        const date = new Date(lead.last_interaction).toLocaleString("pt-BR", { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+        const typeIcon = lead.status === 'TRANSFERRED' ? '👤' : '✋'; // 👤 = Transbordo, ✋ = Intervenção
+
+        buttons.push([
+            Markup.button.callback(`${typeIcon} ${phone} (${date})`, `noop`),
+            Markup.button.callback("✅ Retomar", `wa_ai_resume_${instId}_${lead.chat_id}`)
+        ]);
+    });
+
+    buttons.push([Markup.button.callback("🔙 Voltar", `manage_${instId}`)]);
+
+    // Paginação simples (limite de 20 já aplicado na query)
+    msg += `_Exibindo os últimos ${leads.length} leads pausados._`;
+
+    await safeEdit(ctx, msg, Markup.inlineKeyboard(buttons));
 });
 
 // --- Módulo de Rodízio de Corretores ---
