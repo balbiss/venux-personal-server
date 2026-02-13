@@ -140,7 +140,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.259";
+const SERVER_VERSION = "1.260";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -2629,7 +2629,9 @@ bot.action(/^wa_ai_resume_(.+)_(.+)$/, async (ctx) => {
 
 // --- Módulo de Rodízio de Corretores ---
 async function renderBrokersMenu(ctx, instId) {
-    const { data: brokers } = await supabase.from("real_estate_brokers").select("*");
+    const { inst } = await checkOwnership(ctx, instId);
+    if (!inst) return;
+    const { data: brokers } = await supabase.from("real_estate_brokers").select("*").eq("tg_chat_id", String(ctx.chat.id));
 
     let text = `👤 *Rodízio de Atendimento* (${instId})\n\n` +
         `Cadastre os atendentes/vendedores que participarão do rodízio de leads para esta instância.\n\n` +
@@ -2688,7 +2690,7 @@ bot.action(/^wa_broker_del_list_(.+)$/, async (ctx) => {
     const id = ctx.match[1];
     const { inst: ownershipOk } = await checkOwnership(ctx, id);
     if (!ownershipOk) return;
-    const { data: brokers } = await supabase.from("real_estate_brokers").select("*");
+    const { data: brokers } = await supabase.from("real_estate_brokers").select("*").eq("tg_chat_id", String(ctx.chat.id));
 
     if (!brokers || brokers.length === 0) return ctx.answerCbQuery("❌ Nenhum corretor para remover.");
 
