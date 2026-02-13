@@ -2774,7 +2774,14 @@ async function distributeLead(tgChatId, leadJid, instId, leadName, summary) {
         session.last_broker_index = (nextIndex + 1) % brokers.length;
         await saveSession(tgChatId, session);
 
-        bot.telegram.sendMessage(tgChatId, `✅ *Rodízio Inteligente:* Lead **${leadName}** encaminhado para o corretor **${broker.name}**. (Próximo da fila atualizado)`);
+        // Enviar confirmação para admin COM botão de retomar IA se quiser
+        bot.telegram.sendMessage(tgChatId,
+            `✅ *Rodízio Inteligente:* Lead **${leadName}** encaminhado para o corretor **${broker.name}**. (Próximo da fila atualizado)`,
+            {
+                parse_mode: "Markdown",
+                ...Markup.inlineKeyboard([[Markup.button.callback("✅ Retomar IA", `wa_ai_resume_${instId}_${leadJid}`)]])
+            }
+        );
     } catch (e) {
         log(`[ERR RODÍZIO] ${e.message}`);
     }
