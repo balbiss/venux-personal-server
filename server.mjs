@@ -2670,6 +2670,20 @@ async function handleAiSdr({ text, audioBase64, history = [], systemPrompt, chat
 }
 
 
+// --- Módulo de Atualização Remota (OTA) ---
+bot.command("reiniciar", async (ctx) => {
+    const config = await getSystemConfig();
+    if (!isAdmin(ctx.chat.id, config)) return ctx.reply("⛔ Sem permissão.");
+
+    await ctx.reply("🔄 *Reiniciando Sistema...*\n\nO servidor irá baixar a versão mais recente e reiniciar.\nIsso levará cerca de 30-60 segundos.", { parse_mode: "Markdown" });
+    log(`[SISTEMA] Reinício solicitado por ${ctx.chat.id}. Encerrando processo...`);
+
+    // Pequeno delay para garantir que a resposta chegue ao Telegram
+    setTimeout(() => {
+        process.exit(1); // Força o Docker a reiniciar o container e rodar o entrypoint (git clone) novamente
+    }, 2000);
+});
+
 // --- Módulo de Distribuição de Leads (Rodízio Round-Robin) ---
 async function distributeLead(tgChatId, leadJid, instId, leadName, summary) {
     try {

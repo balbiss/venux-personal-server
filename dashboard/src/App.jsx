@@ -97,11 +97,11 @@ export default function App() {
     if (!user) return;
     setLoading(true);
     try {
-      // 1. Buscar Leads filtrados pelo owner
+      // 1. Buscar Leads filtrados pelo owner (via instance_id que contém o chat_id)
       const { data: leads } = await supabase
         .from('ai_leads_tracking')
         .select('*')
-        .eq('owner_chat_id', user.id);
+        .ilike('instance_id', `wa_${user.id}_%`);
 
       if (leads) {
         const qualified = leads.filter(l => l.status === 'TRANSFERRED').length;
@@ -136,11 +136,11 @@ export default function App() {
         setChartData(dailyData);
       }
 
-      // 2. Buscar Corretores filtrados
+      // 2. Buscar Corretores filtrados (usando tg_chat_id conforme server.mjs)
       const { data: brokersList } = await supabase
         .from('real_estate_brokers')
         .select('*')
-        .eq('owner_chat_id', user.id);
+        .eq('tg_chat_id', user.id);
       setBrokers(brokersList || []);
       setStats(prev => ({ ...prev, activeBrokers: brokersList?.length || 0 }));
 
