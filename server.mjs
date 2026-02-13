@@ -140,7 +140,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.268";
+const SERVER_VERSION = "1.269";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -2700,7 +2700,10 @@ async function distributeLead(tgChatId, leadJid, instId, leadName, summary) {
                 `📝 *Resumo/Motivo:* \n${summary}\n\n` +
                 `⚠️ *Nota:* Como o rodízio está desativado, este lead **não** foi enviado para vendedores.`;
 
-            await bot.telegram.sendMessage(tgChatId, notifyText, { parse_mode: "Markdown" });
+            await bot.telegram.sendMessage(tgChatId, notifyText, {
+                parse_mode: "Markdown",
+                ...Markup.inlineKeyboard([[Markup.button.callback("✅ Retomar IA", `wa_ai_resume_${instId}_${leadJid}`)]])
+            });
 
             // Parar a IA para este contato mesmo assim
             await supabase.from("ai_leads_tracking")
@@ -3969,24 +3972,17 @@ app.post("/webhook", async (req, res) => {
                                             // V1.243: Processar notificações e updates em background para NÃO travar o envio da mensagem
                                             (async () => {
                                                 try {
+                                                    // Pausar na sessão local imediatamente (importante para performance)
                                                     if (!session.whatsapp.pausedLeads) session.whatsapp.pausedLeads = {};
                                                     session.whatsapp.pausedLeads[remoteJid] = true;
                                                     await saveSession(chatId, session);
 
-                                                    await supabase.from("ai_leads_tracking").upsert({
-                                                        chat_id: remoteJid,
-                                                        instance_id: tokenId,
-                                                        status: "TRANSFERRED",
-                                                        last_interaction: new Date().toISOString()
-                                                    }, { onConflict: "chat_id, instance_id" });
-
-                                                    const notifyText = `⚠️ *Solicitação de Atendimento Humano*\n\n` +
-                                                        `O cliente **${readableLead}** na instância *${inst.name}* precisa de ajuda.\n\n` +
-                                                        `A IA foi pausada no DB e na Sessão.`;
-                                                    bot.telegram.sendMessage(chatId, notifyText, {
-                                                        parse_mode: "Markdown",
-                                                        ...Markup.inlineKeyboard([[Markup.button.callback("✅ Retomar IA", `wa_ai_resume_${tokenId}_${remoteJid}`)]])
-                                                    });
+                                                    // V1.269: Acionar Rodízio de Leads
+                                                    // A função distributeLead cuida de:
+                                                    // 1. Verificar se rodízio está ativo
+                                                    // 2. Se SIM: Enviar para corretor e notificar admin
+                                                    // 3. Se NÃO: Notificar admin com botão de retomar e pausar IA no DB
+                                                    await distributeLead(chatId, remoteJid, tokenId, readableLead, finalResponse);
                                                 } catch (e) {
                                                     log(`[WEBHOOK AI ERR] Erro ao processar transbordo em background: ${e.message}`);
                                                 }
