@@ -140,7 +140,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.256";
+const SERVER_VERSION = "1.257";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -2643,7 +2643,10 @@ async function renderBrokersMenu(ctx, instId) {
         });
     }
 
+    const isRotationOn = inst.rotation_enabled !== false;
+
     const buttons = [
+        [Markup.button.callback(isRotationOn ? "🟢 Rodízio: ATIVADO" : "🔴 Rodízio: DESATIVADO", `wa_rotation_toggle_${instId}`)],
         [Markup.button.callback("➕ Adicionar Atendente", `wa_broker_add_${instId}`)],
         [Markup.button.callback("🗑️ Remover Atendente", `wa_broker_del_list_${instId}`)],
         [Markup.button.callback("🔙 Voltar", `manage_${instId}`)]
@@ -2651,6 +2654,16 @@ async function renderBrokersMenu(ctx, instId) {
 
     await safeEdit(ctx, text, Markup.inlineKeyboard(buttons));
 }
+
+bot.action(/^wa_rotation_toggle_(.+)$/, async (ctx) => {
+    safeAnswer(ctx);
+    const id = ctx.match[1];
+    const { inst, session } = await checkOwnership(ctx, id);
+    if (!inst) return;
+    inst.rotation_enabled = !(inst.rotation_enabled !== false);
+    await syncSession(ctx, session);
+    await renderBrokersMenu(ctx, id);
+});
 
 bot.action(/^wa_brokers_menu_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
@@ -2902,6 +2915,28 @@ async function handleAiSdr({ text, audioBase64, history = [], systemPrompt, chat
 async function distributeLead(tgChatId, leadJid, instId, leadName, summary) {
     try {
         log(`[RODÍZIO] Buscando corretores para ${tgChatId}...`);
+        const session = await getSession(tgChatId);
+        const inst = session.whatsapp.instances.find(i => i.id === instId);
+        const rotationEnabled = inst ? inst.rotation_enabled !== false : true;
+
+        if (!rotationEnabled) {
+            log(`[RODÍZIO] Rodízio desativado para ${instId}. Notificando apenas Telegram.`);
+            const notifyText = `📢 *Novo Lead Qualificado (Rodízio OFF)*\n\n` +
+                `👤 *Cliente:* ${leadName}\n` +
+                `📱 *WhatsApp:* \`${leadJid.split('@')[0]}\`\n\n` +
+                `📝 *Resumo/Motivo:* \n${summary}\n\n` +
+                `⚠️ *Nota:* Como o rodízio está desativado, este lead **não** foi enviado para vendedores.`;
+
+            await bot.telegram.sendMessage(tgChatId, notifyText, { parse_mode: "Markdown" });
+
+            // Parar a IA para este contato mesmo assim
+            await supabase.from("ai_leads_tracking")
+                .update({ status: "TRANSFERRED", last_interaction: new Date().toISOString() })
+                .eq("instance_id", instId)
+                .eq("chat_id", leadJid);
+            return;
+        }
+
         const { data: brokers, error } = await supabase
             .from("real_estate_brokers")
             .select("*")
@@ -2909,11 +2944,10 @@ async function distributeLead(tgChatId, leadJid, instId, leadName, summary) {
             .eq("status", "active");
 
         if (error || !brokers || brokers.length === 0) {
-            log(`[RODÍZIO] Nenhum corretor ativo encontrado para ${tgChatId}`);
+            log(`[RODÍZIO] Nenhum corretor ativo encontrado para ${tgChatId}. Notificando Telegram.`);
+            bot.telegram.sendMessage(tgChatId, `⚠️ *Atenção:* O lead **${leadName}** foi qualificado, mas não há atendentes ativos para o rodízio.`);
             return;
         }
-
-        const session = await getSession(tgChatId);
         let nextIndex = session.last_broker_index || 0;
 
         if (nextIndex >= brokers.length) nextIndex = 0;
