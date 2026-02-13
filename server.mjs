@@ -140,7 +140,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.265";
+const SERVER_VERSION = "1.266";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -3873,7 +3873,17 @@ app.post("/webhook", async (req, res) => {
                         .maybeSingle();
 
                     // Fallback para sessão se a tabela DB falhar ou não identificar o silenciamento
-                    const isPausedInSession = session.whatsapp?.pausedLeads?.[remoteJid] === true;
+                    let isPausedInSession = session.whatsapp?.pausedLeads?.[remoteJid] === true;
+
+                    // V1.265: Self-Healing - Se o status for NUDGED/AI_SENT (Bot ativo), destrava a sessão automaticamente
+                    if (isPausedInSession && tracking && (tracking.status === "NUDGED" || tracking.status === "AI_SENT")) {
+                        log(`[WEBHOOK FIX] Destravando IA para ${remoteJid} pois status DB é ${tracking.status}`);
+                        if (session.whatsapp?.pausedLeads) {
+                            delete session.whatsapp.pausedLeads[remoteJid];
+                            await saveSession(chatId, session);
+                        }
+                        isPausedInSession = false;
+                    }
 
                     if (isPausedInSession || (tracking && (tracking.status === "HUMAN_ACTIVE" || tracking.status === "TRANSFERRED"))) {
                         log(`[WEBHOOK] IA Pausada para ${remoteJid} (Status DB: ${tracking?.status || 'N/A'}, Sessão: ${isPausedInSession}).`);
