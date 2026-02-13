@@ -140,7 +140,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.275";
+const SERVER_VERSION = "1.276-debug";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -2508,6 +2508,8 @@ bot.action(/^wa_list_paused_leads_(.+)$/, async (ctx) => {
         return ctx.reply("❌ Erro ao buscar leads pausados.");
     }
 
+    log(`[LIST PAUSED DEBUG] Buscando leads com status TRANSFERRED/HUMAN_ACTIVE para ${instId}. Encontrados: ${leads?.length || 0}`);
+
     if (!leads || leads.length === 0) {
         return ctx.editMessageText(`📋 *Leads em Atendimento (${instId})*\n\n✅ Nenhum lead pausado no momento. A IA está ativa para todos os contatos qualificados.`, {
             parse_mode: "Markdown",
@@ -2770,7 +2772,7 @@ async function distributeLead(tgChatId, leadJid, instId, leadName, summary) {
             });
 
             // V1.275: Parar a IA para este contato mesmo assim - UPSERT para garantir persistência
-            await supabase.from("ai_leads_tracking")
+            const upsertResult = await supabase.from("ai_leads_tracking")
                 .upsert({
                     chat_id: leadJid,
                     instance_id: instId,
@@ -2778,6 +2780,7 @@ async function distributeLead(tgChatId, leadJid, instId, leadName, summary) {
                     last_interaction: new Date().toISOString(),
                     status: "TRANSFERRED"
                 }, { onConflict: "chat_id, instance_id" });
+            log(`[DISTRIBUTE DEBUG] Upsert TRANSFERRED (Rodízio OFF) para ${leadName}: ${upsertResult.error ? 'ERRO - ' + upsertResult.error.message : 'OK'}`);
             return;
         }
 
@@ -2807,7 +2810,7 @@ async function distributeLead(tgChatId, leadJid, instId, leadName, summary) {
             `👉 *Ação:* Lead qualificado e entregue. A IA foi encerrada para este contato.`;
 
         // V1.275: Marcar como TRANSFERRED para parar a IA para sempre - UPSERT para garantir persistência
-        await supabase.from("ai_leads_tracking")
+        const upsertResult = await supabase.from("ai_leads_tracking")
             .upsert({
                 chat_id: leadJid,
                 instance_id: instId,
@@ -2815,6 +2818,7 @@ async function distributeLead(tgChatId, leadJid, instId, leadName, summary) {
                 last_interaction: new Date().toISOString(),
                 status: "TRANSFERRED"
             }, { onConflict: "chat_id, instance_id" }); // Consistency: using chat_id instead of remote_jid if possible
+        log(`[DISTRIBUTE DEBUG] Upsert TRANSFERRED (Rodízio ON) para ${leadName}: ${upsertResult.error ? 'ERRO - ' + upsertResult.error.message : 'OK'}`);
 
         const rawPhone = broker.phone;
         const cleanPhone = rawPhone.replace(/\D/g, "");
@@ -4078,13 +4082,14 @@ app.post("/webhook", async (req, res) => {
                                             log(`[WEBHOOK AI] Lead Qualificado: ${readableLead}`);
 
                                             // V1.274: Pausar IA para este lead (SDR finalizado) - Usar UPSERT para garantir persistência
-                                            await supabase.from("ai_leads_tracking").upsert({
+                                            const qualifyUpsert = await supabase.from("ai_leads_tracking").upsert({
                                                 chat_id: remoteJid,
                                                 instance_id: tokenId,
                                                 lead_name: readableLead,
                                                 last_interaction: new Date().toISOString(),
                                                 status: "TRANSFERRED"
                                             }, { onConflict: "chat_id, instance_id" });
+                                            log(`[QUALIFY DEBUG] Upsert TRANSFERRED para ${readableLead}: ${qualifyUpsert.error ? 'ERRO - ' + qualifyUpsert.error.message : 'OK'}`);
 
                                             log(`[AI QUALIFY] Notificando admin ${chatId} sobre lead ${readableLead}`);
                                             bot.telegram.sendMessage(chatId, `✅ *Lead Qualificado!* **${readableLead}**\n\nEncaminhando para o corretor da vez...`);
