@@ -27,6 +27,20 @@ const UPLOADS_DIR = path.join(__dirname, "uploads");
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR);
 app.use("/uploads", express.static(UPLOADS_DIR));
 
+// V1.315: Servir o novo Painel CRM (Lovable) como FRONT-END PRINCIPAL
+const DASHBOARD_DIST = path.join(__dirname, "PAINEL NOVO CRM", "dist");
+app.use(express.static(DASHBOARD_DIST));
+
+// Suporte a rotas do React (SPA) - Fallback para todas as rotas que não são Webhook ou Uploads
+app.get("*", (req, res, next) => {
+    // Se for rota de API ou arquivos, pula este middleware
+    if (req.path === "/webhook" || req.path.startsWith("/uploads")) {
+        return next();
+    }
+    res.sendFile(path.join(DASHBOARD_DIST, "index.html"));
+});
+
+
 // -- Configurações e Env --
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const DEFAULT_MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
@@ -141,7 +155,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.292";
+const SERVER_VERSION = "1.315";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -673,7 +687,11 @@ bot.start(async (ctx) => {
         return renderTourMenu(ctx, 0);
     }
 
+    const baseUrl = WEBHOOK_URL.split("/webhook")[0];
+    const dashboardUrl = `${baseUrl}/?tid=${ctx.chat.id}`;
+
     const buttons = [
+        [Markup.button.url("🌐 Abrir Painel CRM (Web)", dashboardUrl)],
         [Markup.button.callback("🚀 Minhas Instâncias", "cmd_instancias_menu")],
         [Markup.button.callback("📢 Disparo em Massa", "cmd_shortcuts_disparos"), Markup.button.callback("🤝 Afiliados", "cmd_afiliados")],
         [Markup.button.callback("🔔 Follow-ups / Agenda", "cmd_shortcuts_followups")],
@@ -683,6 +701,7 @@ bot.start(async (ctx) => {
     if (isVip || isAdmin(ctx.chat.id, config)) {
         buttons.push([Markup.button.callback("📺 Área de Tutoriais", "cmd_tutoriais")]);
     }
+
 
     if (isAdmin(ctx.chat.id, config)) {
         buttons.push([Markup.button.callback("👑 Painel Admin", "cmd_admin_panel")]);
