@@ -140,7 +140,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.277";
+const SERVER_VERSION = "1.278";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -2808,15 +2808,14 @@ async function distributeLead(tgChatId, leadJid, instId, leadName, summary) {
             `🔔 *Instância:* ${instId}\n` +
             `👉 *Ação:* Lead qualificado e entregue. A IA foi encerrada para este contato.`;
 
-        // V1.275: Marcar como TRANSFERRED para parar a IA para sempre - UPSERT para garantir persistência
+        // V1.278: Marcar como TRANSFERRED para parar a IA para sempre - UPSERT para garantir persistência (sem lead_name)
         const upsertResult = await supabase.from("ai_leads_tracking")
             .upsert({
                 chat_id: leadJid,
                 instance_id: instId,
-                lead_name: leadName,
                 last_interaction: new Date().toISOString(),
                 status: "TRANSFERRED"
-            }, { onConflict: "chat_id, instance_id" }); // Consistency: using chat_id instead of remote_jid if possible
+            }, { onConflict: "chat_id, instance_id" });
         log(`[DISTRIBUTE DEBUG] Upsert TRANSFERRED (Rodízio ON) para ${leadName}: ${upsertResult.error ? 'ERRO - ' + upsertResult.error.message : 'OK'}`);
 
         const rawPhone = broker.phone;
