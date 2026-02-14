@@ -141,7 +141,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.290";
+const SERVER_VERSION = "1.291";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -189,7 +189,7 @@ async function saveSystemConfig(config) {
 }
 
 function isAdmin(chatId, config) {
-    if (!config.adminChatId) return true; // Primeira vez libera pra cadastrar
+    if (!config || !config.adminChatId) return false; // V1.291: Segurança - Não libera pra todos se não configurado
     return String(config.adminChatId) === String(chatId);
 }
 
@@ -1274,6 +1274,16 @@ const activeCampaigns = new Map();
 bot.action(/^wa_mass_init_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
+    const isVip = await checkVip(ctx.chat.id);
+    const config = await getSystemConfig();
+
+    // V1.291: Segunda camada de proteção
+    if (!isVip && !isAdmin(ctx.chat.id, config)) {
+        return safeEdit(ctx, "❌ *Módulo Pro Bloqueado*\n\nSua assinatura Connect Pro expirou. Renove para continuar usando os disparos.",
+            Markup.inlineKeyboard([[Markup.button.callback("💎 Renovar Agora", "cmd_planos_menu")], [Markup.button.callback("🔙 Voltar", "cmd_instancias_menu")]])
+        );
+    }
+
     const { inst, session } = await checkOwnership(ctx, id);
     if (!inst) return;
 
