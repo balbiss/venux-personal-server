@@ -27,18 +27,15 @@ const UPLOADS_DIR = path.join(__dirname, "uploads");
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR);
 app.use("/uploads", express.static(UPLOADS_DIR));
 
-// V1.315: Servir o novo Painel CRM (Lovable) como FRONT-END PRINCIPAL
+// V1.316: Servir o novo Painel CRM (Lovable) como FRONT-END PRINCIPAL
 const DASHBOARD_DIST = path.join(__dirname, "PAINEL NOVO CRM", "dist");
 app.use(express.static(DASHBOARD_DIST));
 
-// Suporte a rotas do React (SPA) - Fallback para todas as rotas que não são Webhook ou Uploads
-app.get("*", (req, res, next) => {
-    // Se for rota de API ou arquivos, pula este middleware
-    if (req.path === "/webhook" || req.path.startsWith("/uploads")) {
-        return next();
-    }
+// Roteamento SPA: redireciona rotas que não são estáticas ou webhooks para o index.html
+app.get(/^\/(?!webhook|health|uploads|static).*/, (req, res) => {
     res.sendFile(path.join(DASHBOARD_DIST, "index.html"));
 });
+
 
 
 // -- Configurações e Env --
@@ -155,7 +152,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.315";
+const SERVER_VERSION = "1.316";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -3878,14 +3875,8 @@ bot.on("document", async (ctx) => handleMassMedia(ctx, 'document', ctx.message.d
 // -- Server Endpoints --
 app.get("/health", (req, res) => res.json({ status: "ok", version: SERVER_VERSION }));
 
-// 🌐 Servir Dashboard Web (Lovable)
-const DASHBOARD_DIST = path.join(__dirname, "dashboard", "dist");
-app.use(express.static(DASHBOARD_DIST));
+// -- Server Endpoints -- (Endpoints de suporte já declarados no topo)
 
-// Roteamento SPA: redireciona todas as rotas não-API para o index.html do dashboard
-app.get(/^\/(?!webhook|health|uploads|static).*/, (req, res) => {
-    res.sendFile(path.join(DASHBOARD_DIST, "index.html"));
-});
 
 // Rota para o QR Client White-Label
 app.get("/qr-client", (req, res) => {
