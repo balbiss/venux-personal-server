@@ -141,7 +141,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.291";
+const SERVER_VERSION = "1.292";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -1919,14 +1919,37 @@ async function renderFollowupMenu(ctx, instId) {
     await safeEdit(ctx, text, Markup.inlineKeyboard(buttons));
 }
 
-
-
 bot.action(/^wa_ai_followup_menu_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
+    const isVip = await checkVip(ctx.chat.id);
+    const config = await getSystemConfig();
+
+    if (!isVip && !isAdmin(ctx.chat.id, config)) {
+        return safeEdit(ctx, "❌ *Recurso de IA Bloqueado*\n\nOs recursos de Inteligência Artificial são exclusivos para assinantes VIP.",
+            Markup.inlineKeyboard([[Markup.button.callback("💎 Ver Planos", "cmd_planos_menu")], [Markup.button.callback("🔙 Voltar", `manage_${id}`)]])
+        );
+    }
     const { inst, session } = await checkOwnership(ctx, id);
     if (!inst) return;
     await renderFollowupMenu(ctx, id);
+});
+
+bot.action(/^wa_brokers_menu_(.+)$/, async (ctx) => {
+    safeAnswer(ctx);
+    const id = ctx.match[1];
+    const isVip = await checkVip(ctx.chat.id);
+    const config = await getSystemConfig();
+
+    if (!isVip && !isAdmin(ctx.chat.id, config)) {
+        return safeEdit(ctx, "❌ *Rodízio Bloqueado*\n\nO Rodízio de Corretores é um recurso exclusivo para assinantes VIP.",
+            Markup.inlineKeyboard([[Markup.button.callback("💎 Ver Planos", "cmd_planos_menu")], [Markup.button.callback("🔙 Voltar", `manage_${id}`)]])
+        );
+    }
+
+    const { inst, session } = await checkOwnership(ctx, id);
+    if (!inst) return;
+    await renderBrokersMenu(ctx, id);
 });
 
 bot.action(/^wa_fu_toggle_(.+)$/, async (ctx) => {
@@ -2385,9 +2408,18 @@ async function renderAiMenu(ctx, instId) {
 }
 
 bot.action(/^wa_ai_menu_(.+)$/, async (ctx) => {
-    const id = ctx.match[1];
-    log(`[AI_MENU] Acesso ao menu principal ID: ${id}`);
     safeAnswer(ctx);
+    const id = ctx.match[1];
+    const isVip = await checkVip(ctx.chat.id);
+    const config = await getSystemConfig();
+
+    if (!isVip && !isAdmin(ctx.chat.id, config)) {
+        return safeEdit(ctx, "❌ *Módulo Pro Bloqueado*\n\nO uso de Inteligência Artificial exige uma assinatura Pro ativa. Renove sua assinatura para habilitar.",
+            Markup.inlineKeyboard([[Markup.button.callback("💎 Assinar Pro", "cmd_planos_menu")], [Markup.button.callback("🔙 Voltar", `manage_${id}`)]])
+        );
+    }
+
+    log(`[AI_MENU] Acesso ao menu principal ID: ${id}`);
     const { inst, session } = await checkOwnership(ctx, id);
     if (!inst) return;
     await ensureWebhookSet(id);
