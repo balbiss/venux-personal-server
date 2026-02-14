@@ -52,7 +52,7 @@ export default function IaSdr() {
       }
     };
 
-    fetchInstances();
+    fetchSession();
   }, [tid]);
 
   // Atualiza estados locais quando a instância selecionada muda
@@ -95,7 +95,7 @@ export default function IaSdr() {
       const { error } = await supabase
         .from("bot_sessions")
         .update({ data: updatedData })
-        .eq("telegram_id", tid);
+        .eq("chat_id", tid);
 
       if (error) throw error;
 

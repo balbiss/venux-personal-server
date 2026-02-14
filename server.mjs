@@ -152,7 +152,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.319";
+const SERVER_VERSION = "1.320";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -263,21 +263,27 @@ async function safeDelete(ctx) {
 
 async function checkVip(chatId) {
     const session = await getSession(chatId);
+
+    // V1.320: Mais resiliente - Se é VIP mas não tem validade, dá 30 dias de bônus
+    if (session.isVip && !session.subscriptionExpiry) {
+        const exp = new Date();
+        exp.setDate(exp.getDate() + 30);
+        session.subscriptionExpiry = exp.toISOString();
+        await saveSession(chatId, session);
+        log(`[VIP-REPAIR] ${chatId}: Adicionada validade padrão (30 dias)`);
+    }
+
     if (!session.isVip) {
         log(`[VIP-CHECK] ${chatId}: BLOQUEADO (Não é VIP)`);
         return false;
     }
-    if (!session.subscriptionExpiry) {
-        log(`[VIP-CHECK] ${chatId}: BLOQUEADO (Sem data de expiração)`);
-        return false;
-    }
+
     const expiry = new Date(session.subscriptionExpiry);
     const now = new Date();
     const isVip = expiry > now;
+
     if (!isVip) {
         log(`[VIP-CHECK] ${chatId}: BLOQUEADO (Expirado em ${expiry.toLocaleString('pt-BR')})`);
-    } else {
-        // log(`[VIP-CHECK] ${chatId}: ATIVO (Validade: ${expiry.toLocaleString('pt-BR')})`);
     }
     return isVip;
 }
@@ -1120,6 +1126,14 @@ async function showInstances(ctx) {
             const status = isOnline ? "✅ On" : "❌ Off";
             msg += `🔹 **${inst.name}**\n${phoneInfo}\n📡 Status: ${status}\n\n`;
             buttons.push([Markup.button.callback(`⚙️ Gerenciar ${inst.name}`, `manage_${inst.id}`)]);
+
+            // V1.320: Sincronizar status com o Banco de Dados (Painel Web)
+            const newPresence = isOnline ? "available" : "unavailable";
+            if (inst.presence !== newPresence) {
+                inst.presence = newPresence;
+                await saveSession(ctx.chat.id, session);
+                log(`[SYNC] Status de ${inst.id} atualizado para ${newPresence} no DB.`);
+            }
         }
     }
 
