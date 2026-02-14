@@ -41,7 +41,7 @@ export default function Instancias() {
       .channel(`session-${tid}`)
       .on(
         "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "bot_sessions", filter: `telegram_id=eq.${tid}` },
+        { event: "UPDATE", schema: "public", table: "bot_sessions", filter: `chat_id=eq.${tid}` },
         (payload: any) => {
           if (payload.new?.data?.whatsapp?.instances) {
             setInstances(payload.new.data.whatsapp.instances);

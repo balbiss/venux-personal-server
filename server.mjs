@@ -152,7 +152,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.318";
+const SERVER_VERSION = "1.319";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -4023,8 +4023,26 @@ app.post("/webhook", async (req, res) => {
 
             if (wuzapiEvent === "Connected" || wuzapiEvent === "LoggedIn") {
                 bot.telegram.sendMessage(chatId, `✅ *WhatsApp Conectado!*\n\nA instância \`${tokenId}\` agora está online e pronta para uso.`, { parse_mode: "Markdown" });
+
+                // V1.319: Persistir status no banco para sincronizar com Painel Web
+                const s = await getSession(chatId);
+                if (s.whatsapp && Array.isArray(s.whatsapp.instances)) {
+                    s.whatsapp.instances = s.whatsapp.instances.map(inst =>
+                        inst.id === tokenId ? { ...inst, presence: "available" } : inst
+                    );
+                    await saveSession(chatId, s);
+                }
             } else if (wuzapiEvent === "Disconnected") {
                 bot.telegram.sendMessage(chatId, `⚠️ *WhatsApp Desconectado!*\n\nA instância \`${tokenId}\` foi desconectada. Gere um novo QR Code para reconectar.`, { parse_mode: "Markdown" });
+
+                // V1.319: Persistir status no banco
+                const s = await getSession(chatId);
+                if (s.whatsapp && Array.isArray(s.whatsapp.instances)) {
+                    s.whatsapp.instances = s.whatsapp.instances.map(inst =>
+                        inst.id === tokenId ? { ...inst, presence: "unavailable" } : inst
+                    );
+                    await saveSession(chatId, s);
+                }
             } else if (wuzapiEvent === "Message") {
                 const rawData = body.event || body.data || {};
                 const info = rawData.Info || rawData || {};
