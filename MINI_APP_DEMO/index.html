@@ -111,7 +111,7 @@
 
         <!-- Info Footer -->
         <div class="text-center text-xs opacity-50 mt-6">
-            <p>Versão 1.330 • Mini App Demo</p>
+            <p>Versão 1.340 • Dados Reais</p>
             <p class="mt-1">Powered by Telegram WebApps</p>
         </div>
     </div>
@@ -126,32 +126,54 @@
         document.body.style.backgroundColor = tg.themeParams.bg_color || '#1a1a2e';
         document.body.style.color = tg.themeParams.text_color || '#eee';
 
-        // Simular atualização de dados
-        document.getElementById('refresh-btn').addEventListener('click', () => {
+        // V1.340: Buscar dados reais da API
+        async function loadDashboardData() {
+            try {
+                // Pegar chat_id do usuário do Telegram (se disponível)
+                const chatId = tg.initDataUnsafe?.user?.id || '';
+
+                const response = await fetch(`/api/dashboard/stats?chat_id=${chatId}`);
+                const data = await response.json();
+
+                // Atualizar UI com dados reais
+                document.getElementById('leads-count').textContent = data.leadsAtendidos;
+                document.getElementById('qualified-count').textContent = data.leadsQualificados;
+                document.getElementById('instances-count').textContent = data.instanciasAtivas;
+
+                // Formatar receita
+                const receita = (data.receitaEstimada / 1000).toFixed(1);
+                document.querySelector('.stat-card:nth-child(4) .text-2xl').textContent = `R$ ${receita}K`;
+
+                console.log('[Dashboard] Dados carregados:', data);
+            } catch (error) {
+                console.error('[Dashboard] Erro ao carregar dados:', error);
+                // Manter valores padrão em caso de erro
+            }
+        }
+
+        // Carregar dados ao iniciar
+        loadDashboardData();
+
+        // Atualizar dados ao clicar no botão
+        document.getElementById('refresh-btn').addEventListener('click', async () => {
             tg.HapticFeedback.impactOccurred('medium');
 
-            // Animação de loading
             const btn = document.getElementById('refresh-btn');
             btn.innerHTML = '⏳ Atualizando...';
             btn.disabled = true;
 
-            setTimeout(() => {
-                // Atualizar números aleatoriamente
-                document.getElementById('leads-count').textContent = Math.floor(Math.random() * 100) + 200;
-                document.getElementById('qualified-count').textContent = Math.floor(Math.random() * 50) + 50;
-                document.getElementById('instances-count').textContent = Math.floor(Math.random() * 3) + 2;
+            await loadDashboardData();
 
-                btn.innerHTML = '✅ Atualizado!';
-                setTimeout(() => {
-                    btn.innerHTML = '🔄 Atualizar Dados';
-                    btn.disabled = false;
-                }, 1000);
-            }, 1500);
+            btn.innerHTML = '✅ Atualizado!';
+            setTimeout(() => {
+                btn.innerHTML = '🔄 Atualizar Dados';
+                btn.disabled = false;
+            }, 1000);
         });
 
         // Mostrar informações do usuário (se disponível)
         if (tg.initDataUnsafe.user) {
-            console.log('Usuário:', tg.initDataUnsafe.user.first_name);
+            console.log('Usuário:', tg.initDataUnsafe.user.first_name, 'ID:', tg.initDataUnsafe.user.id);
         }
     </script>
 </body>

@@ -149,7 +149,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.335";
+const SERVER_VERSION = "1.340";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -4549,6 +4549,60 @@ setTimeout(() => {
 // Graceful stop
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
+
+// V1.340: API para Dashboard com Dados Reais
+app.get("/api/dashboard/stats", async (req, res) => {
+    try {
+        const chatId = req.query.chat_id || req.query.user_id;
+
+        // Buscar leads tracking (todos ou filtrados por usuário)
+        let query = supabase.from("ai_leads_tracking").select("*");
+
+        // Se tiver chat_id, filtrar por instance_id que contenha o chat_id
+        if (chatId) {
+            query = query.ilike("instance_id", `%_${chatId}_%`);
+        }
+
+        const { data: leads, error } = await query;
+
+        if (error) {
+            log(`[API ERR] Erro ao buscar leads: ${error.message}`);
+            return res.status(500).json({ error: "Erro ao buscar dados" });
+        }
+
+        // Calcular estatísticas
+        const hoje = new Date();
+        hoje.setHours(0, 0, 0, 0);
+
+        const leadsHoje = leads.filter(l => new Date(l.created_at) >= hoje);
+        const leadsQualificados = leads.filter(l => l.status === "qualified" || l.is_qualified);
+        const leadsTransferidos = leads.filter(l => l.status === "transferred" || l.transferred);
+
+        // Buscar instâncias ativas do usuário
+        let instanciasAtivas = 0;
+        if (chatId) {
+            const session = await getSession(chatId);
+            instanciasAtivas = session.whatsapp?.instances?.length || 0;
+        }
+
+        // Calcular receita estimada (exemplo: R$ 50 por lead qualificado)
+        const receitaEstimada = leadsQualificados.length * 50;
+
+        res.json({
+            leadsAtendidos: leadsHoje.length,
+            leadsQualificados: leadsQualificados.length,
+            leadsTransferidos: leadsTransferidos.length,
+            instanciasAtivas: instanciasAtivas,
+            receitaEstimada: receitaEstimada,
+            periodo: "hoje",
+            totalLeads: leads.length
+        });
+
+    } catch (err) {
+        log(`[API ERR] ${err.message}`);
+        res.status(500).json({ error: "Erro interno do servidor" });
+    }
+});
 
 app.listen(PORT, "0.0.0.0", () => {
     log(`Servidor rodando em: http://0.0.0.0:${PORT}`);
