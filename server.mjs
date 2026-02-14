@@ -141,7 +141,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.286";
+const SERVER_VERSION = "1.287";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -722,8 +722,8 @@ async function renderTourMenu(ctx, step = 0) {
         },
         {
             title: "💎 Escolha seu Sucesso",
-            description: `Tudo isso liberado imediatamente após a assinatura.\n\n💰 <b>Investimento:</b> R$ ${config.planPrice.toFixed(2)}/mês\n\nSem taxas de adesão. Cancele quando quiser.`,
-            btnNext: "🔥 ASSINAR AGORA (PIX)"
+            description: `Tudo isso liberado imediatamente após a assinatura.\n\n💰 <b>Investimento:</b> R$ 119,90/mês\n\nSem taxas de adesão. Cancele quando quiser.`,
+            btnNext: "🚀 ASSINAR AGORA"
         }
     ];
 
@@ -861,13 +861,13 @@ bot.action("cmd_planos_menu", async (ctx) => {
 
     const text = `💎 *Informações do Plano*\n\n` +
         `📊 *Seu Status:* ${isVip ? "✅ ASSINATURA ATIVA" : "❌ AGUARDANDO PAGAMENTO"}\n` +
-        `💰 *Valor:* R$ ${config.planPrice.toFixed(2)}/mês\n\n` +
+        `💰 *Valor:* R$ 119,90/mês\n\n` +
         `🛠️ *Limites do Plano:*\n` +
         `📱 Instâncias: ${limits.instances}\n` +
         `👤 Corretores: Ilimitado\n`;
 
     const buttons = [];
-    if (!isVip) buttons.push([Markup.button.callback("💎 Assinar Agora (Pix)", "gen_pix_mensal")]);
+    if (!isVip) buttons.push([Markup.button.callback("💎 Assinar Agora", "gen_pix_mensal")]);
     buttons.push([Markup.button.callback("🔙 Voltar", "start")]);
 
     ctx.editMessageText(text, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
