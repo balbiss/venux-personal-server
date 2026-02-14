@@ -1,3 +1,4 @@
+process.env.TZ = "America/Sao_Paulo";
 import express from "express";
 import fetch from "node-fetch";
 import path from "path";
