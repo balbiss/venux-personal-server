@@ -141,7 +141,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.281";
+const SERVER_VERSION = "1.282";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -4359,11 +4359,17 @@ setInterval(checkAiFollowups, 60000);
 setInterval(checkFunnelFollowups, 600000); // Check every 10 min
 setInterval(checkAutoResume, 600000); // Check every 10 min
 
-bot.launch().then(() => {
-    log("Bot Ativo");
-    // Não executa imediatamente ao iniciar para evitar disparos acidentais se o fuso do servidor mudar
-    setTimeout(checkScheduledCampaigns, 5000);
-});
+// V1.282: Aguardar 10 segundos antes de iniciar o bot para evitar erro 409 (Conflict) em reinicializações rápidas
+log(`[BOT LOG] Aguardando 10s para estabilizar conexão com Telegram...`);
+setTimeout(() => {
+    bot.launch().then(() => {
+        log(`[BOT LOG] [${SERVER_VERSION}] ${new Date().toLocaleTimeString()} - ✅ Bot iniciado no Telegram`);
+        // Não executa imediatamente ao iniciar para evitar disparos acidentais se o fuso do servidor mudar
+        setTimeout(checkScheduledCampaigns, 5000);
+    }).catch(err => {
+        log(`[BOT ERR] Falha ao iniciar bot: ${err.message}`);
+    });
+}, 10000);
 
 // Graceful stop
 process.once('SIGINT', () => bot.stop('SIGINT'));
