@@ -149,7 +149,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.342";
+const SERVER_VERSION = "1.343";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -220,9 +220,13 @@ async function safeEdit(ctx, text, extra = {}) {
             await syncSession(ctx, session);
         } catch (e) {
             await killOld();
-            const sent = await ctx.reply(text, { parse_mode: "HTML", ...extra });
-            session.last_menu_id = sent.message_id;
-            await syncSession(ctx, session);
+            try {
+                const sent = await ctx.reply(text, { parse_mode: "HTML", ...extra });
+                session.last_menu_id = sent.message_id;
+                await syncSession(ctx, session);
+            } catch (re) {
+                log(`[SAFE-EDIT ERR] Falha total ao enviar mensagem: ${re.message}`);
+            }
         }
     } else {
         await killOld();
@@ -1951,7 +1955,7 @@ async function renderFollowupMenu(ctx, instId) {
         [Markup.button.callback(enabled ? "🔴 Desativar" : "🟢 Ativar", `wa_fu_toggle_${instId}`)],
         [Markup.button.callback("⏰ Definir Tempo (horas)", `wa_fu_set_hours_${instId}`)],
         [Markup.button.callback("🔢 Definir Qnt. Lembretes", `wa_fu_set_max_${instId}`)],
-        [Markup.button.callback("📝 Prompt do Sistema", `wa_set_ai_prompt_${instId}`)],
+        [Markup.button.callback("✉️ Editar Mensagens", `wa_fu_set_msgs_${instId}`)],
         [Markup.button.callback("🔙 Voltar", `manage_${instId}`)]
     ];
 
@@ -2046,14 +2050,18 @@ bot.action(/^wa_fu_set_msgs_(.+)$/, async (ctx) => {
     session.stage = `WA_WAITING_FU_MSGS_${id}`;
     await syncSession(ctx, session);
 
+    const max = inst.fu_max || 1;
     const current = (inst.fu_msgs || []).join("; ");
-    const msg = `✉️ Envie as mensagens de follow-up separadas por **ponto e vírgula** (;).\n\nExemplo:\n` +
-        `\`Oi, tudo bem?;Ainda tem interesse no produto?;Fico no aguardo!\`\n\n` +
-        (current ? `📌 *Mensagens Atuais:* \n_${current}_` : "");
-    const buttons = current ? [[Markup.button.callback(`✅ Manter Atual`, `wa_ai_keep_fu_msgs_${id}`)]] : [];
+    const msg = `✉️ <b>Configuração de Mensagens (${id})</b>\n\n` +
+        `Você definiu um máximo de <b>${max}</b> lembrete(s).\n\n` +
+        `Envie as ${max} mensagens separadas por <b>ponto e vírgula</b> (;).\n\n` +
+        `Exemplo para ${max} mensagens:\n` +
+        `${Array.from({ length: max }, (_, i) => `Mensagem ${i + 1}`).join("; ")}\n\n` +
+        (current ? `📌 <b>Atual:</b> <i>${current}</i>` : "");
 
-    await safeEdit(ctx, msg, Markup.inlineKeyboard(buttons));
+    ctx.reply(msg, { parse_mode: "HTML", ...Markup.inlineKeyboard([[Markup.button.callback("✅ Manter Atual", `wa_ai_keep_fu_msgs_${id}`)]]) });
 });
+
 
 // Handler para relatório detalhado
 bot.action(/^wa_report_(.+)$/, async (ctx) => {
@@ -4330,18 +4338,7 @@ app.post("/webhook", async (req, res) => {
     return res.send({ ok: true });
 });
 
-// -- Configure Bot Commands Menu --
-bot.telegram.setMyCommands([
-    { command: "start", description: "🚀 Menu Principal / Dashboard" },
-    { command: "stats", description: "📊 Dashboard de Leads (Analytics)" },
-    { command: "disparos", description: "📢 Módulo de Disparo em Massa" },
-    { command: "rodizio", description: "👥 Módulo de Rodízio de Leads" },
-    { command: "agenda", description: "🔔 Follow-ups e Agendamentos" },
-    { command: "instancias", description: "📱 Minhas Instâncias Conectadas" },
-    { command: "conectar", description: "🔗 Conectar Novo WhatsApp" },
-    { command: "vip", description: "💎 Status do Plano Premium" }
-]).then(() => log("✅ Menu de Comandos atualizado com sucesso no Telegram"))
-    .catch(err => log(`❌ Erro ao atualizar Menu de Comandos: ${err.message}`));
+// (setMyCommands movido para dentro do launch para estabilidade)
 
 
 
@@ -4535,6 +4532,19 @@ log(`[BOT LOG] Aguardando 10s para estabilizar conexão com Telegram...`);
 setTimeout(() => {
     bot.launch().then(() => {
         log(`[BOT LOG] [${SERVER_VERSION}] ${new Date().toLocaleTimeString()} - ✅ Bot iniciado no Telegram`);
+
+        // V1.343: Configurar comandos apenas APÓS o launch bem sucedido
+        bot.telegram.setMyCommands([
+            { command: "start", description: "🚀 Menu Principal / Dashboard" },
+            { command: "stats", description: "📊 Dashboard de Leads (Analytics)" },
+            { command: "disparos", description: "📢 Módulo de Disparo em Massa" },
+            { command: "rodizio", description: "👥 Módulo de Rodízio de Leads" },
+            { command: "agenda", description: "🔔 Follow-ups e Agendamentos" },
+            { command: "instancias", description: "📱 Minhas Instâncias Conectadas" },
+            { command: "conectar", description: "🔗 Conectar Novo WhatsApp" },
+            { command: "vip", description: "💎 Status do Plano Premium" }
+        ]).catch(e => log(`[BOT ERR] Erro ao setar comandos: ${e.message}`));
+
         // Não executa imediatamente ao iniciar para evitar disparos acidentais se o fuso do servidor mudar
         setTimeout(checkScheduledCampaigns, 5000);
     }).catch(err => {
