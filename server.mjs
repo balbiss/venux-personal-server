@@ -141,7 +141,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.285";
+const SERVER_VERSION = "1.286";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -170,7 +170,7 @@ async function getSystemConfig() {
     if (data) return data.data;
 
     const defaultConfig = {
-        planPrice: 49.90,
+        planPrice: 119.90,
         referralDays: 7,
         referralCommission: 10.00,
         supportLink: "@ConnectSuporte",
@@ -2983,7 +2983,7 @@ bot.action("gen_pix_mensal", async (ctx) => {
     // V1.283: Cakto Link com parâmetro src para identificação do chat_id no webhook
     const checkoutLink = `${CAKTO_CHECKOUT_URL}?src=${chatId}`;
 
-    ctx.reply(`💎 *Plano Pro Connect*\n\nClique no botão abaixo para assinar o plano recorrente e liberar todos os recursos:\n\n💰 *Valor:* R$ 119,90/mês`, {
+    ctx.reply(`💎 *Plano Pro Connect*\n\nClique no botão abaixo para assinar o plano e liberar todos os recursos:\n\n💰 *Valor:* R$ 119,90/mês`, {
         parse_mode: "Markdown",
         ...Markup.inlineKeyboard([[Markup.button.url("🚀 Assinar Agora", checkoutLink)]])
     });
