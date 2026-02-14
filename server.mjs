@@ -141,7 +141,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.284";
+const SERVER_VERSION = "1.285";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -3819,12 +3819,13 @@ app.post("/webhook", async (req, res) => {
     log(`[WEBHOOK IN] Recebido corpo: ${JSON.stringify(body).substring(0, 2000)}`);
 
     // -- 1. Tratar Webhook Cakto (Pagamento Recorrente V1.283) --
-    // A Cakto envia o chatId no campo 'src' conforme configurado no link de checkout
+    // A Cakto envia o chatId no campo 'src' (ou utm_source) conforme configurado no link de checkout
     const event = body.event || body.type || "";
     const caktoData = body.data || body || {};
-    const chatIdFromCakto = caktoData.src || caktoData.external_id || caktoData.refId || null;
+    // V1.285: Busca robusta do Chat ID nos parâmetros de rastreio da Cakto
+    const chatIdFromCakto = caktoData.src || caktoData.utm_source || caktoData.external_id || caktoData.refId || null;
 
-    if (chatIdFromCakto && (event === "purchase_approved" || body.status === "paid" || body.status === "confirmed")) {
+    if (chatIdFromCakto && (event === "purchase_approved" || caktoData.status === "paid" || body.status === "confirmed")) {
         const chatId = String(chatIdFromCakto);
         const config = await getSystemConfig();
         const s = await getSession(chatId);
