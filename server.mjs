@@ -149,7 +149,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.334";
+const SERVER_VERSION = "1.335";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -707,7 +707,7 @@ bot.start(async (ctx) => {
     const miniAppUrl = `${baseUrl}/miniapp`;
 
     const buttons = [
-        [Markup.button.url("📊 Ver Dashboard (Demo)", miniAppUrl)],
+        [Markup.button.webApp("📊 Ver Dashboard (Demo)", miniAppUrl)],
         [Markup.button.callback("🚀 Minhas Instâncias", "cmd_instancias_menu")],
         [Markup.button.callback("📢 Disparo em Massa", "cmd_shortcuts_disparos"), Markup.button.callback("🤝 Afiliados", "cmd_afiliados")],
         [Markup.button.callback("🔔 Follow-ups / Agenda", "cmd_shortcuts_followups")],
