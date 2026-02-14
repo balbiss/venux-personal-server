@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Dashboard Connect SaaS</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background: var(--tg-theme-bg-color, #1a1a2e);
+            color: var(--tg-theme-text-color, #eee);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+
+        .glass-card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(168, 85, 247, 0.1) 100%);
+            border: 1px solid rgba(99, 102, 241, 0.2);
+        }
+
+        .pulse {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: .5;
+            }
+        }
+    </style>
+</head>
+
+<body class="p-4">
+    <div class="max-w-md mx-auto space-y-4">
+        <!-- Header -->
+        <div class="text-center mb-6">
+            <h1 class="text-2xl font-bold mb-1">🚀 Connect SaaS</h1>
+            <p class="text-sm opacity-70">Dashboard em Tempo Real</p>
+        </div>
+
+        <!-- Stats Grid -->
+        <div class="grid grid-cols-2 gap-3">
+            <div class="stat-card rounded-xl p-4">
+                <div class="text-3xl mb-1">📊</div>
+                <div class="text-2xl font-bold" id="leads-count">247</div>
+                <div class="text-xs opacity-70">Leads Hoje</div>
+            </div>
+
+            <div class="stat-card rounded-xl p-4">
+                <div class="text-3xl mb-1">✅</div>
+                <div class="text-2xl font-bold" id="qualified-count">89</div>
+                <div class="text-xs opacity-70">Qualificados</div>
+            </div>
+
+            <div class="stat-card rounded-xl p-4">
+                <div class="text-3xl mb-1">📱</div>
+                <div class="text-2xl font-bold" id="instances-count">3</div>
+                <div class="text-xs opacity-70">Instâncias Ativas</div>
+            </div>
+
+            <div class="stat-card rounded-xl p-4">
+                <div class="text-3xl mb-1">💰</div>
+                <div class="text-2xl font-bold">R$ 4.2K</div>
+                <div class="text-xs opacity-70">Receita Est.</div>
+            </div>
+        </div>
+
+        <!-- Status Card -->
+        <div class="glass-card rounded-xl p-4">
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="font-semibold">Status do Sistema</h3>
+                <span class="flex items-center text-green-400 text-sm">
+                    <span class="w-2 h-2 bg-green-400 rounded-full mr-2 pulse"></span>
+                    Online
+                </span>
+            </div>
+            <div class="space-y-2 text-sm">
+                <div class="flex justify-between">
+                    <span class="opacity-70">WhatsApp API</span>
+                    <span class="text-green-400">✓ Conectado</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="opacity-70">IA GPT-4</span>
+                    <span class="text-green-400">✓ Ativo</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="opacity-70">Banco de Dados</span>
+                    <span class="text-green-400">✓ Sincronizado</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Action Button -->
+        <button id="refresh-btn"
+            class="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold py-3 px-6 rounded-xl hover:opacity-90 transition-opacity">
+            🔄 Atualizar Dados
+        </button>
+
+        <!-- Info Footer -->
+        <div class="text-center text-xs opacity-50 mt-6">
+            <p>Versão 1.330 • Mini App Demo</p>
+            <p class="mt-1">Powered by Telegram WebApps</p>
+        </div>
+    </div>
+
+    <script>
+        // Inicializar Telegram WebApp
+        const tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand();
+
+        // Aplicar tema do Telegram
+        document.body.style.backgroundColor = tg.themeParams.bg_color || '#1a1a2e';
+        document.body.style.color = tg.themeParams.text_color || '#eee';
+
+        // Simular atualização de dados
+        document.getElementById('refresh-btn').addEventListener('click', () => {
+            tg.HapticFeedback.impactOccurred('medium');
+
+            // Animação de loading
+            const btn = document.getElementById('refresh-btn');
+            btn.innerHTML = '⏳ Atualizando...';
+            btn.disabled = true;
+
+            setTimeout(() => {
+                // Atualizar números aleatoriamente
+                document.getElementById('leads-count').textContent = Math.floor(Math.random() * 100) + 200;
+                document.getElementById('qualified-count').textContent = Math.floor(Math.random() * 50) + 50;
+                document.getElementById('instances-count').textContent = Math.floor(Math.random() * 3) + 2;
+
+                btn.innerHTML = '✅ Atualizado!';
+                setTimeout(() => {
+                    btn.innerHTML = '🔄 Atualizar Dados';
+                    btn.disabled = false;
+                }, 1000);
+            }, 1500);
+        });
+
+        // Mostrar informações do usuário (se disponível)
+        if (tg.initDataUnsafe.user) {
+            console.log('Usuário:', tg.initDataUnsafe.user.first_name);
+        }
+    </script>
+</body>
+
+</html>

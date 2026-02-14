@@ -27,6 +27,10 @@ const UPLOADS_DIR = path.join(__dirname, "uploads");
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR);
 app.use("/uploads", express.static(UPLOADS_DIR));
 
+// V1.330: Servir Mini App Demo
+const MINI_APP_DIR = path.join(__dirname, "MINI_APP_DEMO");
+app.use("/miniapp", express.static(MINI_APP_DIR));
+
 
 
 
@@ -145,7 +149,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.325";
+const SERVER_VERSION = "1.330";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -699,7 +703,11 @@ bot.start(async (ctx) => {
         return renderTourMenu(ctx, 0);
     }
 
+    const baseUrl = WEBHOOK_URL.split("/webhook")[0];
+    const miniAppUrl = `${baseUrl}/miniapp`;
+
     const buttons = [
+        [Markup.button.webApp("📊 Ver Dashboard (Demo)", miniAppUrl)],
         [Markup.button.callback("🚀 Minhas Instâncias", "cmd_instancias_menu")],
         [Markup.button.callback("📢 Disparo em Massa", "cmd_shortcuts_disparos"), Markup.button.callback("🤝 Afiliados", "cmd_afiliados")],
         [Markup.button.callback("🔔 Follow-ups / Agenda", "cmd_shortcuts_followups")],
