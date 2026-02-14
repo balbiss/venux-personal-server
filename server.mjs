@@ -141,7 +141,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.283";
+const SERVER_VERSION = "1.284";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -3873,21 +3873,22 @@ app.post("/webhook", async (req, res) => {
         body.instance_name ||
         (body.event && (body.event.instanceName || body.event.InstanceName || body.event.token || body.event.Token));
 
-    const event = body.type ||
+    // V1.284: Reutilizando a variável 'event' para evitar SyntaxError (redeclaração)
+    const wuzapiEvent = body.type ||
         (typeof body.event === 'string' ? body.event : (body.event && (body.event.type || body.event.Type || body.event.event)));
 
-    if (tokenId && event) {
-        log(`[WEBHOOK] Evento: ${event} | Token: ${tokenId} | Keys: ${Object.keys(body).join(",")}`);
+    if (tokenId && wuzapiEvent) {
+        log(`[WEBHOOK] Evento: ${wuzapiEvent} | Token: ${tokenId} | Keys: ${Object.keys(body).join(",")}`);
 
         const parts = tokenId.split("_");
         if (parts.length >= 2) {
             const chatId = parts[1];
 
-            if (event === "Connected" || event === "LoggedIn") {
+            if (wuzapiEvent === "Connected" || wuzapiEvent === "LoggedIn") {
                 bot.telegram.sendMessage(chatId, `✅ *WhatsApp Conectado!*\n\nA instância \`${tokenId}\` agora está online e pronta para uso.`, { parse_mode: "Markdown" });
-            } else if (event === "Disconnected") {
+            } else if (wuzapiEvent === "Disconnected") {
                 bot.telegram.sendMessage(chatId, `⚠️ *WhatsApp Desconectado!*\n\nA instância \`${tokenId}\` foi desconectada. Gere um novo QR Code para reconectar.`, { parse_mode: "Markdown" });
-            } else if (event === "Message") {
+            } else if (wuzapiEvent === "Message") {
                 const rawData = body.event || body.data || {};
                 const info = rawData.Info || rawData || {};
                 const messageObj = rawData.Message || {};
