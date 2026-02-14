@@ -141,7 +141,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.289";
+const SERVER_VERSION = "1.290";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -772,6 +772,14 @@ bot.action(/^tour_step_(\d+)$/, async (ctx) => {
 // Atalhos Globais (SaaS Dashboard)
 bot.action("cmd_shortcuts_disparos", async (ctx) => {
     safeAnswer(ctx);
+    const isVip = await checkVip(ctx.chat.id);
+    const config = await getSystemConfig();
+    if (!isVip && !isAdmin(ctx.chat.id, config)) {
+        return ctx.editMessageText("❌ *Acesso Restrito*\n\nO envio de mensagens em massa é do Plano Connect Pro.", {
+            parse_mode: "Markdown",
+            ...Markup.inlineKeyboard([[Markup.button.callback("💎 Assinar Agora", "cmd_planos_menu")], [Markup.button.callback("🔙 Voltar", "start")]])
+        });
+    }
     const session = await getSession(ctx.chat.id);
     if (session.whatsapp.instances.length === 0) return ctx.reply("❌ Você não tem nenhuma instância conectada.");
 
@@ -827,6 +835,14 @@ bot.command("stats", async (ctx) => {
 
 bot.action("cmd_shortcuts_rodizio", async (ctx) => {
     safeAnswer(ctx);
+    const isVip = await checkVip(ctx.chat.id);
+    const config = await getSystemConfig();
+    if (!isVip && !isAdmin(ctx.chat.id, config)) {
+        return ctx.editMessageText("❌ *Acesso Restrito*\n\nO Rodízio de Leads Inteligente é exclusivo do Plano Connect Pro.", {
+            parse_mode: "Markdown",
+            ...Markup.inlineKeyboard([[Markup.button.callback("💎 Ver Planos", "cmd_planos_menu")], [Markup.button.callback("🔙 Voltar", "start")]])
+        });
+    }
     const session = await getSession(ctx.chat.id);
     if (session.whatsapp.instances.length === 0) return ctx.reply("❌ Você não tem nenhuma instância conectada.");
 
@@ -837,6 +853,14 @@ bot.action("cmd_shortcuts_rodizio", async (ctx) => {
 
 bot.action("cmd_shortcuts_followups", async (ctx) => {
     safeAnswer(ctx);
+    const isVip = await checkVip(ctx.chat.id);
+    const config = await getSystemConfig();
+    if (!isVip && !isAdmin(ctx.chat.id, config)) {
+        return ctx.editMessageText("❌ *Acesso Restrito*\n\nO Follow-up e Agenda Inteligente são recursos do Plano Connect Pro.", {
+            parse_mode: "Markdown",
+            ...Markup.inlineKeyboard([[Markup.button.callback("🚀 Assinar Agora", "cmd_planos_menu")], [Markup.button.callback("🔙 Voltar", "start")]])
+        });
+    }
     const session = await getSession(ctx.chat.id);
     if (session.whatsapp.instances.length === 0) return ctx.reply("❌ Você não tem nenhuma instância conectada.");
 
