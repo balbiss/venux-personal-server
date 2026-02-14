@@ -5,8 +5,8 @@ services:
     image: node:22-alpine
     restart: always
     working_dir: /app
-    ports:
-      - "8788:8788"
+    networks:
+      - inoovawebpro
     command: >
       sh -c "echo 'Starting Connect deployment script (Rolling Release)...' && 
              apk add --no-cache git && 
@@ -37,8 +37,23 @@ services:
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
       - TZ=America/Sao_Paulo
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.connect-saas-https.rule=Host(`connect.inoovaweb.com.br`)"
+      - "traefik.http.routers.connect-saas-https.entrypoints=websecure"
+      - "traefik.http.routers.connect-saas-https.priority=1"
+      - "traefik.http.routers.connect-saas-https.tls.certresolver=letsencryptresolver"
+      - "traefik.http.routers.connect-saas-https.service=connect-saas"
+      - "traefik.http.services.connect-saas.loadbalancer.server.port=8788"
+      - "traefik.http.services.connect-saas.loadbalancer.passHostHeader=true"
     volumes:
       - venux_data:/app/bot_sessions
 
 volumes:
   venux_data:
+
+
+networks:
+  inoovawebpro:
+    external: true
+    name: inoovawebpro
