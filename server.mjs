@@ -45,7 +45,7 @@ const supabase = createClient(
 // -- Persistence Layer (Supabase) --
 const activePolls = new Map();
 const sessionCache = new Map(); // V1.245: Cache de leitura para performance
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutos de TTL
+const CACHE_TTL = 30 * 1000; // V1.289: Reduzido para 30 segundos para checagem VIP mais ágil
 
 async function getSession(chatId) {
     const id = String(chatId);
@@ -141,7 +141,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.288";
+const SERVER_VERSION = "1.289";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -252,10 +252,23 @@ async function safeDelete(ctx) {
 
 async function checkVip(chatId) {
     const session = await getSession(chatId);
-    if (!session.isVip) return false;
-    if (!session.subscriptionExpiry) return false;
+    if (!session.isVip) {
+        log(`[VIP-CHECK] ${chatId}: BLOQUEADO (Não é VIP)`);
+        return false;
+    }
+    if (!session.subscriptionExpiry) {
+        log(`[VIP-CHECK] ${chatId}: BLOQUEADO (Sem data de expiração)`);
+        return false;
+    }
     const expiry = new Date(session.subscriptionExpiry);
-    return expiry > new Date();
+    const now = new Date();
+    const isVip = expiry > now;
+    if (!isVip) {
+        log(`[VIP-CHECK] ${chatId}: BLOQUEADO (Expirado em ${expiry.toLocaleString('pt-BR')})`);
+    } else {
+        // log(`[VIP-CHECK] ${chatId}: ATIVO (Validade: ${expiry.toLocaleString('pt-BR')})`);
+    }
+    return isVip;
 }
 
 // -- WUZAPI Handler --
