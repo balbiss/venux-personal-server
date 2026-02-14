@@ -149,7 +149,8 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.343";
+const SERVER_VERSION = "1.344";
+let isAiFollowupRunning = false;
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -4404,13 +4405,15 @@ setInterval(checkScheduledCampaigns, 60000);
 
 // --- Background Worker para Follow-ups de IA ---
 async function checkAiFollowups() {
+    if (isAiFollowupRunning) return;
+    isAiFollowupRunning = true;
     try {
-        // 1. Buscar apenas leads que estão aguardando o cliente (onde a IA ou o Nudge foi o último a falar)
+        // ...
         const { data: tracking, error } = await supabase
             .from("ai_leads_tracking")
             .select("*")
             .lt("nudge_count", 5)
-            .or('status.eq.AI_SENT,status.eq.NUDGED'); // 🛑 Apenas se a última interação foi do bot
+            .or('status.eq.AI_SENT,status.eq.NUDGED');
 
         if (error) {
             log(`[FU DEBUG] Erro ao buscar leads: ${error.message}`);
@@ -4421,60 +4424,52 @@ async function checkAiFollowups() {
         if (leadsCount > 0) log(`[FU DEBUG] Processando ${leadsCount} leads potenciais...`);
 
         for (const lead of (tracking || [])) {
+            // Check de tempo e limite (repetido aqui dentro para segurança extra se o loop for longo)
             const parts = lead.instance_id.split("_");
             if (parts.length < 2) continue;
             const tgChatId = parts[1];
 
             const session = await getSession(tgChatId);
-
-            // V1.245: Check de segurança defensivo
             if (!session?.whatsapp?.instances) continue;
 
             const inst = session.whatsapp.instances.find(i => i.id === lead.instance_id);
-
-            if (!inst) {
-                // log(`[FU DEBUG] Instância não encontrada para lead ${lead.chat_id}`);
-                continue;
-            }
-
-            if (!inst.ai_enabled || !inst.fu_enabled) {
-                // log(`[FU DEBUG] Follow-up ignorado: IA (${inst.ai_enabled}) ou FU (${inst.fu_enabled}) desativados.`);
-                continue;
-            }
+            if (!inst || !inst.ai_enabled || !inst.fu_enabled) continue;
 
             const now = new Date();
             const lastInteraction = new Date(lead.last_interaction);
             const diffHours = (now - lastInteraction) / (1000 * 60 * 60);
             const targetHours = inst.fu_hours || 24;
 
-            // Log de depuração para leads que estão no radar mas ainda não bateram o tempo
-            if (diffHours >= 0.01) { // Só logar se passou pelo menos 36 segundos para não saturar
-                // log(`[FU DEBUG] Lead ${lead.chat_id} | Status: ${lead.status} | Diff: ${diffHours.toFixed(3)}h | Alvo: ${targetHours}h`);
-            }
-
             if (diffHours >= targetHours && lead.nudge_count < (inst.fu_max || 1)) {
                 const msgIndex = lead.nudge_count;
                 const messages = inst.fu_msgs || ["Oi! Ainda está por aí?"];
                 const messageToSend = messages[msgIndex] || messages[messages.length - 1];
 
-                log(`[FOLLOW-UP] Enviando nudge ${lead.nudge_count + 1} para ${lead.chat_id} (Inst: ${lead.instance_id}) após ${diffHours.toFixed(1)}h`);
+                log(`[FOLLOW-UP] Enviando nudge ${lead.nudge_count + 1} para ${lead.chat_id} | Msg: "${messageToSend.substring(0, 30)}..."`);
+
+                // V1.344: Update ANTES do envio para evitar duplicidade em race conditions
+                const originalCount = lead.nudge_count;
+                await supabase.from("ai_leads_tracking").update({
+                    nudge_count: originalCount + 1,
+                    last_interaction: new Date().toISOString(),
+                    status: "NUDGED"
+                }).eq("id", lead.id);
 
                 const res = await callWuzapi("/chat/send/text", "POST", {
                     Phone: lead.chat_id,
                     Body: messageToSend
                 }, lead.instance_id);
 
-                if (res.success) {
-                    await supabase.from("ai_leads_tracking").update({
-                        nudge_count: lead.nudge_count + 1,
-                        last_interaction: new Date().toISOString(), // Atualiza para esperar o próximo ciclo
-                        status: "NUDGED"
-                    }).eq("id", lead.id);
+                if (!res.success) {
+                    log(`[FU FAIL] Falha ao enviar follow-up para ${lead.chat_id}: ${res.message || 'Erro desconhecido'}`);
+                    // Opcional: Reverter o update se falhar? Melhor não, evita flood.
                 }
             }
         }
     } catch (e) {
         log(`[ERR FU WORKER] ${e.message}`);
+    } finally {
+        isAiFollowupRunning = false;
     }
 }
 
