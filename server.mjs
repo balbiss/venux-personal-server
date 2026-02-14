@@ -140,7 +140,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.278";
+const SERVER_VERSION = "1.279";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -2268,10 +2268,9 @@ Se o cliente pedir para falar com humano, atendente, ou citar os seguintes temas
 # QUALIFICAÇÃO DE LEADS (RODÍZIO)
 Ao identificar que o cliente está pronto ou qualificado, encerre com [QUALIFICADO].
 
-# FORMATO DE RESPOSTA (OBRIGATÓRIO)
-- Se for transbordo: "Sua mensagem de despedida... [TRANSFERIR]"
-- Se for qualificado: "Sua mensagem de agendamento... [QUALIFICADO]"
-- Caso contrário: Apenas a resposta.
+- Se for transbordo: Despeça-se cordialmente e informe que um especialista vai assumir agora. Ex: "Perfeito, vou te passar para um especialista que vai te ajudar com isso agora mesmo! [TRANSFERIR]"
+- Se for qualificado: Parabenize e informe que o link de agendamento ou o corretor será enviado a seguir. [QUALIFICADO]
+- Caso contrário: Apenas a resposta direta e curta.
 `;
 }
 
@@ -3971,7 +3970,6 @@ app.post("/webhook", async (req, res) => {
                         await supabase.from("ai_leads_tracking").upsert({
                             chat_id: remoteJid,
                             instance_id: tokenId,
-                            lead_name: readableLead,
                             last_interaction: new Date().toISOString(),
                             status: "HUMAN_ACTIVE"
                         }, { onConflict: "chat_id, instance_id" });
@@ -4006,7 +4004,6 @@ app.post("/webhook", async (req, res) => {
                     await supabase.from("ai_leads_tracking").upsert({
                         chat_id: remoteJid,
                         instance_id: tokenId,
-                        lead_name: readableLead,
                         last_interaction: new Date().toISOString(),
                         nudge_count: 0,
                         status: "RESPONDED"
@@ -4053,6 +4050,14 @@ app.post("/webhook", async (req, res) => {
                                             .replace("[QUALIFICADO]", "")
                                             .replace("[TRANSFERIR]", "")
                                             .trim();
+
+                                        // V1.279: Segurança de Transbordo - Garante que o lead não fique no vácuo se a IA falhar na mensagem
+                                        if (aiResponse.includes("[TRANSFERIR]") && finalResponse.length < 5) {
+                                            finalResponse = "Entendido! Vou te transferir para um de nossos especialistas agora mesmo. Aguarde um instante...";
+                                        }
+                                        if (aiResponse.includes("[QUALIFICADO]") && finalResponse.length < 5) {
+                                            finalResponse = "Excelente! Você foi qualificado. Vou te encaminhar para finalizar o agendamento...";
+                                        }
 
                                         if (aiResponse.includes("[TRANSFERIR]")) {
                                             log(`[WEBHOOK AI] IA solicitou transbordo para ${readableLead}`);
