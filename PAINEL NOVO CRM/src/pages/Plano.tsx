@@ -29,7 +29,7 @@ export default function Plano() {
         const { data, error } = await supabase
           .from("bot_sessions")
           .select("isVip, subscriptionExpiry")
-          .eq("telegram_id", tid)
+          .eq("chat_id", tid)
           .maybeSingle();
 
         if (error) throw error;

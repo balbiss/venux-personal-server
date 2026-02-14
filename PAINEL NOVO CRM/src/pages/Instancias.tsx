@@ -19,7 +19,7 @@ export default function Instancias() {
         const { data, error } = await supabase
           .from("bot_sessions")
           .select("data")
-          .eq("telegram_id", tid)
+          .eq("chat_id", tid)
           .maybeSingle();
 
         if (error) throw error;
@@ -103,8 +103,8 @@ export default function Instancias() {
                   </div>
                 </div>
                 <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium ${inst.presence === "available"
-                    ? "bg-success/10 text-success"
-                    : "bg-destructive/10 text-destructive"
+                  ? "bg-success/10 text-success"
+                  : "bg-destructive/10 text-destructive"
                   }`}>
                   {inst.presence === "available" ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
                   {inst.presence === "available" ? "Online" : "Offline / Ocupado"}

@@ -24,7 +24,7 @@ export default function Dashboard() {
         const { data: session } = await supabase
           .from("bot_sessions")
           .select("data")
-          .eq("telegram_id", tid)
+          .eq("chat_id", tid)
           .maybeSingle();
 
         const instances = session?.data?.whatsapp?.instances || [];

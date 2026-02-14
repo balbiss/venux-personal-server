@@ -31,7 +31,7 @@ export default function IaSdr() {
         const { data, error } = await supabase
           .from("bot_sessions")
           .select("data")
-          .eq("telegram_id", tid)
+          .eq("chat_id", tid)
           .maybeSingle();
 
         if (error) throw error;

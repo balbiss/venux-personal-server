@@ -36,7 +36,7 @@ export default function Crm() {
         const { data: session } = await supabase
           .from("bot_sessions")
           .select("data")
-          .eq("telegram_id", tid)
+          .eq("chat_id", tid)
           .maybeSingle();
 
         const instIds = session?.data?.whatsapp?.instances?.map((i: any) => i.id) || [];

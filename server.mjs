@@ -152,7 +152,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.316";
+const SERVER_VERSION = "1.318";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -461,10 +461,26 @@ async function renderAdminPanel(ctx) {
         [Markup.button.callback("💰 Alterar Preço", "admin_price"), Markup.button.callback("👤 Configurar Suporte", "admin_support")],
         [Markup.button.callback("💎 Ajustar Limite", "admin_limit_vip"), Markup.button.callback("📺 Configurar Tutoriais", "admin_tutorial_link")],
         [Markup.button.callback("👤 Ativar VIP Manual", "admin_vip_manual")],
+        [Markup.button.callback("🔄 Reiniciar Servidor", "admin_server_restart")],
         [Markup.button.callback("🔙 Voltar", "start")]
+
     ];
     await safeEdit(ctx, text, Markup.inlineKeyboard(buttons));
 }
+
+bot.action("admin_server_restart", async (ctx) => {
+    safeAnswer(ctx);
+    const config = await getSystemConfig();
+    if (!isAdmin(ctx.chat.id, config)) return ctx.reply("⛔ Sem permissão.");
+
+    await ctx.reply("🔄 <b>Reiniciando o Servidor...</b>\n\nO sistema está baixando o código mais recente e irá reiniciar em instantes.\nAguarde 30-60 segundos para voltar a usar.", { parse_mode: "HTML" });
+    log(`[ADMIN] Reinício solicitado por ${ctx.chat.id}.`);
+
+    setTimeout(() => {
+        process.exit(1);
+    }, 2000);
+});
+
 
 bot.command("id", (ctx) => {
     ctx.reply(`🆔 *Seu ID:* \`${ctx.chat.id}\``, { parse_mode: "Markdown" });
