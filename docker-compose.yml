@@ -7,26 +7,7 @@ services:
     working_dir: /app
     ports:
       - "8788:8788"
-    command: >
-      sh -c "echo 'Starting Connect deployment script (Rolling Release)...' && 
-             apk add --no-cache git && 
-             echo 'Cloning latest code from main branch...' && 
-             rm -rf /app_tmp && 
-             git clone --branch main https://github.com/balbiss/venux-personal-server.git /app_tmp && 
-             echo 'Updating application files...' && 
-             cp -rf /app_tmp/* . && 
-             cp -rf /app_tmp/.* . 2>/dev/null || true && 
-             echo 'Installing dependencies...' && 
-             npm install --production && 
-             echo 'Starting application...' && 
-             mkdir -p /app/data && 
-             touch /app/data/sessions.json && 
-             ln -sf /app/data/sessions.json /app/sessions.json && 
-             touch /app/data/bot.log && 
-             ln -sf /app/data/bot.log /app/bot.log && 
-             echo '[BOT LOG] Versão: Latest (Main)' && 
-             node server.mjs"
-    # Adicionei PERSIST_STATE: "true" para manter o status entre deploys de V1.238
+    command: node server.mjs
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
@@ -38,8 +19,8 @@ services:
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
       - TZ=America/Sao_Paulo
-    # Portainer will manage env vars via its UI
     volumes:
+      - .:/app
       - venux_data:/app/bot_sessions
 
 volumes:
