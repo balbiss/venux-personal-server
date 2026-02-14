@@ -149,7 +149,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.340";
+const SERVER_VERSION = "1.341";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -4570,13 +4570,21 @@ app.get("/api/dashboard/stats", async (req, res) => {
             return res.status(500).json({ error: "Erro ao buscar dados" });
         }
 
-        // Calcular estatísticas
+        // Calcular estatísticas baseado na estrutura real da tabela
         const hoje = new Date();
         hoje.setHours(0, 0, 0, 0);
 
+        // Leads atendidos hoje (created_at >= hoje)
         const leadsHoje = leads.filter(l => new Date(l.created_at) >= hoje);
-        const leadsQualificados = leads.filter(l => l.status === "qualified" || l.is_qualified);
-        const leadsTransferidos = leads.filter(l => l.status === "transferred" || l.transferred);
+
+        // Leads que responderam (status RESPONDED)
+        const leadsRespondidos = leads.filter(l => l.status === "RESPONDED");
+
+        // Leads ativos (não dropados)
+        const leadsAtivos = leads.filter(l => l.status !== "DROPPED" && l.status !== "INACTIVE");
+
+        // Total de interações (nudge_count > 0)
+        const totalInteracoes = leads.reduce((sum, l) => sum + (l.nudge_count || 0), 0);
 
         // Buscar instâncias ativas do usuário
         let instanciasAtivas = 0;
@@ -4585,17 +4593,18 @@ app.get("/api/dashboard/stats", async (req, res) => {
             instanciasAtivas = session.whatsapp?.instances?.length || 0;
         }
 
-        // Calcular receita estimada (exemplo: R$ 50 por lead qualificado)
-        const receitaEstimada = leadsQualificados.length * 50;
+        // Calcular receita estimada (R$ 50 por lead que respondeu)
+        const receitaEstimada = leadsRespondidos.length * 50;
 
         res.json({
             leadsAtendidos: leadsHoje.length,
-            leadsQualificados: leadsQualificados.length,
-            leadsTransferidos: leadsTransferidos.length,
+            leadsQualificados: leadsRespondidos.length, // Leads que responderam
+            leadsTransferidos: totalInteracoes, // Total de interações/follow-ups
             instanciasAtivas: instanciasAtivas,
             receitaEstimada: receitaEstimada,
             periodo: "hoje",
-            totalLeads: leads.length
+            totalLeads: leads.length,
+            leadsAtivos: leadsAtivos.length
         });
 
     } catch (err) {
