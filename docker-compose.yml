@@ -37,6 +37,7 @@ services:
       - WUZAPI_ADMIN_TOKEN=${WUZAPI_ADMIN_TOKEN}
       - SUPABASE_URL=${SUPABASE_URL}
       - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - TZ=America/Sao_Paulo
     # Portainer will manage env vars via its UI
     volumes:
       - venux_data:/app/bot_sessions
