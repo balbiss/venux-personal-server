@@ -141,7 +141,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.282";
+const SERVER_VERSION = "1.283";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -367,10 +367,9 @@ async function ensureWebhookSet(id) {
 
 // (Moved renderWebhookMenu later in the file for better organization)
 
-// -- SyncPay Integration --
-const SYNCPAY_CLIENT_ID = "c2687695-57c9-4f3e-8d59-36fbdabb0a44";
-const SYNCPAY_CLIENT_SECRET = "42f39fd6-00bc-4f11-96d7-e98e4db9b93a";
-const SYNC_BASE_URL = "https://api.syncpayments.com.br";
+// -- Cakto Integration (V1.283) --
+const CAKTO_CHECKOUT_URL = "https://pay.cakto.com.br/gvfo9bb_767864";
+
 
 async function getSyncPayToken() {
     try {
@@ -2979,22 +2978,15 @@ bot.action(/^wa_del_web_(.+)$/, async (ctx) => {
 });
 
 bot.action("gen_pix_mensal", async (ctx) => {
-    ctx.answerCbQuery("⏳ Gerando Pix...");
-    const loadingMsg = await ctx.reply("⏳ Gerando seu pagamento Pix...");
-    try {
-        const config = await getSystemConfig();
-        const res = await createSyncPayPix(ctx.chat.id, config.planPrice, ctx.from.first_name);
-        try { await ctx.telegram.deleteMessage(ctx.chat.id, loadingMsg.message_id); } catch (e) { }
-        if (res.pix_code) {
-            const qr = await QRCode.toBuffer(res.pix_code);
-            await ctx.replyWithPhoto({ source: qr }, { caption: `💎 *Plano Pro*\n\nPIX:\n\`${res.pix_code}\``, parse_mode: "Markdown" });
-        } else {
-            ctx.reply("❌ Erro ao gerar pagamento. Tente novamente em instantes.");
-        }
-    } catch (e) {
-        log(`[PIX_HANDLER_ERR] ${e.message}`);
-        ctx.reply("❌ Erro inesperado ao gerar pagamento.");
-    }
+    safeAnswer(ctx);
+    const chatId = ctx.chat.id;
+    // V1.283: Cakto Link com parâmetro src para identificação do chat_id no webhook
+    const checkoutLink = `${CAKTO_CHECKOUT_URL}?src=${chatId}`;
+
+    ctx.reply(`💎 *Plano Pro Connect*\n\nClique no botão abaixo para assinar o plano recorrente e liberar todos os recursos:\n\n💰 *Valor:* R$ 119,90/mês`, {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([[Markup.button.url("🚀 Assinar Agora", checkoutLink)]])
+    });
 });
 
 bot.on(["photo", "document", "video", "audio", "voice"], async (ctx, next) => {
@@ -3826,14 +3818,18 @@ app.post("/webhook", async (req, res) => {
     const body = req.body || {};
     log(`[WEBHOOK IN] Recebido corpo: ${JSON.stringify(body).substring(0, 2000)}`);
 
-    // -- 1. Tratar Webhook SyncPay (Pagamento) --
-    if (body.external_id && (body.status === "paid" || body.status === "confirmed")) {
-        const chatId = body.external_id;
+    // -- 1. Tratar Webhook Cakto (Pagamento Recorrente V1.283) --
+    // A Cakto envia o chatId no campo 'src' conforme configurado no link de checkout
+    const event = body.event || body.type || "";
+    const caktoData = body.data || body || {};
+    const chatIdFromCakto = caktoData.src || caktoData.external_id || caktoData.refId || null;
+
+    if (chatIdFromCakto && (event === "purchase_approved" || body.status === "paid" || body.status === "confirmed")) {
+        const chatId = String(chatIdFromCakto);
         const config = await getSystemConfig();
         const s = await getSession(chatId);
 
-        // Se já era VIP, talvez seja renovação. Comissão geralmente é na primeira venda ou em todas?
-        // Vou implementar crédito de comissão se houver padrinho e for primeira conversão (ou simplificar para cada pagamento confirmado)
+        // Lógica de Afiliados
         if (s.referredBy) {
             const refId = s.referredBy;
             const referrer = await getSession(refId);
@@ -3847,7 +3843,7 @@ app.post("/webhook", async (req, res) => {
             log(`[AFFILIATE] Comissão de R$ ${comm} creditada para ${refId} por indicação de ${chatId}`);
 
             try {
-                bot.telegram.sendMessage(refId, `💰 *Comissão Recebida!*\n\nParabéns! Um de seus indicados assinou e você ganhou **R$ ${comm.toFixed(2)}**. \n\nConsulte seu saldo no menu de Afiliados.`, { parse_mode: "Markdown" });
+                bot.telegram.sendMessage(refId, `💰 *Comissão Recebida!*\n\nParabéns! Um de seus indicados assinou e você ganhou **R$ ${comm.toFixed(2)}**.`, { parse_mode: "Markdown" });
             } catch (e) { }
         }
 
@@ -3855,9 +3851,21 @@ app.post("/webhook", async (req, res) => {
         const exp = new Date(); exp.setDate(exp.getDate() + 30);
         s.subscriptionExpiry = exp.toISOString();
         await saveSession(chatId, s);
-        bot.telegram.sendMessage(chatId, "🎉 *Plano Pro Ativado!* Você já pode criar mais instâncias.", { parse_mode: "Markdown" });
+
+        bot.telegram.sendMessage(chatId, "🎉 *Plano Pro Ativado!* Sua assinatura Cakto foi confirmada. Você já pode criar instâncias ilimitadas.", { parse_mode: "Markdown" });
         return res.send({ ok: true });
     }
+
+    // Tratamento de Cancelamento de Assinatura
+    if (chatIdFromCakto && (event === "subscription_canceled" || event === "refund")) {
+        const chatId = String(chatIdFromCakto);
+        const s = await getSession(chatId);
+        s.isVip = false;
+        await saveSession(chatId, s);
+        bot.telegram.sendMessage(chatId, "⚠️ *Assinatura Encerrada*\n\nSua assinatura foi cancelada ou reembolsada e o acesso Pro foi removido.", { parse_mode: "Markdown" });
+        return res.send({ ok: true });
+    }
+
 
     // -- 2. Tratar Webhook WUZAPI (WhatsApp) --
     const tokenId = body.token ||
