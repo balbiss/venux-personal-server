@@ -141,7 +141,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.287";
+const SERVER_VERSION = "1.288";
 
 async function checkOwnership(ctx, instId) {
     const session = await getSession(ctx.chat.id);
@@ -970,6 +970,14 @@ bot.command("diag_users", async (ctx) => {
 });
 
 bot.command("disparos", async (ctx) => {
+    const isVip = await checkVip(ctx.chat.id);
+    const config = await getSystemConfig();
+    if (!isVip && !isAdmin(ctx.chat.id, config)) {
+        return ctx.reply("❌ *Acesso Restrito*\n\nVocê precisa de uma assinatura Pro ativa para usar o disparo em massa.", {
+            parse_mode: "Markdown",
+            ...Markup.inlineKeyboard([[Markup.button.callback("💎 Assinar Agora", "cmd_planos_menu")]])
+        });
+    }
     const session = await getSession(ctx.chat.id);
     if (session.whatsapp.instances.length === 0) return ctx.reply("❌ Você não tem nenhuma instância conectada.");
     const buttons = session.whatsapp.instances.map(inst => [Markup.button.callback(`📢 Campanhas: ${inst.name}`, `wa_mass_init_${inst.id}`)]);
@@ -978,6 +986,14 @@ bot.command("disparos", async (ctx) => {
 });
 
 bot.command("rodizio", async (ctx) => {
+    const isVip = await checkVip(ctx.chat.id);
+    const config = await getSystemConfig();
+    if (!isVip && !isAdmin(ctx.chat.id, config)) {
+        return ctx.reply("❌ *Acesso Restrito*\n\nO módulo de Rodízio de Leads é exclusivo para assinantes Pro.", {
+            parse_mode: "Markdown",
+            ...Markup.inlineKeyboard([[Markup.button.callback("💎 Ver Planos", "cmd_planos_menu")]])
+        });
+    }
     const session = await getSession(ctx.chat.id);
     if (session.whatsapp.instances.length === 0) return ctx.reply("❌ Você não tem nenhuma instância conectada.");
     const buttons = session.whatsapp.instances.map(inst => [Markup.button.callback(`👥 Rodízio: ${inst.name}`, `wa_brokers_menu_${inst.id}`)]);
@@ -986,6 +1002,14 @@ bot.command("rodizio", async (ctx) => {
 });
 
 bot.command("agenda", async (ctx) => {
+    const isVip = await checkVip(ctx.chat.id);
+    const config = await getSystemConfig();
+    if (!isVip && !isAdmin(ctx.chat.id, config)) {
+        return ctx.reply("❌ *Acesso Restrito*\n\nAgendamentos e Follow-ups automáticos exigem uma assinatura Pro ativa.", {
+            parse_mode: "Markdown",
+            ...Markup.inlineKeyboard([[Markup.button.callback("🚀 Assinar", "cmd_planos_menu")]])
+        });
+    }
     const session = await getSession(ctx.chat.id);
     if (session.whatsapp.instances.length === 0) return ctx.reply("❌ Você não tem nenhuma instância conectada.");
     const buttons = session.whatsapp.instances.map(inst => [Markup.button.callback(`🔔 Follow-ups: ${inst.name}`, `wa_ai_followup_menu_${inst.id}`)]);
@@ -1146,6 +1170,13 @@ async function renderManageMenu(ctx, id) {
 bot.action(/^manage_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
+    const isVip = await checkVip(ctx.chat.id);
+    const config = await getSystemConfig();
+    if (!isVip && !isAdmin(ctx.chat.id, config)) {
+        return safeEdit(ctx, "❌ *Assinatura Expirada*\n\nSua assinatura Connect Pro venceu. Renove para continuar gerenciando suas instâncias e usando as automações.",
+            Markup.inlineKeyboard([[Markup.button.callback("💎 Renovar Assinatura", "cmd_planos_menu")], [Markup.button.callback("🔙 Voltar", "cmd_instancias_menu")]])
+        );
+    }
     const { inst, session } = await checkOwnership(ctx, id);
     if (!inst) return;
     await renderManageMenu(ctx, id);
