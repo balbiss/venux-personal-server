@@ -166,7 +166,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "V1.364";
+const SERVER_VERSION = "V1.365";
 let isAiFollowupRunning = false;
 
 async function checkOwnership(ctx, instId) {
@@ -4349,13 +4349,13 @@ app.post("/webhook", async (req, res) => {
                                         for (const chunk of chunks) {
                                             const chunkIndex = chunks.indexOf(chunk);
 
-                                            // V1.240: Delay de "pensamento" inicial ou entre blocos
-                                            const thinkTime = chunkIndex === 0 ? 3000 : 1500;
+                                            // V1.365: Otimização de Resposta - Delay de "pensamento" reduzido de 3s para 1s
+                                            const thinkTime = chunkIndex === 0 ? 1000 : 500;
                                             log(`[WEBHOOK AI] IA pensando por ${thinkTime}ms...`);
                                             await new Promise(r => setTimeout(r, thinkTime));
 
-                                            // V1.240: Loop de presença para manter o "digitando..." ativo
-                                            const typingDuration = Math.min(Math.max(chunk.length * 130, 4000), 12000);
+                                            // V1.365: Digitação mais rápida (80ms/char) e mínimo menor (1.5s)
+                                            const typingDuration = Math.min(Math.max(chunk.length * 80, 1500), 12000);
                                             log(`[WEBHOOK AI] Simulando digitação (${chunk.length} chars) por ${typingDuration}ms...`);
 
                                             const startTime = Date.now();
@@ -4389,7 +4389,7 @@ app.post("/webhook", async (req, res) => {
                                 } catch (err) {
                                     log(`[ERR DEBOUNCE AI] ${err.message}`);
                                 }
-                            }, 6000); // 6 Sec Debounce
+                            }, 3000); // V1.365: Debounce reduzido de 6s para 3s para resposta mais ágil
                         }
                     }
                 }
