@@ -166,7 +166,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "V1.365";
+const SERVER_VERSION = "V1.366";
 let isAiFollowupRunning = false;
 
 async function checkOwnership(ctx, instId) {
@@ -4265,8 +4265,8 @@ app.post("/webhook", async (req, res) => {
                             }
                             if (text) q.text += (q.text ? " " : "") + text;
                             if (audioBase64) q.audio = audioBase64;
+                            // V1.366: Removido status imediato para parecer mais humano (leitura silenciosa primeiro)
                             if (q.timeout) clearTimeout(q.timeout);
-                            try { await callWuzapi("/chat/presence", "POST", { Phone: remoteJid, State: "composing" }, tokenId); } catch (e) { }
 
                             q.timeout = setTimeout(async () => {
                                 try {
@@ -4274,6 +4274,9 @@ app.post("/webhook", async (req, res) => {
                                     if (!finalData) return;
                                     aiQueues.delete(queueKey);
                                     log(`[WEBHOOK AI] Processando mensagens agrupadas para ${remoteJid}...`);
+
+                                    // V1.366: HUMANIZAÇÃO - Iniciar "digitando" apenas agora, após o lead 'ler' a mensagem (debounce)
+                                    try { await callWuzapi("/chat/presence", "POST", { Phone: remoteJid, State: "composing" }, tokenId); } catch (e) { }
                                     const histRes = await callWuzapi(`/chat/history?chat_jid=${remoteJid}&limit=15`, "GET", null, tokenId);
                                     const history = histRes.success && Array.isArray(histRes.data) ? histRes.data : [];
                                     log(`[WEBHOOK AI] Prompt: ${q.text.substring(0, 50)}... | Inst: ${tokenId}`);
