@@ -31,6 +31,13 @@ app.use("/uploads", express.static(UPLOADS_DIR));
 const MINI_APP_DIR = path.join(__dirname, "MINI_APP_DEMO");
 app.use("/miniapp", express.static(MINI_APP_DIR));
 
+// V1.345: Servir Landing Page e Dashboard
+const DASHBOARD_DIR = path.join(__dirname, "PAINEL NOVO CRM", "dist");
+const LANDING_PAGE_DIR = path.join(__dirname, "LANGPAGE PAGINA DE VENDA DO SAAS TELEGRAM BOT", "connect-telegram-ai", "dist");
+
+app.use("/dashboard", express.static(DASHBOARD_DIR));
+app.use("/", express.static(LANDING_PAGE_DIR));
+
 
 
 
@@ -97,6 +104,16 @@ async function getSession(chatId) {
         if (!Array.isArray(sessionObj.whatsapp.instances)) sessionObj.whatsapp.instances = [];
         if (typeof sessionObj.whatsapp.maxInstances !== 'number') sessionObj.whatsapp.maxInstances = 1;
 
+        // V1.350: Suporte Multi-Plataforma (Telegram/Instagram)
+        if (!sessionObj.telegram) sessionObj.telegram = { instances: [] };
+        if (!Array.isArray(sessionObj.telegram.instances)) sessionObj.telegram.instances = [];
+        if (!sessionObj.instagram) sessionObj.instagram = { instances: [] };
+        if (!Array.isArray(sessionObj.instagram.instances)) sessionObj.instagram.instances = [];
+
+        // V1.355: Controle de Trial 24h
+        if (typeof sessionObj.trialUsed !== 'boolean') sessionObj.trialUsed = false;
+        if (sessionObj.trialStartedAt === undefined) sessionObj.trialStartedAt = null;
+
         if (!sessionObj.affiliate) sessionObj.affiliate = {};
         if (typeof sessionObj.affiliate.balance !== 'number') sessionObj.affiliate.balance = 0;
         if (typeof sessionObj.affiliate.totalEarned !== 'number') sessionObj.affiliate.totalEarned = 0;
@@ -149,7 +166,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.344";
+const SERVER_VERSION = "V1.360";
 let isAiFollowupRunning = false;
 
 async function checkOwnership(ctx, instId) {
@@ -705,7 +722,13 @@ bot.start(async (ctx) => {
         `👇 <b>Escolha uma opção no menu abaixo:</b>`;
 
     if (!isVip && !isAdmin(ctx.chat.id, config)) {
-        return renderTourMenu(ctx, 0);
+        // V1.358: Se ainda não usou o trial, incentiva-o logo no início ou no tour
+        if (!session.trialUsed) {
+            return renderTourMenu(ctx, 0);
+        } else {
+            // Se já usou o trial mas não é VIP (expirou), mostra o menu de planos diretamente
+            return showVipStatus(ctx);
+        }
     }
 
     const buttons = [
@@ -784,6 +807,10 @@ async function renderTourMenu(ctx, step = 0) {
     if (step < steps.length - 1) {
         buttons.push([Markup.button.callback(s.btnNext, `tour_step_${step + 1}`)]);
     } else {
+        const session = await getSession(ctx.chat.id);
+        if (!session.trialUsed) {
+            buttons.push([Markup.button.callback("🎁 Ativar 24h Grátis agora!", "activate_trial")]);
+        }
         buttons.push([Markup.button.callback(s.btnNext, "gen_pix_mensal")]);
     }
 
@@ -1185,13 +1212,45 @@ async function showVipStatus(ctx) {
     const isVip = await checkVip(ctx.chat.id);
     const config = await getSystemConfig();
     if (isVip) {
-        const expiry = new Date(session.subscriptionExpiry).toLocaleDateString("pt-BR");
-        return ctx.reply(`✅ Você é VIP! Validade: ${expiry}`);
+        const expiry = new Date(session.subscriptionExpiry).toLocaleString("pt-BR");
+        return ctx.reply(`✅ Você é VIP/Trial! Validade: ${expiry}`);
     }
-    return ctx.reply(`💳 Assine o plano mensal (R$ ${config.planPrice.toFixed(2).replace('.', ',')}) e libere até 5 números!`, Markup.inlineKeyboard([
-        [Markup.button.callback("💎 Gerar Pix agora", "gen_pix_mensal")]
-    ]));
+
+    const buttons = [[Markup.button.callback("💎 Assinar Plano Pro", "cmd_planos_menu")]];
+
+    // V1.356: Oferecer Trial se ainda não usou
+    if (!session.trialUsed) {
+        buttons.push([Markup.button.callback("🎁 Ativar 24h Grátis", "activate_trial")]);
+    }
+
+    return ctx.reply(`💳 Assine o plano Pro (R$ ${config.planPrice.toFixed(2).replace('.', ',')}) e libere IA SDR, Rodízio e Disparos!\n\n${!session.trialUsed ? "👉 Ou experimente grátis por 24 horas!" : ""}`, Markup.inlineKeyboard(buttons));
 }
+
+// V1.357: Handler para Ativação de Trial
+bot.action("activate_trial", async (ctx) => {
+    const chatId = ctx.chat.id;
+    const session = await getSession(chatId);
+
+    if (session.trialUsed) {
+        return ctx.answerCbQuery("❌ Você já utilizou seu período de teste.", { show_alert: true });
+    }
+
+    const now = new Date();
+    const expiry = new Date(now.getTime() + (24 * 60 * 60 * 1000)); // +24 Horas
+
+    session.isVip = true;
+    session.subscriptionExpiry = expiry.toISOString();
+    session.trialUsed = true;
+    session.isTrial = true; // V1.359: Identificador para limpeza automática
+    session.trialStartedAt = now.toISOString();
+
+    await saveSession(chatId, session);
+
+    log(`[TRIAL] Usuário ${chatId} ativou teste de 24h.`);
+
+    await ctx.answerCbQuery("✅ Teste de 24h ativado com sucesso!", { show_alert: true });
+    return showVipStatus(ctx);
+});
 
 bot.action("cmd_conectar", async (ctx) => {
     safeAnswer(ctx);
@@ -4522,6 +4581,57 @@ setInterval(checkAiFollowups, 60000);
 setInterval(checkFunnelFollowups, 600000); // Check every 10 min
 setInterval(checkAutoResume, 600000); // Check every 10 min
 
+// V1.360: Worker para limpeza de Trails Expirados
+async function checkTrialExpirations() {
+    try {
+        log(`[TRIAL-WORKER] Iniciando verificação de expirações...`);
+        const { data: sessions, error } = await supabase
+            .from("bot_sessions")
+            .select("chat_id, data");
+
+        if (error || !sessions) return;
+
+        const now = new Date();
+
+        for (const entry of sessions) {
+            const session = entry.data;
+            if (!session || !session.isVip || !session.subscriptionExpiry || !session.isTrial) continue;
+
+            const expiry = new Date(session.subscriptionExpiry);
+
+            if (now > expiry) {
+                log(`[TRIAL-CLEANUP] Trial expirado para ${entry.chat_id}. Limpando...`);
+
+                if (session.whatsapp && Array.isArray(session.whatsapp.instances)) {
+                    for (const inst of session.whatsapp.instances) {
+                        try {
+                            log(`[TRIAL-CLEANUP] Deletando instância ${inst.id}...`);
+                            // Tenta deletar no Wuzapi (Admin API)
+                            await callWuzapi(`/admin/users/${inst.id}/full`, "DELETE");
+                        } catch (e) {
+                            log(`[TRIAL-CLEANUP ERR] Falha ao deletar ${inst.id}: ${e.message}`);
+                        }
+                    }
+                    session.whatsapp.instances = [];
+                }
+
+                session.isVip = false;
+                session.isTrial = false;
+                session.subscriptionExpiry = null;
+
+                await saveSession(entry.chat_id, session);
+
+                try {
+                    bot.telegram.sendMessage(entry.chat_id, "⚠️ *Seu período de teste de 24h expirou!*\n\nSuas instâncias foram desconectadas e removidas para liberar espaço no servidor. Assine o plano Pro para continuar usando!", { parse_mode: "Markdown" });
+                } catch (e) { }
+            }
+        }
+    } catch (e) {
+        log(`[ERR TRIAL-WORKER] ${e.message}`);
+    }
+}
+setInterval(checkTrialExpirations, 1800000); // Executar a cada 30 minutos
+
 // V1.282: Aguardar 10 segundos antes de iniciar o bot para evitar erro 409 (Conflict) em reinicializações rápidas
 log(`[BOT LOG] Aguardando 10s para estabilizar conexão com Telegram...`);
 setTimeout(() => {
@@ -4612,6 +4722,21 @@ app.get("/api/dashboard/stats", async (req, res) => {
         log(`[API ERR] ${err.message}`);
         res.status(500).json({ error: "Erro interno do servidor" });
     }
+});
+
+// Catch-all para Dashboard (SPA)
+app.get("/dashboard/*", (req, res) => {
+    res.sendFile(path.join(DASHBOARD_DIR, "index.html"));
+});
+
+// Catch-all para Landing Page (SPA)
+app.get("*", (req, res) => {
+    // Evita interceptar rotas de API, Webhook, Uploads, MiniApp e QR Client
+    const skipPaths = ["/api", "/webhook", "/uploads", "/miniapp", "/qr-client", "/health"];
+    if (skipPaths.some(path => req.path.startsWith(path))) {
+        return res.status(404).json({ error: "Not Found" });
+    }
+    res.sendFile(path.join(LANDING_PAGE_DIR, "index.html"));
 });
 
 app.listen(PORT, "0.0.0.0", () => {
