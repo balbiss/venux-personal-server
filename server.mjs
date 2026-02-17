@@ -166,7 +166,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "V1.362";
+const SERVER_VERSION = "V1.363";
 let isAiFollowupRunning = false;
 
 async function checkOwnership(ctx, instId) {
@@ -957,6 +957,7 @@ bot.action("cmd_planos_menu", async (ctx) => {
     safeAnswer(ctx);
     const isVip = await checkVip(ctx.chat.id);
     const config = await getSystemConfig();
+    const limits = config.limits.vip;
     const session = await getSession(ctx.chat.id);
     const statusLabel = session.isTrial ? "🎁 TESTE GRATUITO ATIVO" : (isVip ? "✅ ASSINATURA ATIVA" : "❌ AGUARDANDO PAGAMENTO");
     const expiryDate = session.subscriptionExpiry ? new Date(session.subscriptionExpiry).toLocaleString("pt-BR") : "N/A";
