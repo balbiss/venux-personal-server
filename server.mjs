@@ -164,7 +164,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "V1.367";
+const SERVER_VERSION = "V1.368";
 let isAiFollowupRunning = false;
 
 async function checkOwnership(ctx, instId) {
@@ -480,13 +480,12 @@ async function renderAdminPanel(ctx) {
         `📺 <b>Tutoriais:</b> <code>${config.tutorialLink || "Não definido"}</code>\n`;
 
     const buttons = [
+        [Markup.button.callback("👥 Gerenciar Usuários", "admin_users_menu")],
         [Markup.button.callback("📢 Broadcast (Msg em Massa)", "admin_broadcast")],
         [Markup.button.callback("💰 Alterar Preço", "admin_price"), Markup.button.callback("👤 Configurar Suporte", "admin_support")],
         [Markup.button.callback("💎 Ajustar Limite", "admin_limit_vip"), Markup.button.callback("📺 Configurar Tutoriais", "admin_tutorial_link")],
-        [Markup.button.callback("👤 Ativar VIP Manual", "admin_vip_manual")],
         [Markup.button.callback("🔄 Reiniciar Servidor", "admin_server_restart")],
         [Markup.button.callback("🔙 Voltar", "start")]
-
     ];
     await safeEdit(ctx, text, Markup.inlineKeyboard(buttons));
 }
@@ -593,17 +592,35 @@ bot.action("admin_users_menu", async (ctx) => {
     const config = await getSystemConfig();
     if (!isAdmin(ctx.chat.id, config)) return;
 
-    // Contagem rápida
-    const { count } = await supabase.from('bot_sessions').select('*', { count: 'exact', head: true });
+    // V1.368: Listagem detalhada dos últimos usuários
+    const { data: users, count } = await supabase
+        .from('bot_sessions')
+        .select('*', { count: 'exact' })
+        .order('updated_at', { ascending: false })
+        .limit(10);
 
-    const text = `👥 *Gerenciar Usuários*\n\n` +
-        `Total de Usuários: **${count || 0}**\n\n` +
-        `Selecione uma opção:`;
+    let text = `👥 <b>Gerenciar Usuários</b>\n\n` +
+        `Total no Banco: <b>${count || 0}</b>\n\n` +
+        `<b>Últimas Interações:</b>\n`;
 
-    const buttons = [
-        [Markup.button.callback("🔍 Buscar por ID (ChatID)", "admin_search_user")],
-        [Markup.button.callback("🔙 Voltar", "cmd_admin_panel")]
-    ];
+    const buttons = [];
+
+    if (users && users.length > 0) {
+        users.forEach(u => {
+            const data = u.data || {};
+            const status = data.isVip ? "💎" : "👤";
+            const name = data.firstName || u.chat_id;
+            text += `${status} <code>${u.chat_id}</code> - ${name}\n`;
+            // Adiciona botão para cada usuário na lista (opcional, mas vamos focar na busca por enquanto para não poluir)
+        });
+    } else {
+        text += "<i>Nenhum usuário encontrado.</i>\n";
+    }
+
+    text += `\nSelecione uma opção:`;
+
+    buttons.push([Markup.button.callback("🔍 Buscar por ID (ChatID)", "admin_search_user")]);
+    buttons.push([Markup.button.callback("🔙 Voltar", "cmd_admin_panel")]);
 
     await safeEdit(ctx, text, Markup.inlineKeyboard(buttons));
 });
@@ -637,8 +654,10 @@ async function renderUserDetails(ctx, targetChatId) {
 
     const buttons = [
         [Markup.button.callback(isVip ? "❌ Remover VIP" : "💎 Dar VIP (30 dias)", `admin_toggle_vip_${targetChatId}`)],
+        [Markup.button.callback("📅 Alterar Validade", `admin_edit_expiry_${targetChatId}`)],
         [Markup.button.callback(blocked ? "✅ Desbloquear" : "🚫 Bloquear Acesso", `admin_toggle_block_${targetChatId}`)],
-        [Markup.button.callback("🔙 Voltar", "admin_search_user")]
+        [Markup.button.callback("🗑️ Deletar do Banco", `admin_delete_user_${targetChatId}`)],
+        [Markup.button.callback("🔙 Voltar", "admin_users_menu")]
     ];
 
     await ctx.reply(text, { parse_mode: "HTML", ...Markup.inlineKeyboard(buttons) });
@@ -676,6 +695,59 @@ bot.action(/^admin_toggle_block_(.+)$/, async (ctx) => {
     await saveSession(targetId, s);
 
     await renderUserDetails(ctx, targetId);
+});
+
+// V1.368: Handler para Alterar Validade
+bot.action(/^admin_edit_expiry_(.+)$/, async (ctx) => {
+    safeAnswer(ctx);
+    const targetId = ctx.match[1];
+    const session = await getSession(ctx.chat.id);
+
+    // Guardar qual usuário estamos editando na sessão do ADMIN
+    session.stage = `ADMIN_WAIT_USER_EXPIRY_${targetId}`;
+    await syncSession(ctx, session);
+
+    ctx.reply(`📅 <b>Editar Validade (ID: ${targetId})</b>\n\nDigite a nova data no formato <code>DD/MM/AAAA</code> ou digite <code>cancelar</code>:`, { parse_mode: "HTML" });
+});
+
+// V1.368: Handler para Deletar Usuário
+bot.action(/^admin_delete_user_(.+)$/, async (ctx) => {
+    safeAnswer(ctx);
+    const targetId = ctx.match[1];
+
+    // Pedir confirmação
+    const text = `⚠️ <b>CONFIRMAÇÃO DE EXCLUSÃO</b>\n\nVocê tem certeza que deseja deletar o usuário <code>${targetId}</code> do banco de dados?\n\nEsta ação é IRREVERSÍVEL e removerá todas as instâncias e configurações do usuário.`;
+    const buttons = [
+        [Markup.button.callback("✅ SIM, Deletar Agora", `admin_confirm_delete_${targetId}`)],
+        [Markup.button.callback("🔙 CANCELAR", `admin_search_user_result_${targetId}`)]
+    ];
+
+    await safeEdit(ctx, text, Markup.inlineKeyboard(buttons));
+});
+
+bot.action(/^admin_confirm_delete_(.+)$/, async (ctx) => {
+    safeAnswer(ctx);
+    const targetId = ctx.match[1];
+
+    log(`[ADMIN DELETE] Removendo usuário ${targetId} permanentemente.`);
+
+    // 1. Deletar do Supabase
+    const { error } = await supabase.from('bot_sessions').delete().eq('chat_id', targetId);
+
+    if (error) {
+        return ctx.reply(`❌ Erro ao deletar: ${error.message}`);
+    }
+
+    // 2. Podar cache local se necessário (o getSession buscará do zero depois)
+
+    await ctx.reply(`✅ Usuário <code>${targetId}</code> removido com sucesso!`, { parse_mode: "HTML" });
+    return renderAdminPanel(ctx);
+});
+
+bot.action(/^admin_search_user_result_(.+)$/, async (ctx) => {
+    safeAnswer(ctx);
+    const targetId = ctx.match[1];
+    return renderUserDetails(ctx, targetId);
 });
 
 bot.action("admin_vip_manual", async (ctx) => {
@@ -3397,6 +3469,43 @@ bot.on("text", async (ctx) => {
             await syncSession(ctx, session);
             return renderUserDetails(ctx, targetId);
         }
+        if (session.stage.startsWith("ADMIN_WAIT_USER_EXPIRY_")) {
+            const targetId = session.stage.replace("ADMIN_WAIT_USER_EXPIRY_", "");
+            const text = ctx.message.text.trim().toLowerCase();
+
+            if (text === "cancelar") {
+                session.stage = "READY";
+                await syncSession(ctx, session);
+                return renderUserDetails(ctx, targetId);
+            }
+
+            // Validar formato DD/MM/AAAA
+            const dateRegex = /^(\d{2})\/(\d{2})\/(\d{4})$/;
+            const match = ctx.message.text.trim().match(dateRegex);
+
+            if (!match) {
+                return ctx.reply("❌ Formato inválido. Digite no formato <code>DD/MM/AAAA</code> ou <code>cancelar</code>:", { parse_mode: "HTML" });
+            }
+
+            const [_, day, month, year] = match;
+            const newDate = new Date(`${year}-${month}-${day}T23:59:59`);
+
+            if (isNaN(newDate.getTime())) {
+                return ctx.reply("❌ Data inválida. Verifique o dia e o mês.");
+            }
+
+            const targetSession = await getSession(targetId);
+            targetSession.isVip = true;
+            targetSession.subscriptionExpiry = newDate.toISOString();
+            await saveSession(targetId, targetSession);
+
+            ctx.reply(`✅ Validade do usuário <code>${targetId}</code> atualizada para <b>${newDate.toLocaleDateString('pt-BR')}</b>.`, { parse_mode: "HTML" });
+
+            session.stage = "READY";
+            await syncSession(ctx, session);
+            return renderUserDetails(ctx, targetId);
+        }
+
         await syncSession(ctx, session);
         return renderAdminPanel(ctx);
     }
