@@ -166,7 +166,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "V1.363";
+const SERVER_VERSION = "V1.364";
 let isAiFollowupRunning = false;
 
 async function checkOwnership(ctx, instId) {
@@ -794,7 +794,7 @@ async function renderTourMenu(ctx, step = 0) {
         },
         {
             title: "💎 Escolha seu Sucesso",
-            description: `Tudo isso liberado imediatamente após a assinatura.\n\n💰 <b>Investimento:</b> R$ 119,90/mês\n\nSem taxas de adesão. Cancele quando quiser.`,
+            description: `Tudo isso liberado imediatamente após a assinatura.\n\n💰 <b>Investimento:</b> R$ ${config.planPrice.toFixed(2).replace('.', ',')}/mês\n\nSem taxas de adesão. Cancele quando quiser.`,
             btnNext: "🚀 ASSINAR AGORA"
         }
     ];
@@ -965,7 +965,7 @@ bot.action("cmd_planos_menu", async (ctx) => {
     const text = `💎 *Informações do Plano*\n\n` +
         `📊 *Seu Status:* ${statusLabel}\n` +
         `📅 *Validade:* ${expiryDate}\n` +
-        `💰 *Valor:* R$ 119,90/mês\n\n` +
+        `💰 *Valor:* R$ ${config.planPrice.toFixed(2).replace('.', ',')}/mês\n\n` +
         `🛠️ *Limites do Plano:*\n` +
         `📱 Instâncias: ${limits.instances}\n` +
         `👤 Corretores: Ilimitado\n`;
@@ -3204,7 +3204,8 @@ bot.action("gen_pix_mensal", async (ctx) => {
     // V1.283: Cakto Link com parâmetro src para identificação do chat_id no webhook
     const checkoutLink = `${CAKTO_CHECKOUT_URL}?src=${chatId}`;
 
-    ctx.reply(`💎 *Plano Pro Connect*\n\nClique no botão abaixo para assinar o plano e liberar todos os recursos:\n\n💰 *Valor:* R$ 119,90/mês`, {
+    const config = await getSystemConfig();
+    ctx.reply(`💎 *Plano Pro Connect*\n\nClique no botão abaixo para assinar o plano e liberar todos os recursos:\n\n💰 *Valor:* R$ ${config.planPrice.toFixed(2).replace('.', ',')}/mês`, {
         parse_mode: "Markdown",
         ...Markup.inlineKeyboard([[Markup.button.url("🚀 Assinar Agora", checkoutLink)]])
     });
