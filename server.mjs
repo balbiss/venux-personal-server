@@ -164,7 +164,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "V1.368";
+const SERVER_VERSION = "V1.369";
 let isAiFollowupRunning = false;
 
 async function checkOwnership(ctx, instId) {
@@ -803,7 +803,7 @@ bot.start(async (ctx) => {
 
     const buttons = [
         [Markup.button.callback("🚀 Minhas Instâncias", "cmd_instancias_menu")],
-        [Markup.button.callback("📢 Disparo em Massa", "cmd_shortcuts_disparos"), Markup.button.callback("🤝 Afiliados", "cmd_afiliados")],
+        [Markup.button.callback("📢 Disparo em Massa", "cmd_shortcuts_disparos")],
         [Markup.button.callback("🔔 Follow-ups / Agenda", "cmd_shortcuts_followups")],
         [Markup.button.callback("💎 Seu Plano (Ativo)", "cmd_planos_menu"), Markup.button.callback("👤 Suporte / Ajuda", "cmd_suporte")]
     ];
