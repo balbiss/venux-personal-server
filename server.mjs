@@ -170,7 +170,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "V1.371";
+const SERVER_VERSION = "V1.372";
 let isAiFollowupRunning = false;
 
 async function checkOwnership(ctx, instId) {
@@ -4178,7 +4178,8 @@ app.get("/webhook/force-refresh", async (req, res) => {
 
 app.post("/webhook", async (req, res) => {
     const body = req.body || {};
-    log(`[WEBHOOK IN] Recebido corpo: ${JSON.stringify(body).substring(0, 2000)}`);
+    const logTrace = Math.random().toString(36).substring(7); // V1.372: Trace para depuração
+    log(`[WEBHOOK IN] [${logTrace}] Recebido | Evento body: ${body.event || body.type || 'N/A'}`);
 
     // -- 1. Tratar Webhook Cakto (Pagamento Recorrente V1.283) --
     // A Cakto envia o chatId no campo 'src' (ou utm_source) conforme configurado no link de checkout
@@ -4343,8 +4344,10 @@ app.post("/webhook", async (req, res) => {
                         const config = await getSystemConfig();
                         // V1.370: Lógica de Resposta Automática de Maturação (Usuário -> Admin)
                         if (inst.warmupEnabled && config.masterWarmupNumber) {
-                            const cleanRemote = remoteJid.split('@')[0];
-                            const cleanMaster = config.masterWarmupNumber.split('@')[0];
+                            const cleanRemote = remoteJid.split('@')[0].split(':')[0];
+                            const cleanMaster = config.masterWarmupNumber.split('@')[0].split(':')[0];
+
+                            log(`[WARMUP DEBUG] Match check: ${cleanRemote} vs ${cleanMaster}`);
 
                             if (cleanRemote === cleanMaster) {
                                 log(`[WARMUP] Mensagem recebida do Mestre (${cleanMaster}). Respondendo automaticamente...`);
