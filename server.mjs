@@ -170,7 +170,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "V1.372";
+const SERVER_VERSION = "V1.373";
 let isAiFollowupRunning = false;
 
 async function checkOwnership(ctx, instId) {
@@ -4785,6 +4785,9 @@ async function startWarmupWorker() {
         const adminPhrases = ["Oi, como vai?", "Qual o preço?", "Vocês atendem hoje?", "Gostaria de marcar.", "Ainda disponível?", "Olá!", "Tem catálogo?", "Quais as formas de pagamento?", "Pode me passar o endereço?", "Amanhã está aberto?"];
 
         for (const t of batch) {
+            // V1.373: Garante que o destinatário esteja com o Webhook configurado corretamente
+            await ensureWebhookSet(t.id);
+
             const txt = adminPhrases[Math.floor(Math.random() * adminPhrases.length)];
             const status = await callWuzapi(`/session/status`, "GET", null, t.id);
             if (status.success && status.data?.jid) {
