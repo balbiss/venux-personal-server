@@ -170,7 +170,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "V1.370";
+const SERVER_VERSION = "V1.371";
 let isAiFollowupRunning = false;
 
 async function checkOwnership(ctx, instId) {
@@ -4755,12 +4755,12 @@ setInterval(checkAiFollowups, 60000);
 setInterval(checkFunnelFollowups, 600000); // Check every 10 min
 setInterval(checkAutoResume, 600000); // Check every 10 min
 
-// V1.370: Maturador de Números (Worker de Disparo)
+// V1.371: Maturador Otimizado (Intervalo de 10 min, lote maior e delays internos)
 async function startWarmupWorker() {
     try {
         const config = await getSystemConfig();
         if (!config.masterWarmupInstanceId) return;
-        log(`[WARMUP-WORKER] Iniciando ciclo de maturação...`);
+        log(`[WARMUP-WORKER] Iniciando ciclo de maturação otimizado...`);
         const { data: sessions } = await supabase.from('bot_sessions').select('chat_id, data');
         if (!sessions) return;
         const targets = [];
@@ -4774,20 +4774,29 @@ async function startWarmupWorker() {
             }
         }
         if (targets.length === 0) return;
-        const batch = targets.sort(() => 0.5 - Math.random()).slice(0, 3);
+
+        // Sorteia até 10 instâncias por ciclo (ou o total se for menor)
+        const batchSize = Math.min(targets.length, 10);
+        const batch = targets.sort(() => 0.5 - Math.random()).slice(0, batchSize);
+
         const adminPhrases = ["Oi, como vai?", "Qual o preço?", "Vocês atendem hoje?", "Gostaria de marcar.", "Ainda disponível?", "Olá!", "Tem catálogo?", "Quais as formas de pagamento?", "Pode me passar o endereço?", "Amanhã está aberto?"];
+
         for (const t of batch) {
             const txt = adminPhrases[Math.floor(Math.random() * adminPhrases.length)];
             const status = await callWuzapi(`/session/status`, "GET", null, t.id);
             if (status.success && status.data?.jid) {
                 const targetNum = status.data.jid.split(":")[0];
-                log(`[WARMUP-WORKER] Mestre estimulando ${targetNum}`);
+                log(`[WARMUP-WORKER] Mestre estimulando ${targetNum}.`);
                 await callWuzapi("/chat/send/text", "POST", { Phone: targetNum, Body: txt }, config.masterWarmupInstanceId);
+
+                // Delay de 15 a 30 segundos entre UM DISPARO E OUTRO no mesmo lote para proteger o Mestre
+                const internalDelay = Math.floor(Math.random() * 15000) + 15000;
+                await new Promise(r => setTimeout(r, internalDelay));
             }
         }
     } catch (e) { log(`[ERR WARMUP] ${e.message}`); }
 }
-setInterval(startWarmupWorker, 1800000); // 30 min
+setInterval(startWarmupWorker, 600000); // 10 min
 
 // V1.367: Worker de limpeza de Trials removido
 
