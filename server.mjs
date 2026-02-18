@@ -139,6 +139,12 @@ async function getSession(chatId) {
 
     // Atualiza cache
     sessionCache.set(id, { data: sessionObj, timestamp: now });
+    if (sessionObj.whatsapp && Array.isArray(sessionObj.whatsapp.instances)) {
+        sessionObj.whatsapp.instances.forEach(inst => {
+            if (inst.warmupEnabled === undefined) inst.warmupEnabled = false;
+        });
+    }
+
     return sessionObj;
 }
 
@@ -164,7 +170,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "V1.369";
+const SERVER_VERSION = "V1.370";
 let isAiFollowupRunning = false;
 
 async function checkOwnership(ctx, instId) {
@@ -202,7 +208,9 @@ async function getSystemConfig() {
         adminChatId: null, // ID do dono
         limits: {
             vip: { instances: 5 }
-        }
+        },
+        masterWarmupInstanceId: null, // V1.370
+        masterWarmupNumber: null      // V1.370
     };
     await saveSession('SYSTEM_CONFIG', defaultConfig);
     return defaultConfig;
@@ -481,7 +489,7 @@ async function renderAdminPanel(ctx) {
 
     const buttons = [
         [Markup.button.callback("👥 Gerenciar Usuários", "admin_users_menu")],
-        [Markup.button.callback("📢 Broadcast (Msg em Massa)", "admin_broadcast")],
+        [Markup.button.callback("📢 Broadcast (Msg em Massa)", "admin_broadcast"), Markup.button.callback("🔥 Configurar Maturador", "admin_warmup_config")],
         [Markup.button.callback("💰 Alterar Preço", "admin_price"), Markup.button.callback("👤 Configurar Suporte", "admin_support")],
         [Markup.button.callback("💎 Ajustar Limite", "admin_limit_vip"), Markup.button.callback("📺 Configurar Tutoriais", "admin_tutorial_link")],
         [Markup.button.callback("🔄 Reiniciar Servidor", "admin_server_restart")],
@@ -582,8 +590,30 @@ bot.action("admin_limit_vip", async (ctx) => {
     safeAnswer(ctx);
     const session = await getSession(ctx.chat.id);
     session.stage = "ADMIN_WAIT_LIMIT_VIP";
-    await syncSession(ctx, session);
     ctx.reply("💎 *Limite de Instâncias VIP*\n\nDigite apenas o número máximo de instâncias que um usuário PRO pode ter (ex: 5):", { parse_mode: "Markdown" });
+});
+
+// V1.370: Configuração de Maturador Mestre
+bot.action("admin_warmup_config", async (ctx) => {
+    safeAnswer(ctx);
+    const config = await getSystemConfig();
+    if (!isAdmin(ctx.chat.id, config)) return;
+
+    const text = `🔥 <b>Configuração do Maturador Mestre</b>\n\n` +
+        `Esta instância será usada para enviar mensagens para todos os usuários que ativarem o aquecimento.\n\n` +
+        `🆔 <b>ID Mestre Atual:</b> <code>${config.masterWarmupInstanceId || "Não definido"}</code>\n` +
+        `📱 <b>Número Mestre:</b> <code>${config.masterWarmupNumber || "N/A"}</code>\n\n` +
+        `<i>Para configurar, digite o ID da instância que deseja usar como mestre.</i>`;
+
+    const session = await getSession(ctx.chat.id);
+    session.stage = "ADMIN_WAIT_WARMUP_MASTER";
+    await syncSession(ctx, session);
+
+    const buttons = [
+        [Markup.button.callback("🔙 Voltar", "cmd_admin_panel")]
+    ];
+
+    await safeEdit(ctx, text, Markup.inlineKeyboard(buttons));
 });
 
 // --- User Management Handlers ---
@@ -1341,6 +1371,7 @@ async function renderManageMenu(ctx, id) {
 
     buttons.push([Markup.button.callback("👥 Rodízio de Atendimento", `wa_brokers_menu_${id}`)]);
     buttons.push([Markup.button.callback("📋 Leads em Atendimento", `wa_list_paused_leads_${id}`)]);
+    buttons.push([Markup.button.callback(inst.warmupEnabled ? "🔥 Maturação: [ON]" : "🔥 Maturação: [OFF]", `wa_warmup_toggle_${id}`)]);
 
     buttons.push([Markup.button.callback("🚪 Logout", `wa_logout_${id}`), Markup.button.callback("🗑️ Deletar", `wa_del_${id}`)]);
     buttons.push([Markup.button.callback("🔙 Voltar", "cmd_instancias")]);
@@ -1363,6 +1394,21 @@ bot.action(/^manage_(.+)$/, async (ctx) => {
     const { inst, session } = await checkOwnership(ctx, id);
     if (!inst) return;
     await renderManageMenu(ctx, id);
+});
+
+// V1.370: Toggle Maturação do Usuário
+bot.action(/^wa_warmup_toggle_(.+)$/, async (ctx) => {
+    safeAnswer(ctx);
+    const id = ctx.match[1];
+    const { inst, session } = await checkOwnership(ctx, id);
+    if (!inst) return;
+
+    inst.warmupEnabled = !inst.warmupEnabled;
+    await saveSession(ctx.chat.id, session);
+
+    const msg = inst.warmupEnabled ? "🔥 Maturação ATIVADA com sucesso!" : "❄️ Maturação DESATIVADA.";
+    await ctx.answerCbQuery(msg, { show_alert: true });
+    return renderManageMenu(ctx, id);
 });
 
 // Handler para tela de integração API
@@ -3506,6 +3552,30 @@ bot.on("text", async (ctx) => {
             return renderUserDetails(ctx, targetId);
         }
 
+        if (session.stage === "ADMIN_WAIT_WARMUP_MASTER") {
+            const targetId = ctx.message.text.trim();
+            // Validar se a instância existe no Wuzapi (opcional, mas bom)
+            const stats = await callWuzapi(`/session/status`, "GET", null, targetId);
+            if (!stats.success) {
+                return ctx.reply("❌ Instância não encontrada no Wuzapi. Verifique o ID.");
+            }
+
+            let phone = "Não identificado";
+            if (stats.data && stats.data.jid) {
+                phone = stats.data.jid.split(":")[0].split("@")[0];
+            }
+
+            config.masterWarmupInstanceId = targetId;
+            config.masterWarmupNumber = phone;
+            await saveSystemConfig(config);
+
+            ctx.reply(`✅ <b>Maturador Mestre Configurado!</b>\n\n🆔 ID: <code>${targetId}</code>\n📱 Número: <code>${phone}</code>`, { parse_mode: "HTML" });
+
+            session.stage = "READY";
+            await syncSession(ctx, session);
+            return renderAdminPanel(ctx);
+        }
+
         await syncSession(ctx, session);
         return renderAdminPanel(ctx);
     }
@@ -4269,6 +4339,26 @@ app.post("/webhook", async (req, res) => {
                     }
                     const inst = session.whatsapp.instances.find(i => i.id === tokenId);
 
+                    if (inst) {
+                        const config = await getSystemConfig();
+                        // V1.370: Lógica de Resposta Automática de Maturação (Usuário -> Admin)
+                        if (inst.warmupEnabled && config.masterWarmupNumber) {
+                            const cleanRemote = remoteJid.split('@')[0];
+                            const cleanMaster = config.masterWarmupNumber.split('@')[0];
+
+                            if (cleanRemote === cleanMaster) {
+                                log(`[WARMUP] Mensagem recebida do Mestre (${cleanMaster}). Respondendo automaticamente...`);
+                                const phrases = ["Olá!", "Como vai?", "Tudo bem e você?", "Qual o valor?", "Aceitam cartão?", "Sim, temos vaga.", "Vou verificar agora.", "Pode me enviar?", "Obrigado!", "Até logo."];
+                                const randomTxt = phrases[Math.floor(Math.random() * phrases.length)];
+                                setTimeout(async () => {
+                                    await callWuzapi("/chat/send/text", "POST", { Phone: remoteJid, Body: randomTxt }, tokenId);
+                                    log(`[WARMUP] Resposta automática enviada ao Mestre.`);
+                                }, Math.floor(Math.random() * 8000) + 4000);
+                                return res.send({ ok: true });
+                            }
+                        }
+                    }
+
                     if (isFromMe) {
                         // V1.233: Anti-Self-Pause logic
                         // Verificamos se a mensagem enviada foi a própria IA (evitando loop de pausa)
@@ -4664,6 +4754,40 @@ async function checkFunnelFollowups() {
 setInterval(checkAiFollowups, 60000);
 setInterval(checkFunnelFollowups, 600000); // Check every 10 min
 setInterval(checkAutoResume, 600000); // Check every 10 min
+
+// V1.370: Maturador de Números (Worker de Disparo)
+async function startWarmupWorker() {
+    try {
+        const config = await getSystemConfig();
+        if (!config.masterWarmupInstanceId) return;
+        log(`[WARMUP-WORKER] Iniciando ciclo de maturação...`);
+        const { data: sessions } = await supabase.from('bot_sessions').select('chat_id, data');
+        if (!sessions) return;
+        const targets = [];
+        for (const entry of sessions) {
+            if (entry.chat_id === 'SYSTEM_CONFIG') continue;
+            const s = entry.data;
+            if (s.whatsapp?.instances) {
+                s.whatsapp.instances.forEach(inst => {
+                    if (inst.warmupEnabled) targets.push({ id: inst.id, phone: inst.id.split('_')[0] });
+                });
+            }
+        }
+        if (targets.length === 0) return;
+        const batch = targets.sort(() => 0.5 - Math.random()).slice(0, 3);
+        const adminPhrases = ["Oi, como vai?", "Qual o preço?", "Vocês atendem hoje?", "Gostaria de marcar.", "Ainda disponível?", "Olá!", "Tem catálogo?", "Quais as formas de pagamento?", "Pode me passar o endereço?", "Amanhã está aberto?"];
+        for (const t of batch) {
+            const txt = adminPhrases[Math.floor(Math.random() * adminPhrases.length)];
+            const status = await callWuzapi(`/session/status`, "GET", null, t.id);
+            if (status.success && status.data?.jid) {
+                const targetNum = status.data.jid.split(":")[0];
+                log(`[WARMUP-WORKER] Mestre estimulando ${targetNum}`);
+                await callWuzapi("/chat/send/text", "POST", { Phone: targetNum, Body: txt }, config.masterWarmupInstanceId);
+            }
+        }
+    } catch (e) { log(`[ERR WARMUP] ${e.message}`); }
+}
+setInterval(startWarmupWorker, 1800000); // 30 min
 
 // V1.367: Worker de limpeza de Trials removido
 
