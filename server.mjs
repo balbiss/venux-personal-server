@@ -170,7 +170,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "V1.373";
+const SERVER_VERSION = "V1.375";
 let isAiFollowupRunning = false;
 
 async function checkOwnership(ctx, instId) {
@@ -1760,6 +1760,12 @@ async function runCampaign(chatId, instId) {
     const sessionForId = await getSession(chatId);
 
     for (let i = campaign.currentIndex; i < campaign.contacts.length; i++) {
+        // V1.375: Verificação de interrupção externa (Deleção do Map)
+        if (!activeCampaigns.has(chatId)) {
+            log(`[DISPARO] Abortando campanha ${campaign.dbId || ''} - Removida da memória.`);
+            break;
+        }
+
         if (campaign.status === 'CANCELLED') break;
         if (campaign.status === 'PAUSED') {
             if (campaign.lastMsgId) {
@@ -1770,6 +1776,18 @@ async function runCampaign(chatId, instId) {
                 ...Markup.inlineKeyboard([[Markup.button.callback("▶️ Retomar", "wa_resume_mass"), Markup.button.callback("⏹️ Parar", "wa_stop_mass")]])
             });
             campaign.lastMsgId = pauseMsg.message_id;
+            break;
+        }
+
+        // V1.375: Check de Status Online antes de cada disparo
+        const liveStatus = await callWuzapi("/session/status", "GET", null, instId);
+        if (!liveStatus.success || (!liveStatus.data?.LoggedIn && !liveStatus.data?.loggedIn)) {
+            log(`[DISPARO] ⚠️ Instância ${instId} offline. Pausando campanha.`);
+            campaign.status = 'PAUSED';
+            if (campaign.dbId) {
+                await supabase.from('scheduled_campaigns').update({ status: 'PAUSED' }).eq('id', campaign.dbId);
+            }
+            bot.telegram.sendMessage(chatId, `⚠️ *Disparo Interrompido*\n\nA instância \`${instId}\` foi desconectada. O disparo foi pausado e poderá ser retomado após você reconectar o WhatsApp.`, { parse_mode: "Markdown" });
             break;
         }
 
@@ -1962,7 +1980,14 @@ bot.action("wa_resume_mass", async (ctx) => {
 bot.action("wa_stop_mass", async (ctx) => {
     safeAnswer(ctx);
     if (activeCampaigns.has(ctx.chat.id)) {
-        activeCampaigns.get(ctx.chat.id).status = 'CANCELLED';
+        const camp = activeCampaigns.get(ctx.chat.id);
+        camp.status = 'CANCELLED';
+
+        // V1.375: Marcar como cancelado no banco também
+        if (camp.dbId) {
+            await supabase.from('scheduled_campaigns').update({ status: 'CANCELLED' }).eq('id', camp.dbId);
+        }
+
         activeCampaigns.delete(ctx.chat.id);
         ctx.reply("🛑 Disparo cancelado definitivamente.");
     }
