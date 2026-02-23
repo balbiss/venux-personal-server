@@ -170,7 +170,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "V1.376";
+const SERVER_VERSION = "V1.377";
 let isAiFollowupRunning = false;
 
 async function checkOwnership(ctx, instId) {
@@ -4616,19 +4616,47 @@ async function checkScheduledCampaigns() {
         const { data, error } = await supabase
             .from('scheduled_campaigns')
             .select('*')
-            .or('status.eq.PENDING,status.eq.RUNNING'); // V1.251: Recuperar também as que pararam no meio
+            .or('status.eq.PENDING,status.eq.RUNNING');
 
-        if (error) throw error;
+        if (error) {
+            log(`[WORKER ERR] Falha ao consultar banco: ${error.message}`);
+            return;
+        }
 
-        for (const item of (data || [])) {
+        if (!data || data.length === 0) {
+            // log(`[WORKER] Nenhuma campanha pendente encontrada.`);
+            return;
+        }
+
+        const now = new Date();
+        const nowIso = now.toISOString();
+
+        for (const item of data) {
+            const chatId = Number(item.chat_id);
+
             // Se já estiver ativa em RAM, pular
-            if (activeCampaigns.has(Number(item.chat_id))) continue;
+            if (activeCampaigns.has(chatId)) {
+                // log(`[WORKER] Campanha ${item.id} já está ativa em RAM para ${chatId}.`);
+                continue;
+            }
 
-            // Se for PENDING e tiver horário, respeitar o horário
-            const nowIso = new Date().toISOString();
-            if (item.status === 'PENDING' && item.scheduled_for > nowIso) continue;
+            // V1.377: Comparação robusta usando objetos Date
+            const scheduledDate = new Date(item.scheduled_for);
+            const isDue = scheduledDate <= now;
 
-            log(`[WORKER] Iniciando/Retomando campanha ${item.id} para ${item.chat_id} `);
+            if (item.status === 'PENDING' && !isDue) {
+                // log(`[WORKER] Campanha ${item.id} agendada para o futuro: ${item.scheduled_for}`);
+                continue;
+            }
+
+            log(`[WORKER] 🚀 Iniciando/Retomando campanha ${item.id} para ${chatId} (Agendado: ${item.scheduled_for} | Agora: ${nowIso})`);
+
+            const c = item.campaign_data;
+            if (!c || !c.contacts) {
+                log(`[WORKER ERR] Campanha ${item.id} com dados corrompidos. Pulando.`);
+                await supabase.from('scheduled_campaigns').update({ status: 'ERROR', error_msg: 'Dados corrompidos' }).eq('id', item.id);
+                continue;
+            }
 
             // Marcar como RUNNING no banco se ainda não estiver
             if (item.status === 'PENDING') {
@@ -4638,7 +4666,6 @@ async function checkScheduledCampaigns() {
                     .eq('id', item.id);
             }
 
-            const c = item.campaign_data;
             const camp = {
                 ...c,
                 dbId: item.id,
@@ -4647,21 +4674,31 @@ async function checkScheduledCampaigns() {
                 status: 'READY'
             };
 
-            activeCampaigns.set(Number(item.chat_id), camp);
+            activeCampaigns.set(chatId, camp);
 
-            // Avisar o usuário que retomou (se for RUNNING) ou iniciou (se for PENDING)
-            const text = item.status === 'RUNNING' ? `🔄 *Retomando Disparo Interrompido*\n\nSua campanha para \`${item.inst_id}\` foi retomada a partir do contato ${camp.currentIndex + 1}.` : `⏰ *Agendamento Ativado!*\n\nIniciando agora o disparo para \`${item.inst_id}\`.`;
+            // Avisar o usuário
+            const text = item.status === 'RUNNING'
+                ? `🔄 *Retomando Disparo Interrompido*\n\nSua campanha para \`${item.inst_id}\` foi retomada a partir do contato ${camp.currentIndex + 1}.`
+                : `⏰ *Agendamento Ativado!*\n\nIniciando agora o disparo para \`${item.inst_id}\`.`;
 
             try {
-                await bot.telegram.sendMessage(item.chat_id, text, { parse_mode: "Markdown" });
-            } catch (e) { }
+                await bot.telegram.sendMessage(chatId, text, { parse_mode: "Markdown" });
+            } catch (e) {
+                log(`[WORKER ERR] Não foi possível avisar o usuário ${chatId}: ${e.message}`);
+            }
 
-            runCampaign(Number(item.chat_id), item.inst_id).then(async () => {
-                await supabase.from('scheduled_campaigns').update({ status: 'COMPLETED' }).eq('id', item.id);
+            runCampaign(chatId, item.inst_id).then(async () => {
+                // Verificar se a campanha foi concluída (não deletada/cancelada no meio)
+                const currentStatus = activeCampaigns.get(chatId)?.status;
+                if (currentStatus !== 'CANCELLED') {
+                    await supabase.from('scheduled_campaigns').update({ status: 'COMPLETED' }).eq('id', item.id);
+                }
+            }).catch(e => {
+                log(`[WORKER ERR] runCampaign falhou para ${item.id}: ${e.message}`);
             });
         }
     } catch (e) {
-        log(`[WORKER ERR] ${e.message}`);
+        log(`[WORKER FATAL] ${e.message}`);
     }
 }
 
