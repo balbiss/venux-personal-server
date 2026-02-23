@@ -170,7 +170,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "V1.377";
+const SERVER_VERSION = "V1.378";
 let isAiFollowupRunning = false;
 
 async function checkOwnership(ctx, instId) {
@@ -1781,6 +1781,20 @@ async function runCampaign(chatId, instId) {
 
         // V1.375: Check de Status Online antes de cada disparo
         const liveStatus = await callWuzapi("/session/status", "GET", null, instId);
+
+        // V1.378: Feedback específico para Sessão Expirada (401)
+        if (liveStatus.code === 401 || liveStatus.error === 'unauthorized') {
+            log(`[DISPARO] ❌ Sessão expirada (401) na instância ${instId}. Pausando campanha.`);
+            campaign.status = 'PAUSED';
+            if (campaign.dbId) {
+                await supabase.from('scheduled_campaigns').update({ status: 'PAUSED' }).eq('id', campaign.dbId);
+            }
+            try {
+                await bot.telegram.sendMessage(chatId, `❌ *Disparo Interrompido (Erro 401)*\n\nA sessão da instância \`${instId}\` expirou. Você precisa reconectar o chip no menu *Instâncias* para continuar o disparo.`, { parse_mode: "Markdown" });
+            } catch (e) { }
+            break;
+        }
+
         if (!liveStatus.success || (!liveStatus.data?.LoggedIn && !liveStatus.data?.loggedIn)) {
             log(`[DISPARO] ⚠️ Instância ${instId} offline. Pausando campanha.`);
             campaign.status = 'PAUSED';
@@ -4872,13 +4886,13 @@ setInterval(startWarmupWorker, 600000); // 10 min
 
 // V1.367: Worker de limpeza de Trials removido
 
-// V1.282: Aguardar 10 segundos antes de iniciar o bot para evitar erro 409 (Conflict) em reinicializações rápidas
-log(`[BOT LOG] Aguardando 10s para estabilizar conexão com Telegram...`);
-setTimeout(() => {
-    bot.launch().then(() => {
+// V1.378: Inicialização Resiliente do Bot
+async function startBot(retryCount = 0) {
+    log(`[BOT LOG] Tentando iniciar bot (Tentativa ${retryCount + 1})...`);
+    try {
+        await bot.launch();
         log(`[BOT LOG] [${SERVER_VERSION}] ${new Date().toLocaleTimeString()} - ✅ Bot iniciado no Telegram`);
 
-        // V1.343: Configurar comandos apenas APÓS o launch bem sucedido
         bot.telegram.setMyCommands([
             { command: "start", description: "🚀 Menu Principal / Dashboard" },
             { command: "stats", description: "📊 Dashboard de Leads (Analytics)" },
@@ -4890,11 +4904,22 @@ setTimeout(() => {
             { command: "vip", description: "💎 Status do Plano Premium" }
         ]).catch(e => log(`[BOT ERR] Erro ao setar comandos: ${e.message}`));
 
-        // Não executa imediatamente ao iniciar para evitar disparos acidentais se o fuso do servidor mudar
-        setTimeout(checkScheduledCampaigns, 5000);
-    }).catch(err => {
-        log(`[BOT ERR] Falha ao iniciar bot: ${err.message}`);
-    });
+    } catch (err) {
+        log(`[BOT ERR] Falha ao iniciar bot (Tentativa ${retryCount + 1}): ${err.message}`);
+        const nextRetry = retryCount + 1;
+        const delay = Math.min(Math.pow(2, nextRetry) * 1000, 30000); // Exponential backoff até 30s
+        log(`[BOT LOG] Nova tentativa em ${delay / 1000}s...`);
+        setTimeout(() => startBot(nextRetry), delay);
+    }
+}
+
+// V1.282: Aguardar 10 segundos antes de iniciar o bot
+log(`[BOT LOG] Aguardando 10s para estabilizar conexão com Telegram...`);
+setTimeout(() => {
+    startBot();
+    // V1.378: Disparar workers iniciais INDEPENDENTE do sucesso do bot
+    setTimeout(checkScheduledCampaigns, 5000);
+    setTimeout(checkAiFollowups, 10000);
 }, 10000);
 
 // Graceful stop
