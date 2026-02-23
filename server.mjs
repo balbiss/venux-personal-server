@@ -170,7 +170,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "V1.378";
+const SERVER_VERSION = "V1.379";
 let isAiFollowupRunning = false;
 
 async function checkOwnership(ctx, instId) {
@@ -4626,6 +4626,8 @@ app.post("/webhook", async (req, res) => {
 
 
 async function checkScheduledCampaigns() {
+    const workerId = Math.random().toString(36).substring(7);
+    // log(`[WORKER-HB] [${workerId}] Verificando agendamentos...`); 
     try {
         const { data, error } = await supabase
             .from('scheduled_campaigns')
@@ -4633,51 +4635,44 @@ async function checkScheduledCampaigns() {
             .or('status.eq.PENDING,status.eq.RUNNING');
 
         if (error) {
-            log(`[WORKER ERR] Falha ao consultar banco: ${error.message}`);
+            log(`[WORKER ERR] [${workerId}] Falha ao consultar banco: ${error.message}`);
             return;
         }
 
-        if (!data || data.length === 0) {
-            // log(`[WORKER] Nenhuma campanha pendente encontrada.`);
-            return;
+        const count = data ? data.length : 0;
+        if (count > 0) {
+            log(`[WORKER-DB] [${workerId}] Encontradas ${count} campanhas potenciais.`);
         }
 
         const now = new Date();
         const nowIso = now.toISOString();
 
-        for (const item of data) {
+        for (const item of (data || [])) {
             const chatId = Number(item.chat_id);
 
-            // Se já estiver ativa em RAM, pular
-            if (activeCampaigns.has(chatId)) {
-                // log(`[WORKER] Campanha ${item.id} já está ativa em RAM para ${chatId}.`);
-                continue;
-            }
+            if (activeCampaigns.has(chatId)) continue;
 
-            // V1.377: Comparação robusta usando objetos Date
             const scheduledDate = new Date(item.scheduled_for);
             const isDue = scheduledDate <= now;
 
-            if (item.status === 'PENDING' && !isDue) {
-                // log(`[WORKER] Campanha ${item.id} agendada para o futuro: ${item.scheduled_for}`);
-                continue;
+            // Log de depuração para cada item PENDING
+            if (item.status === 'PENDING') {
+                // log(`[WORKER-DATE] [${workerId}] Campanha ${item.id}: Agendado=${item.scheduled_for} | Agora=${nowIso} | Vencido=${isDue}`);
             }
 
-            log(`[WORKER] 🚀 Iniciando/Retomando campanha ${item.id} para ${chatId} (Agendado: ${item.scheduled_for} | Agora: ${nowIso})`);
+            if (item.status === 'PENDING' && !isDue) continue;
+
+            log(`[WORKER] [${workerId}] 🚀 Iniciando/Retomando campanha ${item.id} para ${chatId} (Status: ${item.status})`);
 
             const c = item.campaign_data;
             if (!c || !c.contacts) {
-                log(`[WORKER ERR] Campanha ${item.id} com dados corrompidos. Pulando.`);
+                log(`[WORKER ERR] [${workerId}] Campanha ${item.id} com dados corrompidos.`);
                 await supabase.from('scheduled_campaigns').update({ status: 'ERROR', error_msg: 'Dados corrompidos' }).eq('id', item.id);
                 continue;
             }
 
-            // Marcar como RUNNING no banco se ainda não estiver
             if (item.status === 'PENDING') {
-                await supabase
-                    .from('scheduled_campaigns')
-                    .update({ status: 'RUNNING' })
-                    .eq('id', item.id);
+                await supabase.from('scheduled_campaigns').update({ status: 'RUNNING' }).eq('id', item.id);
             }
 
             const camp = {
@@ -4690,29 +4685,27 @@ async function checkScheduledCampaigns() {
 
             activeCampaigns.set(chatId, camp);
 
-            // Avisar o usuário
             const text = item.status === 'RUNNING'
-                ? `🔄 *Retomando Disparo Interrompido*\n\nSua campanha para \`${item.inst_id}\` foi retomada a partir do contato ${camp.currentIndex + 1}.`
+                ? `🔄 *Retomando Disparo Interrompido*\n\nSua campanha para \`${item.inst_id}\` foi retomada.`
                 : `⏰ *Agendamento Ativado!*\n\nIniciando agora o disparo para \`${item.inst_id}\`.`;
 
             try {
                 await bot.telegram.sendMessage(chatId, text, { parse_mode: "Markdown" });
             } catch (e) {
-                log(`[WORKER ERR] Não foi possível avisar o usuário ${chatId}: ${e.message}`);
+                log(`[WORKER ERR] [${workerId}] Erro ao avisar ${chatId}: ${e.message}`);
             }
 
             runCampaign(chatId, item.inst_id).then(async () => {
-                // Verificar se a campanha foi concluída (não deletada/cancelada no meio)
                 const currentStatus = activeCampaigns.get(chatId)?.status;
                 if (currentStatus !== 'CANCELLED') {
                     await supabase.from('scheduled_campaigns').update({ status: 'COMPLETED' }).eq('id', item.id);
                 }
             }).catch(e => {
-                log(`[WORKER ERR] runCampaign falhou para ${item.id}: ${e.message}`);
+                log(`[WORKER ERR] [${workerId}] runCampaign falhou: ${e.message}`);
             });
         }
     } catch (e) {
-        log(`[WORKER FATAL] ${e.message}`);
+        log(`[WORKER FATAL] [${workerId}] ${e.message}`);
     }
 }
 
