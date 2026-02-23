@@ -170,7 +170,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "V1.379";
+const SERVER_VERSION = "V1.380";
 let isAiFollowupRunning = false;
 
 async function checkOwnership(ctx, instId) {
@@ -1757,7 +1757,10 @@ async function runCampaign(chatId, instId) {
     if (!campaign) return;
 
     campaign.status = 'RUNNING';
-    const sessionForId = await getSession(chatId);
+    campaign.currentIndex = campaign.currentIndex || 0; // V1.380: Fallback critico
+    campaign.current = campaign.current || 0;           // V1.380: Fallback critico
+
+    log(`[DISPARO] 🚀 Iniciando loop de envio para ${instId}. Contatos: ${campaign.contacts.length}, Início no índice: ${campaign.currentIndex}`);
 
     for (let i = campaign.currentIndex; i < campaign.contacts.length; i++) {
         // V1.375: Verificação de interrupção externa (Deleção do Map)
@@ -3870,7 +3873,9 @@ bot.on("text", async (ctx) => {
             mediaData: session.mass_media_data,
             fileName: session.mass_file_name,
             minDelay: session.temp_mass_min,
-            maxDelay: session.temp_mass_max
+            maxDelay: session.temp_mass_max,
+            currentIndex: 0, // V1.380: Garantir inicio
+            current: 0      // V1.380: Garantir inicio
         };
 
         const { error } = await supabase
