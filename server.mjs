@@ -170,7 +170,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "V1.375";
+const SERVER_VERSION = "V1.376";
 let isAiFollowupRunning = false;
 
 async function checkOwnership(ctx, instId) {
@@ -3809,8 +3809,12 @@ bot.on("text", async (ctx) => {
         session.temp_mass_max = max;
         await syncSession(ctx, session);
 
-        ctx.reply("🕒 *Quando deseja realizar o disparo?*", {
-            parse_mode: "Markdown",
+        const warningMsg = `🕒 <b>Quando deseja realizar o disparo?</b>\n\n` +
+            `⚠️ <b>AVISO DE SEGURANÇA:</b>\n` +
+            `O uso de disparos em massa infringe as políticas da Meta. Use com moderação e siga as boas práticas. <b>Não nos responsabilizamos por eventuais banimentos ou bloqueios.</b> O risco é integralmente do usuário.`;
+
+        ctx.reply(warningMsg, {
+            parse_mode: "HTML",
             ...Markup.inlineKeyboard([
                 [Markup.button.callback("🚀 Enviar Agora", `wa_mass_now_${instId}`)],
                 [Markup.button.callback("📅 Agendar para depois", `wa_mass_sched_${instId}`)]
