@@ -170,7 +170,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "V1.389";
+const SERVER_VERSION = "V1.390";
 let isAiFollowupRunning = false;
 
 async function checkOwnership(ctx, instId) {
@@ -583,33 +583,54 @@ bot.action("admin_master_portal", async (ctx) => {
 bot.action("admin_master_gen_key", async (ctx) => {
     safeAnswer(ctx);
     if (!isMaster(ctx.chat.id)) return;
+
+    log(`[MASTER] Gerando nova licença para o Master: ${ctx.chat.id}`);
     const key = `VENUX-${Math.random().toString(36).substring(2, 8).toUpperCase()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
 
-    // Salvar no banco central (SYSTEM_CONFIG)
-    const config = await getSystemConfig();
-    if (!config.master_keys) config.master_keys = [];
-    config.master_keys.push({ key, created_at: new Date().toISOString(), status: 'ACTIVE' });
-    await saveSystemConfig(config);
+    try {
+        const config = await getSystemConfig();
+        if (!config.master_keys) config.master_keys = [];
 
-    ctx.reply(`✅ <b>Nova Licença Gerada e Salva!</b>\n\nChave: <code>${key}</code>\n\nEnvie esta chave para o seu comprador.`, { parse_mode: "HTML" });
+        const newLicense = { key, created_at: new Date().toISOString(), status: 'ACTIVE', owner_id: null };
+        config.master_keys.push(newLicense);
+
+        await saveSystemConfig(config);
+        log(`[MASTER] Licença ${key} salva com sucesso no SYSTEM_CONFIG.`);
+
+        ctx.reply(`✅ <b>Nova Licença Gerada e Salva!</b>\n\nChave: <code>${key}</code>\n\nEnvie esta chave para o seu comprador. Ela aparecerá na sua lista de licenças ativas.`, { parse_mode: "HTML" });
+    } catch (e) {
+        log(`[MASTER ERR] Falha ao gerar/salvar chave: ${e.message}`);
+        ctx.reply("❌ Erro ao salvar a nova licença no banco de dados.");
+    }
 });
 
 bot.action("admin_master_list_keys", async (ctx) => {
     safeAnswer(ctx);
     if (!isMaster(ctx.chat.id)) return;
-    const config = await getSystemConfig();
-    const keys = config.master_keys || [];
 
-    if (keys.length === 0) {
-        return ctx.reply("📋 <b>Nenhuma licença gerada ainda.</b>", { parse_mode: "HTML" });
+    log(`[MASTER] Solicitando lista de licenças: User=${ctx.chat.id}`);
+
+    try {
+        const config = await getSystemConfig();
+        const keys = config.master_keys || [];
+
+        if (keys.length === 0) {
+            log("[MASTER] Lista de licenças vazia.");
+            return ctx.reply("📋 <b>Nenhuma licença gerada ainda.</b>\n\nUse o botão acima para gerar a primeira chave.", { parse_mode: "HTML" });
+        }
+
+        let text = `📋 <b>Suas Licenças (${keys.length}):</b>\n\n`;
+        keys.forEach((k, i) => {
+            const data = k.created_at ? new Date(k.created_at).toLocaleDateString('pt-BR') : 'N/A';
+            text += `${i + 1}. <code>${k.key}</code>\n📅 ${data} | Status: <b>${k.status}</b>\n\n`;
+        });
+
+        await ctx.reply(text, { parse_mode: "HTML" });
+        log(`[MASTER] Lista de ${keys.length} chaves enviada.`);
+    } catch (e) {
+        log(`[MASTER ERR] Erro ao listar chaves: ${e.message}`);
+        ctx.reply("❌ Erro ao recuperar a lista de licenças.");
     }
-
-    let text = `📋 <b>Licenças Ativas:</b>\n\n`;
-    keys.forEach((k, i) => {
-        text += `${i + 1}. <code>${k.key}</code> (${k.status})\n`;
-    });
-
-    await ctx.reply(text, { parse_mode: "HTML" });
 });
 
 bot.action("admin_menu", async (ctx) => {
