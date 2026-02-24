@@ -170,7 +170,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "V1.431";
+const SERVER_VERSION = "V1.440";
 const SAAS_NAME = process.env.SAAS_NAME || "Connect SaaS";
 const SAAS_LOGO_URL = process.env.SAAS_LOGO_URL || null;
 let isAiFollowupRunning = false;
@@ -3311,6 +3311,36 @@ bot.command("reiniciar", async (ctx) => {
     }, 2000);
 });
 
+async function generateConversationSummary(history) {
+    try {
+        if (!history || history.length < 2) return "Histórico curto demais para resumo.";
+
+        // V1.440: Prompt profissional para resumo de transbordo
+        const messages = [
+            {
+                role: "system",
+                content: "Você é um assistente sênior de vendas. Resuma a conversa a seguir entre uma IA e um cliente em 3 a 5 tópicos (bullet points) claros e diretos para o atendente humano. Foque em: 1. Intenção principal do cliente. 2. Perfil/Urgência. 3. Principais objeções ou dúvidas."
+            },
+            ...history.slice(-10).map(m => ({
+                role: m.role === 'assistant' ? 'assistant' : 'user',
+                content: m.content
+            }))
+        ];
+
+        const response = await openai.chat.completions.create({
+            model: DEFAULT_MODEL,
+            messages: messages,
+            temperature: 0.5,
+            max_tokens: 300
+        });
+
+        return response.choices[0].message.content || "Não foi possível gerar o resumo.";
+    } catch (e) {
+        log(`[SUMMARY ERR] Erro ao gerar resumo: ${e.message}`);
+        return "Erro ao gerar resumo automático da conversa.";
+    }
+}
+
 // --- Módulo de Distribuição de Leads (Rodízio Round-Robin) ---
 async function distributeLead(tgChatId, leadJid, instId, leadName, summary) {
     try {
@@ -4802,7 +4832,9 @@ app.post("/webhook", async (req, res) => {
                                                     // 1. Verificar se rodízio está ativo
                                                     // 2. Se SIM: Enviar para corretor e notificar admin
                                                     // 3. Se NÃO: Notificar admin com botão de retomar e pausar IA no DB
-                                                    await distributeLead(chatId, remoteJid, tokenId, readableLead, finalResponse);
+                                                    // V1.440: Gerar Resumo da Conversa via IA para o atendente
+                                                    const conversationSummary = await generateConversationSummary(history);
+                                                    await distributeLead(chatId, remoteJid, tokenId, readableLead, conversationSummary);
                                                 } catch (e) {
                                                     log(`[WEBHOOK AI ERR] Erro ao processar transbordo em background: ${e.message}`);
                                                 }
@@ -4823,8 +4855,9 @@ app.post("/webhook", async (req, res) => {
                                             log(`[AI QUALIFY] Notificando admin ${chatId} sobre lead ${readableLead}`);
                                             bot.telegram.sendMessage(chatId, `✅ *Lead Qualificado!* **${readableLead}**\n\nEncaminhando para o corretor da vez...`);
 
-                                            // Trigger Rodízio Round-Robin com os dados capturados
-                                            await distributeLead(chatId, remoteJid, tokenId, readableLead, finalResponse);
+                                            // V1.440: Gerar Resumo da Conversa via IA para o atendente
+                                            const conversationSummary = await generateConversationSummary(history);
+                                            await distributeLead(chatId, remoteJid, tokenId, readableLead, conversationSummary);
                                         }
 
                                         const chunks = finalResponse.split("\n\n").filter(c => c.trim().length > 0);
