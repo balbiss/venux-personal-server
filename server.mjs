@@ -170,7 +170,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "V1.388";
+const SERVER_VERSION = "V1.389";
 let isAiFollowupRunning = false;
 
 async function checkOwnership(ctx, instId) {
@@ -308,7 +308,13 @@ async function safeDelete(ctx) {
 }
 
 async function checkVip(chatId) {
+    const config = await getSystemConfig();
     const session = await getSession(chatId);
+
+    // V1.389: Admins da própria instância são SEMPRE VIP
+    if (isAdmin(chatId, config)) {
+        return true;
+    }
 
     // V1.320: Mais resiliente - Se é VIP mas não tem validade, dá 30 dias de bônus
     if (session.isVip && !session.subscriptionExpiry) {
@@ -5116,8 +5122,16 @@ app.get("*", (req, res) => {
 });
 
 app.listen(PORT, "0.0.0.0", () => {
-    log(`Servidor rodando em: http://0.0.0.0:${PORT}`);
-    const publicUrl = process.env.WEBHOOK_URL ? process.env.WEBHOOK_URL.replace("/webhook", "") : `http://localhost:${PORT}`;
-    log(`Acesse via: ${publicUrl}/qr-client`);
+    log(`[SERVER] Rodando em: http://0.0.0.0:${PORT}`);
+
+    // V1.389: Validação Inteligente de Webhook
+    let publicUrl = process.env.WEBHOOK_URL ? process.env.WEBHOOK_URL.replace("/webhook", "") : `http://localhost:${PORT}`;
+
+    // Alerta de Portainer mal configurado (IP sem Porta)
+    if (process.env.WEBHOOK_URL && !process.env.WEBHOOK_URL.includes(":") && !process.env.WEBHOOK_URL.includes("https")) {
+        log(`[⚠️ ALERTA] WEBHOOK_URL (${process.env.WEBHOOK_URL}) parece estar sem a porta. A Wuzapi pode falhar ao enviar mensagens.`);
+    }
+
+    log(`[SERVER] Acesse via: ${publicUrl}/qr-client`);
 });
 
