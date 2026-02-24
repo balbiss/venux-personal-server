@@ -170,7 +170,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "V1.380";
+const SERVER_VERSION = "V1.383";
 let isAiFollowupRunning = false;
 
 async function checkOwnership(ctx, instId) {
@@ -205,7 +205,7 @@ async function getSystemConfig() {
         referralCommission: 10.00,
         supportLink: "@ConnectSuporte",
         tutorialLink: "https://t.me/seu_canal_de_tutoriais",
-        adminChatId: null, // ID do dono
+        adminChatId: process.env.ADMIN_CHAT_ID || null, // V1.383: Pega do Portainer se disponivel
         limits: {
             vip: { instances: 5 }
         },
@@ -495,6 +495,12 @@ async function renderAdminPanel(ctx) {
         [Markup.button.callback("🔄 Reiniciar Servidor", "admin_server_restart")],
         [Markup.button.callback("🔙 Voltar", "start")]
     ];
+
+    // V1.383: Portal do Mestre (Apenas se LICENSE_SERVER_URL ou similar estiver ok, ou fixo pro Dono)
+    if (isAdmin(ctx.chat.id, config)) {
+        buttons.splice(4, 0, [Markup.button.callback("🔑 GESTÃO DE LICENÇAS (MESTRE)", "admin_master_portal")]);
+    }
+
     await safeEdit(ctx, text, Markup.inlineKeyboard(buttons));
 }
 
@@ -518,16 +524,48 @@ bot.command("id", (ctx) => {
 
 bot.command("admin", async (ctx) => {
     const config = await getSystemConfig();
-    const chatId = ctx.chat.id;
+    if (!isAdmin(ctx.chat.id, config)) return ctx.reply("⛔ Acesso restrito ao Administrador.");
+    renderAdminPanel(ctx);
+});
 
-    if (!config.adminChatId) {
-        config.adminChatId = chatId;
-        await saveSystemConfig(config);
-        return ctx.reply("👑 *Admin Configurado!* Você agora é o dono do bot.\nUse /admin novamente.", { parse_mode: "Markdown" });
-    }
+// --- Portal do Mestre (V1.383) ---
+bot.action("admin_master_portal", async (ctx) => {
+    safeAnswer(ctx);
+    const config = await getSystemConfig();
+    if (!isAdmin(ctx.chat.id, config)) return;
 
-    if (!isAdmin(chatId, config)) return ctx.reply("⛔ Acesso negado.");
-    await renderAdminPanel(ctx);
+    const text = `🔑 <b>Portal do Mestre (Licenciamento)</b>\n\n` +
+        `Aqui você gerencia as licenças que vendeu para outros parceiros instalarem no Portainer deles.\n\n` +
+        `⚠️ <i>Esta área é exclusiva para o Dono do Software.</i>`;
+
+    const buttons = [
+        [Markup.button.callback("🆕 Gerar Nova Licença", "admin_master_gen_key")],
+        [Markup.button.callback("📋 Listar Ativas", "admin_master_list_keys")],
+        [Markup.button.callback("🔙 Voltar ao Admin", "admin_menu")]
+    ];
+    await safeEdit(ctx, text, Markup.inlineKeyboard(buttons));
+});
+
+bot.action("admin_master_gen_key", async (ctx) => {
+    safeAnswer(ctx);
+    const key = `VENUX-${Math.random().toString(36).substring(2, 8).toUpperCase()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+    ctx.reply(`✅ <b>Nova Licença Gerada!</b>\n\nChave: <code>${key}</code>\n\nEnvie esta chave para o seu comprador colocar no Portainer dele.`, { parse_mode: "HTML" });
+});
+
+bot.action("admin_menu", async (ctx) => {
+    safeAnswer(ctx);
+    renderAdminPanel(ctx);
+});
+const chatId = ctx.chat.id;
+
+if (!config.adminChatId) {
+    config.adminChatId = chatId;
+    await saveSystemConfig(config);
+    return ctx.reply("👑 *Admin Configurado!* Você agora é o dono do bot.\nUse /admin novamente.", { parse_mode: "Markdown" });
+}
+
+if (!isAdmin(chatId, config)) return ctx.reply("⛔ Acesso negado.");
+await renderAdminPanel(ctx);
 });
 
 bot.action("cmd_admin_panel", async (ctx) => {
