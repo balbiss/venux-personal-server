@@ -170,7 +170,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.448";
+const SERVER_VERSION = "1.449";
 const SAAS_NAME = process.env.SAAS_NAME || "Connect SaaS";
 const SAAS_LOGO_URL = process.env.SAAS_LOGO_URL || null;
 let isAiFollowupRunning = false;
@@ -3651,8 +3651,8 @@ bot.on(["photo", "document", "video", "audio", "voice"], async (ctx, next) => {
 });
 
 
-bot.on("text", async (ctx) => {
-    if (ctx.message.text.startsWith("/")) return;
+bot.on("text", async (ctx, next) => {
+    if (ctx.message.text.startsWith("/")) return next();
     const session = await getSession(ctx.chat.id);
 
     // Função de limpeza de mensagens para manter o chat limpo
