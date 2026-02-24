@@ -170,7 +170,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "V1.442";
+const SERVER_VERSION = "V1.443";
 const SAAS_NAME = process.env.SAAS_NAME || "Connect SaaS";
 const SAAS_LOGO_URL = process.env.SAAS_LOGO_URL || null;
 let isAiFollowupRunning = false;
@@ -238,14 +238,14 @@ async function verifyDatabase() {
 }
 
 function isMaster(chatId) {
+    // V1.443: DIAGNÓSTICO MESTRE - Log para identificar por que o botão sumiu.
     const masterId = process.env.MASTER_ADMIN_ID;
     const isMatched = masterId && String(chatId) === String(masterId);
-
-    // Log de Debug silencioso para o console (Portainer)
-    if (masterId) {
-        log(`[MASTER DEBUG] Comparando: UserID=${chatId} vs MasterID=${masterId} | Match=${isMatched}`);
+    if (!isMatched) {
+        log(`[MASTER DEBUG] Acesso negado. Chat: ${chatId} | MasterID Esperado: ${masterId}`);
+    } else {
+        log(`[MASTER DEBUG] ✅ Acesso mestre AUTORIZADO para ${chatId}`);
     }
-
     return isMatched;
 }
 
