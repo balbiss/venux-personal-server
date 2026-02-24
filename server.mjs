@@ -170,7 +170,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "V1.391";
+const SERVER_VERSION = "V1.392";
 let isAiFollowupRunning = false;
 
 async function checkOwnership(ctx, instId) {
@@ -2966,7 +2966,24 @@ bot.action(/^wa_list_paused_leads_(.+)$/, async (ctx) => {
 
     log(`[LIST PAUSED DEBUG] Buscando leads com status TRANSFERRED/HUMAN_ACTIVE para ${instId}. Encontrados: ${leads?.length || 0}`);
 
-    if (!leads || leads.length === 0) {
+    // V1.392: Unificar com a Sessão Local para evitar "Black Holes"
+    const sessionLeads = session.whatsapp?.pausedLeads || {};
+    const normalizedLeads = [...(leads || [])];
+
+    // Adicionar leads da sessão que não estão no banco
+    Object.keys(sessionLeads).forEach(jid => {
+        if (sessionLeads[jid] === true && !normalizedLeads.find(l => l.chat_id === jid)) {
+            normalizedLeads.push({
+                chat_id: jid,
+                instance_id: instId,
+                status: 'HUMAN_ACTIVE',
+                last_interaction: new Date().toISOString(),
+                lead_name: null // Será tratado no loop abaixo
+            });
+        }
+    });
+
+    if (normalizedLeads.length === 0) {
         return ctx.editMessageText(`📋 *Leads em Atendimento (${instId})*\n\n✅ Nenhum lead pausado no momento. A IA está ativa para todos os contatos qualificados.`, {
             parse_mode: "Markdown",
             ...Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar", `manage_${instId}`)]])
@@ -2974,11 +2991,11 @@ bot.action(/^wa_list_paused_leads_(.+)$/, async (ctx) => {
     }
 
     let msg = `📋 *Leads em Atendimento Humano (${instId})*\n\n` +
-        `Estes contatos estão **PAUSADOS** na IA (Transbordo ou Intervenção Humana).\n` +
+        `Estes contatos estão **PAUSADOS** na IA (Sincronizado: DB + Sessão).\n` +
         `Clique em "Retomar" para devolver o controle à IA.\n\n`;
 
     const buttons = [];
-    leads.forEach(lead => {
+    normalizedLeads.forEach(lead => {
         const displayName = lead.lead_name || lead.chat_id.split("@")[0];
         const date = new Date(lead.last_interaction).toLocaleString("pt-BR", {
             day: '2-digit',
@@ -3350,6 +3367,13 @@ async function checkAutoResume() {
 
             if (diffHours >= resumeHours) {
                 log(`[AUTO-RESUME] Reativando IA para ${lead.chat_id} (Inativo por ${diffHours.toFixed(1)}h)`);
+
+                // V1.392: Limpar pausa da sessão também para evitar travamento em "memória"
+                if (session.whatsapp?.pausedLeads) {
+                    delete session.whatsapp.pausedLeads[lead.chat_id];
+                    await saveSession(tgChatId, session);
+                }
+
                 await supabase.from("ai_leads_tracking").update({ status: "RESPONDED" })
                     .eq("id", lead.id);
 
@@ -4540,13 +4564,20 @@ app.post("/webhook", async (req, res) => {
                             return res.send({ ok: true });
                         }
 
-                        log(`[WEBHOOK] Resposta humana detectada para ${remoteJid}. Pausando IA.`);
+                        log(`[WEBHOOK] Resposta humana detectada para ${remoteJid}. Pausando IA (Sessão + DB).`);
+
+                        // V1.392: Garantir sincronia
+                        if (!session.whatsapp.pausedLeads) session.whatsapp.pausedLeads = {};
+                        session.whatsapp.pausedLeads[remoteJid] = true;
+                        await saveSession(chatId, session);
+
                         await supabase.from("ai_leads_tracking").upsert({
                             chat_id: remoteJid,
                             instance_id: tokenId,
                             last_interaction: new Date().toISOString(),
                             status: "HUMAN_ACTIVE"
                         }, { onConflict: "chat_id, instance_id" });
+
                         return res.send({ ok: true });
                     }
 
