@@ -170,7 +170,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.447";
+const SERVER_VERSION = "1.448";
 const SAAS_NAME = process.env.SAAS_NAME || "Connect SaaS";
 const SAAS_LOGO_URL = process.env.SAAS_LOGO_URL || null;
 let isAiFollowupRunning = false;
@@ -5263,27 +5263,34 @@ async function startBot(retryCount = 0) {
         const isDbReady = await verifyDatabase();
         await registerBotCommands();
         await bot.launch({ dropPendingUpdates: true });
-        log(`[BOT LOG] Bot ${bot.botInfo.username} iniciado.`);
+        log(`Bot ${bot.botInfo.username ?? 'Telegram'} iniciado.`);
 
-        // V1.386: Alerta de Setup para o Dono
-        if (!isDbReady) {
-            const config = await getSystemConfig();
-            if (config.adminChatId) {
-                const sqlScript = `CREATE TABLE IF NOT EXISTS bot_sessions (chat_id TEXT PRIMARY KEY, data JSONB, updated_at TIMESTAMPTZ DEFAULT now());\nCREATE TABLE IF NOT EXISTS scheduled_campaigns (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), chat_id TEXT, inst_id TEXT, scheduled_for TIMESTAMPTZ, campaign_data JSONB, status TEXT DEFAULT 'PENDING');`;
-                await bot.telegram.sendMessage(config.adminChatId,
-                    `⚠️ <b>ATENÇÃO: BANCO DE DADOS PENDENTE</b>\n\n` +
-                    `Detectei que as tabelas necessárias ainda não existem no seu Supabase.\n\n` +
-                    `👉 <b>Para resolver:</b> Vá no seu painel do Supabase, entre no SQL Editor e cole o script que enviei no manual (ou no manual_do_comprador.md).\n\n` +
-                    `<i>O sistema só funcionará 100% após você rodar o SQL.</i>`, { parse_mode: "HTML" });
-            }
+        // V1.448: Alerta de Configuração no Portainer
+        if (retryCount === 0 && !process.env.MASTER_ADMIN_ID && !process.env.ADMIN_CHAT_ID) {
+            console.log(`\n❌ [PORTAINER MISCONFIGURED] ❌`);
+            console.log(`Suas variáveis MASTER_ADMIN_ID e/ou ADMIN_CHAT_ID não estão chegando ao código!`);
+            console.log(`Mesmo que apareçam na tela do Portainer, o Docker não as repassou.`);
+            console.log(`👉 DICA: Use a aba 'Environment' da Stack, delete as variáveis e adicione de novo.`);
+            console.log(`-------------------------------\n`);
         }
-        log(`[BOT LOG] [${SERVER_VERSION}] ${new Date().toLocaleTimeString()} - ✅ Bot iniciado no Telegram com sucesso.`);
-
     } catch (err) {
-        log(`[BOT ERR] Falha ao iniciar bot (Tentativa ${retryCount + 1}): ${err.message}`);
+        log(`Falha ao iniciar bot (Tentativa ${retryCount + 1}): ${err.message}`);
+
+        // V1.448: Guia Definitivo para erro 409 (Conflict)
+        if (err.message.includes("409: Conflict")) {
+            console.log(`\n🚨 [CONFLITO 409 DETECTADO] 🚨`);
+            console.log(`O Telegram diz que este bot já está aberto em outro lugar.`);
+            console.log(`COMO RESOLVER AGORA:`);
+            console.log(`1. Vá no @BotFather no seu Telegram.`);
+            console.log(`2. Use o comando /revoke para gerar um NOVO TOKEN.`);
+            console.log(`3. Coloque esse novo TOKEN no Portainer e dê Update Stack.`);
+            console.log(`Isso derruba qualquer outra instância na hora!`);
+            console.log(`-------------------------------\n`);
+        }
+
         const nextRetry = retryCount + 1;
         const delay = Math.min(Math.pow(2, nextRetry) * 1000, 30000); // Exponential backoff até 30s
-        log(`[BOT LOG] Nova tentativa em ${delay / 1000}s...`);
+        log(`Nova tentativa em ${delay / 1000}s...`);
         setTimeout(() => startBot(nextRetry), delay);
     }
 }
