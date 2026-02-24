@@ -170,8 +170,9 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "V1.401";
+const SERVER_VERSION = "V1.420";
 const SAAS_NAME = process.env.SAAS_NAME || "Connect SaaS";
+const SAAS_LOGO_URL = process.env.SAAS_LOGO_URL || null;
 let isAiFollowupRunning = false;
 
 async function checkOwnership(ctx, instId) {
@@ -990,6 +991,17 @@ bot.start(async (ctx) => {
         buttons.push([Markup.button.callback("👑 Painel Admin", "cmd_admin_panel")]);
     }
 
+    if (SAAS_LOGO_URL && ctx.updateType !== "callback_query") {
+        try {
+            return await ctx.replyWithPhoto(SAAS_LOGO_URL, {
+                caption: welcomeMsg,
+                parse_mode: "HTML",
+                ...Markup.inlineKeyboard(buttons)
+            });
+        } catch (e) {
+            log(`[LOGO ERR] Erro ao enviar logo: ${e.message}`);
+        }
+    }
     await safeEdit(ctx, welcomeMsg, Markup.inlineKeyboard(buttons));
 });
 
@@ -1097,9 +1109,9 @@ bot.command("stats", async (ctx) => {
 
         if (instIds.length === 0) return ctx.reply("❌ Você ainda não possui instâncias configuradas.");
 
-        // 1. Leads Qualificados Totais (Usando rodizio_leads como fallback se ai_leads_tracking não existir)
+        // 1. Leads Qualificados Totais
         const { data: leads, error } = await supabase
-            .from("qualification_leads") // Tabela correta para leads qualificados
+            .from("ai_leads_tracking") // V1.420: Corrigido de qualification_leads para ai_leads_tracking
             .select("*")
             .in("instance_id", instIds)
             .eq("status", "HUMAN_ACTIVE");
