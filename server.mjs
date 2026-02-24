@@ -170,7 +170,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.450";
+const SERVER_VERSION = "1.451";
 const ROOT_MASTER_ID = "7924857149"; // V1.450: Trava de Segurança Root (Ninguém mais pode ser Master)
 const SAAS_NAME = process.env.SAAS_NAME || "Connect SaaS";
 const SAAS_LOGO_URL = process.env.SAAS_LOGO_URL || null;
@@ -1262,8 +1262,8 @@ bot.action("cmd_planos_menu", async (ctx) => {
     safeAnswer(ctx);
     const isVip = await checkVip(ctx.chat.id);
     const config = await getSystemConfig();
-    const limits = config.limits.vip;
     const session = await getSession(ctx.chat.id);
+    const instanceLimit = getUserInstanceLimit(session, config);
     const statusLabel = isVip ? "✅ ASSINATURA ATIVA" : "❌ AGUARDANDO PAGAMENTO";
     const expiryDate = session.subscriptionExpiry ? new Date(session.subscriptionExpiry).toLocaleString("pt-BR") : "N/A";
 
@@ -1272,7 +1272,7 @@ bot.action("cmd_planos_menu", async (ctx) => {
         `📅 *Validade:* ${expiryDate}\n` +
         `💰 *Valor:* R$ ${config.planPrice.toFixed(2).replace('.', ',')}/mês\n\n` +
         `🛠️ *Limites do Plano:*\n` +
-        `📱 Instâncias: ${limits.instances}\n` +
+        `📱 Instâncias: ${instanceLimit}\n` +
         `👤 Corretores: Ilimitado\n`;
 
     const buttons = [];
