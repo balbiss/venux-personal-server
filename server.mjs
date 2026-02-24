@@ -170,7 +170,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "V1.385";
+const SERVER_VERSION = "V1.386";
 let isAiFollowupRunning = false;
 
 async function checkOwnership(ctx, instId) {
@@ -218,6 +218,20 @@ async function getSystemConfig() {
 
 async function saveSystemConfig(config) {
     await saveSession('SYSTEM_CONFIG', config);
+}
+
+async function verifyDatabase() {
+    try {
+        const { error } = await supabase.from('bot_sessions').select('*', { count: 'exact', head: true }).limit(1);
+        if (error && error.message.includes('relation "bot_sessions" does not exist')) {
+            log("[DB] ⚠️ Banco de Dados não configurado. Tabelas faltando.");
+            return false;
+        }
+        return true;
+    } catch (e) {
+        log(`[DB ERR] Erro ao verificar banco: ${e.message}`);
+        return false;
+    }
 }
 
 function isAdmin(chatId, config) {
@@ -4948,7 +4962,23 @@ setInterval(startWarmupWorker, 600000); // 10 min
 async function startBot(retryCount = 0) {
     log(`[BOT LOG] Tentando iniciar bot (Tentativa ${retryCount + 1})...`);
     try {
+        const isDbReady = await verifyDatabase();
+
         await bot.launch();
+        log(`[BOT LOG] Bot ${bot.botInfo.username} iniciado.`);
+
+        // V1.386: Alerta de Setup para o Dono
+        if (!isDbReady) {
+            const config = await getSystemConfig();
+            if (config.adminChatId) {
+                const sqlScript = `CREATE TABLE IF NOT EXISTS bot_sessions (chat_id TEXT PRIMARY KEY, data JSONB, updated_at TIMESTAMPTZ DEFAULT now());\nCREATE TABLE IF NOT EXISTS scheduled_campaigns (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), chat_id TEXT, inst_id TEXT, scheduled_for TIMESTAMPTZ, campaign_data JSONB, status TEXT DEFAULT 'PENDING');`;
+                await bot.telegram.sendMessage(config.adminChatId,
+                    `⚠️ <b>ATENÇÃO: BANCO DE DADOS PENDENTE</b>\n\n` +
+                    `Detectei que as tabelas necessárias ainda não existem no seu Supabase.\n\n` +
+                    `👉 <b>Para resolver:</b> Vá no seu painel do Supabase, entre no SQL Editor e cole o script que enviei no manual (ou no manual_do_comprador.md).\n\n` +
+                    `<i>O sistema só funcionará 100% após você rodar o SQL.</i>`, { parse_mode: "HTML" });
+            }
+        }
         log(`[BOT LOG] [${SERVER_VERSION}] ${new Date().toLocaleTimeString()} - ✅ Bot iniciado no Telegram`);
 
         bot.telegram.setMyCommands([
