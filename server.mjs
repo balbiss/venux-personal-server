@@ -170,7 +170,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "V1.390";
+const SERVER_VERSION = "V1.391";
 let isAiFollowupRunning = false;
 
 async function checkOwnership(ctx, instId) {
@@ -3247,7 +3247,10 @@ async function distributeLead(tgChatId, leadJid, instId, leadName, summary) {
 
         if (error || !brokers || brokers.length === 0) {
             log(`[RODÍZIO] Nenhum corretor ativo encontrado para ${tgChatId}. Notificando Telegram.`);
-            bot.telegram.sendMessage(tgChatId, `⚠️ *Atenção:* O lead **${leadName}** foi qualificado, mas não há atendentes ativos para o rodízio.`);
+            bot.telegram.sendMessage(tgChatId, `⚠️ *Atenção (AGENTE OFF):* O lead **${leadName}** (\`${leadJid.split('@')[0]}\`) foi qualificado e solicitou atendimento humano, mas não há vendedores ativos cadastrados para esta instância.\n\n👉 *Ação:* Atenda o cliente manualmente no WhatsApp ou cadastre vendedores no menu de Rodízio.`, {
+                parse_mode: "Markdown",
+                ...Markup.inlineKeyboard([[Markup.button.callback("✅ Retomar IA", `wa_ai_resume_${instId}_${leadJid}`)]])
+            });
             return;
         }
         let nextIndex = session.last_broker_index || 0;
@@ -4943,7 +4946,7 @@ async function checkFunnelFollowups() {
 // Iniciar worker de follow-up a cada 1 minuto (V1.235: mais rápido para follow-ups curtos)
 setInterval(checkAiFollowups, 60000);
 setInterval(checkFunnelFollowups, 600000); // Check every 10 min
-setInterval(checkAutoResume, 600000); // Check every 10 min
+setInterval(checkAutoResume, 60000); // V1.391: Reduzido para 1 min para reativação rápida
 
 // V1.371: Maturador Otimizado (Intervalo de 10 min, lote maior e delays internos)
 async function startWarmupWorker() {
