@@ -170,7 +170,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "V1.443";
+const SERVER_VERSION = "V1.444";
 const SAAS_NAME = process.env.SAAS_NAME || "Connect SaaS";
 const SAAS_LOGO_URL = process.env.SAAS_LOGO_URL || null;
 let isAiFollowupRunning = false;
@@ -5208,7 +5208,18 @@ bot.command("refresh", async (ctx) => {
 
 // V1.378: Inicialização Resiliente do Bot
 async function startBot(retryCount = 0) {
-    log(`[BOT LOG] Tentando iniciar bot (Tentativa ${retryCount + 1})...`);
+    log(`[BOT LOG] [${SERVER_VERSION}] Tentando iniciar bot (Tentativa ${retryCount + 1})...`);
+
+    // V1.444: Logs de ambiente para auxiliar o usuário (Exclusivo no console)
+    if (retryCount === 0) {
+        console.log(`\n--- DIAGNÓSTICO DE AMBIENTE ---`);
+        console.log(`MASTER_ADMIN_ID: ${process.env.MASTER_ADMIN_ID || "Não Configurado"}`);
+        console.log(`ADMIN_CHAT_ID (Portainer): ${process.env.ADMIN_CHAT_ID || "Não Configurado"}`);
+        console.log(`SUPABASE_URL: ${process.env.SUPABASE_URL ? "Configurado ✅" : "Faltando ❌"}`);
+        console.log(`WUZAPI_BASE_URL: ${process.env.WUZAPI_BASE_URL}`);
+        console.log(`-------------------------------\n`);
+    }
+
     try {
         const isDbReady = await verifyDatabase();
         await registerBotCommands();
