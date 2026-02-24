@@ -4988,6 +4988,7 @@ bot.command("refresh", async (ctx) => {
 async function startBot(retryCount = 0) {
     log(`[BOT LOG] Tentando iniciar bot (Tentativa ${retryCount + 1})...`);
     try {
+        const isDbReady = await verifyDatabase();
         await registerBotCommands();
         await bot.launch();
         log(`[BOT LOG] Bot ${bot.botInfo.username} iniciado.`);
