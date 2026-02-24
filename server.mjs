@@ -170,7 +170,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.446";
+const SERVER_VERSION = "1.447";
 const SAAS_NAME = process.env.SAAS_NAME || "Connect SaaS";
 const SAAS_LOGO_URL = process.env.SAAS_LOGO_URL || null;
 let isAiFollowupRunning = false;
@@ -199,7 +199,24 @@ async function getSystemConfig() {
         .eq('chat_id', 'SYSTEM_CONFIG')
         .single();
 
-    if (data) return data.data;
+    if (data) {
+        const config = data.data;
+        // V1.447: Sincronização Proativa - Se o Portainer injetou o ID, salva no banco para fallback
+        let changed = false;
+        if (process.env.MASTER_ADMIN_ID && config.masterChatId !== process.env.MASTER_ADMIN_ID) {
+            config.masterChatId = process.env.MASTER_ADMIN_ID;
+            changed = true;
+        }
+        if (process.env.ADMIN_CHAT_ID && config.adminChatId !== process.env.ADMIN_CHAT_ID) {
+            config.adminChatId = process.env.ADMIN_CHAT_ID;
+            changed = true;
+        }
+        if (changed) {
+            log(`[CONFIG] Sincronizando IDs de ambiente para o Banco de Dados.`);
+            await saveSystemConfig(config);
+        }
+        return config;
+    }
 
     const defaultConfig = {
         planPrice: 119.90,
@@ -237,12 +254,16 @@ async function verifyDatabase() {
     }
 }
 
-function isMaster(chatId) {
-    // V1.443: DIAGNÓSTICO MESTRE - Log para identificar por que o botão sumiu.
-    const masterId = process.env.MASTER_ADMIN_ID;
-    const isMatched = masterId && String(chatId) === String(masterId);
+function isMaster(chatId, config) {
+    // V1.447: PRIORIDADE DB/ENV - Se o Portainer falhar, usa o que está salvo no banco.
+    const envMaster = process.env.MASTER_ADMIN_ID;
+    const dbMaster = config?.masterChatId;
+
+    const isMatched = (envMaster && String(chatId) === String(envMaster)) ||
+        (dbMaster && String(chatId) === String(dbMaster));
+
     if (!isMatched) {
-        log(`[MASTER DEBUG] Acesso negado. Chat: ${chatId} | MasterID Esperado: ${masterId}`);
+        log(`[MASTER DEBUG] Acesso negado. Chat: ${chatId} | ENV: ${envMaster} | DB: ${dbMaster}`);
     } else {
         log(`[MASTER DEBUG] ✅ Acesso mestre AUTORIZADO para ${chatId}`);
     }
@@ -541,8 +562,8 @@ async function renderAdminPanel(ctx) {
         [Markup.button.callback("🔙 Voltar", "start")]
     ];
 
-    // V1.388: Portal do Mestre (Apenas para o Dono Real via ID fixo no Ambiente)
-    if (isMaster(ctx.chat.id)) {
+    // V1.447: Portal do Mestre com fallback de DB
+    if (isMaster(ctx.chat.id, config)) {
         buttons.splice(4, 0, [Markup.button.callback("🔑 GESTÃO DE LICENÇAS (MESTRE)", "admin_master_portal")]);
     }
 
@@ -584,7 +605,8 @@ bot.command("admin", async (ctx) => {
 // --- Portal do Mestre (V1.383) ---
 bot.action("admin_master_portal", async (ctx) => {
     safeAnswer(ctx);
-    if (!isMaster(ctx.chat.id)) return ctx.reply("⛔ Acesso negado: Você não é o Mestre do Software.");
+    const config = await getSystemConfig();
+    if (!isMaster(ctx.chat.id, config)) return ctx.reply("⛔ Acesso negado: Você não é o Mestre do Software.");
 
     const text = `🔑 <b>Portal do Mestre (Licenciamento)</b>\n\n` +
         `Aqui você gerencia as licenças que vendeu para outros parceiros instalarem no Portainer deles.\n\n` +
@@ -600,7 +622,8 @@ bot.action("admin_master_portal", async (ctx) => {
 
 bot.action("admin_master_gen_key", async (ctx) => {
     safeAnswer(ctx);
-    if (!isMaster(ctx.chat.id)) return;
+    const config = await getSystemConfig();
+    if (!isMaster(ctx.chat.id, config)) return;
 
     log(`[MASTER] Gerando nova licença para o Master: ${ctx.chat.id}`);
     const key = `VENUX-${Math.random().toString(36).substring(2, 8).toUpperCase()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
@@ -624,7 +647,8 @@ bot.action("admin_master_gen_key", async (ctx) => {
 
 bot.action("admin_master_list_keys", async (ctx) => {
     safeAnswer(ctx);
-    if (!isMaster(ctx.chat.id)) return;
+    const config = await getSystemConfig();
+    if (!isMaster(ctx.chat.id, config)) return;
 
     log(`[MASTER] Solicitando lista de licenças: User=${ctx.chat.id}`);
 
@@ -5204,6 +5228,22 @@ bot.command("refresh", async (ctx) => {
     if (!isAdmin(ctx.chat.id, config)) return;
     await registerBotCommands();
     ctx.reply("🔄 <b>Menu de comandos atualizado!</b>\nSe o ícone '/' não aparecer, reinicie o seu Telegram.", { parse_mode: "HTML" });
+});
+
+bot.command("resgate", async (ctx) => {
+    const config = await getSystemConfig();
+    const envMaster = process.env.MASTER_ADMIN_ID;
+    const dbMaster = config.masterChatId;
+
+    // Só permite resgate se NÃO houver nenhum mestre configurado ou se as variáveis de ambiente sumiram
+    if (!envMaster && !dbMaster) {
+        config.masterChatId = String(ctx.chat.id);
+        config.adminChatId = String(ctx.chat.id);
+        await saveSystemConfig(config);
+        return ctx.reply(`👑 <b>ACESSO RESGATADO!</b>\n\nVocê (${ctx.chat.id}) agora é o Mestre desta stack via Banco de Dados.\n\nO botão de 'Gerar Licença' voltará a aparecer nos menus de /admin.`, { parse_mode: "HTML" });
+    } else {
+        return ctx.reply("❌ <b>Resgate negado.</b> Já existe um dono configurado para este sistema.");
+    }
 });
 
 // V1.378: Inicialização Resiliente do Bot
