@@ -170,7 +170,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "V1.441";
+const SERVER_VERSION = "V1.442";
 const SAAS_NAME = process.env.SAAS_NAME || "Connect SaaS";
 const SAAS_LOGO_URL = process.env.SAAS_LOGO_URL || null;
 let isAiFollowupRunning = false;
@@ -5212,7 +5212,7 @@ async function startBot(retryCount = 0) {
     try {
         const isDbReady = await verifyDatabase();
         await registerBotCommands();
-        await bot.launch();
+        await bot.launch({ dropPendingUpdates: true });
         log(`[BOT LOG] Bot ${bot.botInfo.username} iniciado.`);
 
         // V1.386: Alerta de Setup para o Dono
