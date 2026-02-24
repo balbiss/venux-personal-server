@@ -170,7 +170,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "V1.420";
+const SERVER_VERSION = "V1.421";
 const SAAS_NAME = process.env.SAAS_NAME || "Connect SaaS";
 const SAAS_LOGO_URL = process.env.SAAS_LOGO_URL || null;
 let isAiFollowupRunning = false;
@@ -238,10 +238,12 @@ async function verifyDatabase() {
 }
 
 function isMaster(chatId) {
-    // V1.388: Apenas o verdadeiro dono do SaaS tem acesso ao gerador de licenças.
-    // O ID deve ser configurado via MASTER_ADMIN_ID no Portainer do Dono.
+    // V1.421: Melhora na resiliência - Se não configurou MASTER_ADMIN_ID, o ADMIN principal assume o papel.
     const masterId = process.env.MASTER_ADMIN_ID;
-    return masterId && String(chatId) === String(masterId);
+    const adminId = process.env.ADMIN_CHAT_ID;
+
+    if (masterId) return String(chatId) === String(masterId);
+    return adminId && String(chatId) === String(adminId);
 }
 
 function isAdmin(chatId, config) {
