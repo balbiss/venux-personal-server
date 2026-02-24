@@ -170,7 +170,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "V1.387";
+const SERVER_VERSION = "V1.388";
 let isAiFollowupRunning = false;
 
 async function checkOwnership(ctx, instId) {
@@ -232,6 +232,13 @@ async function verifyDatabase() {
         log(`[DB ERR] Erro ao verificar banco: ${e.message}`);
         return false;
     }
+}
+
+function isMaster(chatId) {
+    // V1.388: Apenas o verdadeiro dono do SaaS tem acesso ao gerador de licenças.
+    // O ID deve ser configurado via MASTER_ADMIN_ID no Portainer do Dono.
+    const masterId = process.env.MASTER_ADMIN_ID;
+    return masterId && String(chatId) === String(masterId);
 }
 
 function isAdmin(chatId, config) {
@@ -510,8 +517,8 @@ async function renderAdminPanel(ctx) {
         [Markup.button.callback("🔙 Voltar", "start")]
     ];
 
-    // V1.383: Portal do Mestre (Apenas se LICENSE_SERVER_URL ou similar estiver ok, ou fixo pro Dono)
-    if (isAdmin(ctx.chat.id, config)) {
+    // V1.388: Portal do Mestre (Apenas para o Dono Real via ID fixo no Ambiente)
+    if (isMaster(ctx.chat.id)) {
         buttons.splice(4, 0, [Markup.button.callback("🔑 GESTÃO DE LICENÇAS (MESTRE)", "admin_master_portal")]);
     }
 
@@ -553,8 +560,7 @@ bot.command("admin", async (ctx) => {
 // --- Portal do Mestre (V1.383) ---
 bot.action("admin_master_portal", async (ctx) => {
     safeAnswer(ctx);
-    const config = await getSystemConfig();
-    if (!isAdmin(ctx.chat.id, config)) return;
+    if (!isMaster(ctx.chat.id)) return ctx.reply("⛔ Acesso negado: Você não é o Mestre do Software.");
 
     const text = `🔑 <b>Portal do Mestre (Licenciamento)</b>\n\n` +
         `Aqui você gerencia as licenças que vendeu para outros parceiros instalarem no Portainer deles.\n\n` +
@@ -570,6 +576,7 @@ bot.action("admin_master_portal", async (ctx) => {
 
 bot.action("admin_master_gen_key", async (ctx) => {
     safeAnswer(ctx);
+    if (!isMaster(ctx.chat.id)) return;
     const key = `VENUX-${Math.random().toString(36).substring(2, 8).toUpperCase()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
 
     // Salvar no banco central (SYSTEM_CONFIG)
@@ -583,6 +590,7 @@ bot.action("admin_master_gen_key", async (ctx) => {
 
 bot.action("admin_master_list_keys", async (ctx) => {
     safeAnswer(ctx);
+    if (!isMaster(ctx.chat.id)) return;
     const config = await getSystemConfig();
     const keys = config.master_keys || [];
 
