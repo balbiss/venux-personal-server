@@ -170,7 +170,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "V1.423";
+const SERVER_VERSION = "V1.430";
 const SAAS_NAME = process.env.SAAS_NAME || "Connect SaaS";
 const SAAS_LOGO_URL = process.env.SAAS_LOGO_URL || null;
 let isAiFollowupRunning = false;
@@ -247,6 +247,14 @@ function isMaster(chatId) {
     }
 
     return isMatched;
+}
+
+function getUserInstanceLimit(session, config) {
+    // V1.430: Prioriza o limite individual (pacote) se existir, senão usa o global do sistema.
+    if (session && session.limits && session.limits.instances !== undefined) {
+        return session.limits.instances;
+    }
+    return config.limits.vip.instances;
 }
 
 function isAdmin(chatId, config) {
@@ -829,11 +837,12 @@ async function renderUserDetails(ctx, targetChatId) {
         `💎 VIP: ${isVip ? "SIM" : "NÃO"}\n` +
         `📅 Expira em: ${expiry}\n` +
         `🚫 Bloqueado: ${blocked ? "SIM" : "NÃO"}\n` +
-        `🤖 Instâncias: ${s.whatsapp?.instances?.length || 0}`;
+        `🤖 Instâncias: ${s.whatsapp?.instances?.length || 0} / <b>${getUserInstanceLimit(s, await getSystemConfig())}</b>`;
 
     const buttons = [
         [Markup.button.callback(isVip ? "❌ Remover VIP" : "💎 Dar VIP (30 dias)", `admin_toggle_vip_${targetChatId}`)],
         [Markup.button.callback("📅 Alterar Validade", `admin_edit_expiry_${targetChatId}`)],
+        [Markup.button.callback("📦 Ajustar Limite de Canais", `admin_edit_user_limit_${targetChatId}`)],
         [Markup.button.callback(blocked ? "✅ Desbloquear" : "🚫 Bloquear Acesso", `admin_toggle_block_${targetChatId}`)],
         [Markup.button.callback("🗑️ Deletar do Banco", `admin_delete_user_${targetChatId}`)],
         [Markup.button.callback("🔙 Voltar", "admin_users_menu")]
@@ -890,6 +899,17 @@ bot.action(/^admin_edit_expiry_(.+)$/, async (ctx) => {
 });
 
 // V1.368: Handler para Deletar Usuário
+bot.action(/^admin_edit_user_limit_(.+)$/, async (ctx) => {
+    safeAnswer(ctx);
+    const targetId = ctx.match[1];
+    const session = await getSession(ctx.chat.id);
+    session.stage = "ADMIN_WAIT_USER_LIMIT";
+    session.temp_target_user = targetId; // Salva quem estamos editando
+    await syncSession(ctx, session);
+    ctx.reply(`📦 <b>Ajustar Limite</b> (ID: ${targetId})\n\n` +
+        `Digite a nova quantidade de instâncias que este usuário poderá conectar:`, { parse_mode: "HTML" });
+});
+
 bot.action(/^admin_delete_user_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const targetId = ctx.match[1];
@@ -1387,7 +1407,11 @@ bot.command("agenda", async (ctx) => {
 
 async function showInstances(ctx) {
     const session = await getSession(ctx.chat.id);
-    let msg = `📱 *Suas Instâncias (v${SERVER_VERSION}):*\n\n`;
+    const config = await getSystemConfig();
+    const userLimit = getUserInstanceLimit(session, config);
+
+    let msg = `🚀 <b>Gerenciar Instâncias</b>\n\n` +
+        `Aqui você controla seus números conectados. Seu plano permite até <b>${userLimit}</b> canais simultâneos.\n\n`;
     const buttons = [];
 
     // V1.244: Check de segurança extra
@@ -1431,11 +1455,10 @@ async function showInstances(ctx) {
     }
 
     const isVip = await checkVip(ctx.chat.id);
-    const config = await getSystemConfig();
     const isAdminUser = isAdmin(ctx.chat.id, config);
 
     // Botão de Nova Conexão visível para quem pode criar
-    if (isAdminUser || (isVip && session.whatsapp.instances.length < config.limits.vip.instances)) {
+    if (isAdminUser || (isVip && session.whatsapp.instances.length < userLimit)) {
         buttons.push([Markup.button.callback("➕ Conectar Novo Número", "cmd_conectar")]);
     } else if (!isVip && !isAdminUser) {
         buttons.push([Markup.button.callback("💎 Assinar para Conectar", "cmd_planos_menu")]);
@@ -1464,8 +1487,10 @@ async function startConnection(ctx) {
         );
     }
 
-    if (!isAdminUser && session.whatsapp.instances.length >= config.limits.vip.instances) {
-        return safeEdit(ctx, `⚠️ <b>Limite de Instâncias Atingido!</b>\n\nSeu plano permite apenas ${config.limits.vip.instances} instâncias.\n\nFale com o suporte ou use /admin se for o dono.`,
+    const userLimit = getUserInstanceLimit(session, config);
+
+    if (!isAdminUser && session.whatsapp.instances.length >= userLimit) {
+        return safeEdit(ctx, `⚠️ <b>Limite de Instâncias Atingido!</b>\n\nSeu plano permite apenas ${userLimit} instâncias.\n\nFale com o suporte ou use /admin se for o dono.`,
             Markup.inlineKeyboard([[Markup.button.callback("💎 Ver Planos", "cmd_planos_menu")], [Markup.button.callback("🔙 Voltar", "cmd_instancias_menu")]])
             , { parse_mode: "HTML" }
         );
@@ -1481,7 +1506,11 @@ async function showVipStatus(ctx) {
     const config = await getSystemConfig();
     if (isVip) {
         const expiry = new Date(session.subscriptionExpiry).toLocaleString("pt-BR");
-        return ctx.reply(`✅ Você é VIP/Trial! Validade: ${expiry}`);
+        const limit = getUserInstanceLimit(session, config);
+        return ctx.reply(`✅ <b>Status: VIP Ativo</b>\n\n` +
+            `📅 <b>Validade:</b> ${expiry}\n` +
+            `📦 <b>Pacote:</b> ${limit} Canais WhatsApp.\n\n` +
+            `Acesse /conectar para gerenciar seus números.`, { parse_mode: "HTML" });
     }
 
     const buttons = [[Markup.button.callback("💎 Assinar Plano Pro", "cmd_planos_menu")]];
@@ -3754,6 +3783,24 @@ bot.on("text", async (ctx) => {
             session.stage = "READY";
             await syncSession(ctx, session);
             return renderAdminPanel(ctx);
+        }
+
+        if (session.stage === "ADMIN_WAIT_USER_LIMIT") {
+            const limit = parseInt(ctx.message.text.trim());
+            const targetId = session.temp_target_user;
+
+            if (isNaN(limit) || limit < 0) return ctx.reply("❌ Valor inválido. Digite um número positivo.");
+
+            const s = await getSession(targetId);
+            if (!s.limits) s.limits = {};
+            s.limits.instances = limit;
+            await saveSession(targetId, s);
+
+            ctx.reply(`✅ <b>Limite Atualizado!</b>\n\nO usuário <code>${targetId}</code> agora pode conectar até <b>${limit}</b> instâncias.`, { parse_mode: "HTML" });
+            session.stage = "READY";
+            delete session.temp_target_user;
+            await syncSession(ctx, session);
+            return renderUserDetails(ctx, targetId);
         }
 
         if (session.stage === "ADMIN_WAIT_USER_SEARCH") {
