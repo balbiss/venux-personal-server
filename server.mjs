@@ -170,7 +170,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "V1.400";
+const SERVER_VERSION = "V1.401";
 const SAAS_NAME = process.env.SAAS_NAME || "Connect SaaS";
 let isAiFollowupRunning = false;
 
@@ -206,6 +206,7 @@ async function getSystemConfig() {
         referralCommission: 10.00,
         supportLink: "@ConnectSuporte",
         tutorialLink: "https://t.me/seu_canal_de_tutoriais",
+        vipCheckoutUrl: null, // V1.401: Link externo ou 'OFF'
         adminChatId: process.env.ADMIN_CHAT_ID || null, // V1.383: Pega do Portainer se disponivel
         limits: {
             vip: { instances: 5 }
@@ -513,14 +514,15 @@ async function renderAdminPanel(ctx) {
         `💎 <b>Limite Instâncias VIP:</b> ${config.limits.vip.instances}\n` +
         `🤝 <b>Corretores:</b> Liberados (Ilimitados)\n` +
         `👤 <b>Suporte:</b> <code>${config.supportLink || "Não definido"}</code>\n` +
-        `📺 <b>Tutoriais:</b> <code>${config.tutorialLink || "Não definido"}</code>\n`;
+        `📺 <b>Tutoriais:</b> <code>${config.tutorialLink || "Não definido"}</code>\n` +
+        `🔗 <b>Link VIP:</b> <code>${config.vipCheckoutUrl === 'OFF' ? "ESCONDIDO" : (config.vipCheckoutUrl || "Automático (PIX)")}</code>\n`;
 
     const buttons = [
         [Markup.button.callback("👥 Gerenciar Usuários", "admin_users_menu")],
         [Markup.button.callback("📢 Broadcast (Msg em Massa)", "admin_broadcast"), Markup.button.callback("🔥 Configurar Maturador", "admin_warmup_config")],
         [Markup.button.callback("💰 Alterar Preço", "admin_price"), Markup.button.callback("👤 Configurar Suporte", "admin_support")],
         [Markup.button.callback("💎 Ajustar Limite", "admin_limit_vip"), Markup.button.callback("📺 Configurar Tutoriais", "admin_tutorial_link")],
-        [Markup.button.callback("🔄 Reiniciar Servidor", "admin_server_restart")],
+        [Markup.button.callback("🔄 Reiniciar Servidor", "admin_server_restart"), Markup.button.callback("🔗 Configurar Link VIP", "admin_vip_link")],
         [Markup.button.callback("🔙 Voltar", "start")]
     ];
 
@@ -694,6 +696,37 @@ bot.action("admin_tutorial_link", async (ctx) => {
     session.stage = "ADMIN_WAIT_TUTORIAL";
     await syncSession(ctx, session);
     ctx.reply("📺 *Configurar Tutoriais*\n\nDigite o novo Link do Canal/Vídeos:", { parse_mode: "Markdown" });
+});
+
+bot.action("admin_vip_link", async (ctx) => {
+    safeAnswer(ctx);
+    const session = await getSession(ctx.chat.id);
+    session.stage = "ADMIN_WAIT_VIP_LINK";
+    await syncSession(ctx, session);
+    ctx.reply("💎 *Configurar Link VIP*\n\nDigite o Link de Checkout Externo ou clique no botão abaixo para esconder/voltar ao automático:", {
+        parse_mode: "Markdown",
+        ...Markup.inlineKeyboard([
+            [Markup.button.callback("🚫 Esconder Botão (OFF)", "admin_vip_off")],
+            [Markup.button.callback("🔄 Voltar ao PIX Automático", "admin_vip_auto")],
+            [Markup.button.callback("🔙 Cancelar", "admin_panel")]
+        ])
+    });
+});
+
+bot.action("admin_vip_off", async (ctx) => {
+    const config = await getSystemConfig();
+    config.vipCheckoutUrl = "OFF";
+    await saveSystemConfig(config);
+    ctx.answerCbQuery("✅ Botão VIP desativado.");
+    return renderAdminPanel(ctx);
+});
+
+bot.action("admin_vip_auto", async (ctx) => {
+    const config = await getSystemConfig();
+    config.vipCheckoutUrl = null;
+    await saveSystemConfig(config);
+    ctx.answerCbQuery("✅ Voltou ao PIX Automático.");
+    return renderAdminPanel(ctx);
 });
 
 bot.action("admin_limit_vip", async (ctx) => {
@@ -1177,7 +1210,15 @@ bot.action("cmd_planos_menu", async (ctx) => {
         `👤 Corretores: Ilimitado\n`;
 
     const buttons = [];
-    if (!isVip) buttons.push([Markup.button.callback("💎 Assinar Agora", "gen_pix_mensal")]);
+    if (!isVip) {
+        if (config.vipCheckoutUrl === "OFF") {
+            // Não mostra botão de assinatura
+        } else if (config.vipCheckoutUrl && config.vipCheckoutUrl.startsWith("http")) {
+            buttons.push([Markup.button.url("💎 Assinar Agora", config.vipCheckoutUrl)]);
+        } else {
+            buttons.push([Markup.button.callback("💎 Assinar Agora", "gen_pix_mensal")]);
+        }
+    }
     buttons.push([Markup.button.callback("🔙 Voltar", "start")]);
 
     ctx.editMessageText(text, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
@@ -3606,6 +3647,19 @@ bot.on("text", async (ctx) => {
             config.supportLink = link;
             await saveSystemConfig(config);
             ctx.reply(`✅ Link de suporte atualizado para: **${link}**`);
+            session.stage = "READY";
+            await syncSession(ctx, session);
+            return renderAdminPanel(ctx);
+        }
+
+        if (session.stage === "ADMIN_WAIT_VIP_LINK") {
+            const link = ctx.message.text.trim();
+            if (!link || (!link.startsWith("http") && !link.includes("stripe.com") && !link.includes("kiwify"))) {
+                return ctx.reply("❌ Por favor, digite um link válido (começando com http).");
+            }
+            config.vipCheckoutUrl = link;
+            await saveSystemConfig(config);
+            ctx.reply(`✅ Link de Checkout VIP atualizado para: **${link}**`);
             session.stage = "READY";
             await syncSession(ctx, session);
             return renderAdminPanel(ctx);
