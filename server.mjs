@@ -170,7 +170,8 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "V1.392";
+const SERVER_VERSION = "V1.400";
+const SAAS_NAME = process.env.SAAS_NAME || "Connect SaaS";
 let isAiFollowupRunning = false;
 
 async function checkOwnership(ctx, instId) {
@@ -926,7 +927,7 @@ bot.start(async (ctx) => {
     await syncSession(ctx, session);
 
     // V1.247: Mudança global para HTML para evitar erros de Markdown com nomes/links
-    const welcomeMsg = `👋 <b>Olá, ${userFirstName}! Bem-vindo ao Connect SaaS</b> 🚀\n\n` +
+    const welcomeMsg = `👋 <b>Olá, ${userFirstName}! Bem-vindo ao ${SAAS_NAME}</b> 🚀\n\n` +
         `O sistema definitivo para automação de WhatsApp com IA e Rodízio de Leads.\n\n` +
         `👇 <b>Escolha uma opção no menu abaixo:</b>`;
 
@@ -977,7 +978,7 @@ async function renderTourMenu(ctx, step = 0) {
 
     const steps = [
         {
-            title: "🚀 Bem-vindo ao Connect SaaS!",
+            title: `🚀 Bem-vindo ao ${SAAS_NAME}!`,
             description: "Você acaba de acessar a plataforma mais completa para automação de vendas via WhatsApp.\n\nNossa tecnologia permite que você tenha um <b>SDR Artificial</b> trabalhando 24h por dia, qualificando leads e fechando negócios enquanto você dorme.",
             btnNext: "Conhecer IAs 🤖"
         },
@@ -1144,7 +1145,7 @@ bot.action("start", async (ctx) => {
     const isVip = await checkVip(ctx.chat.id);
     const config = await getSystemConfig();
     const userFirstName = ctx.from.first_name || "Parceiro";
-    const welcomeMsg = `👋 *Olá, ${userFirstName}! Bem-vindo ao Connect SaaS* 🚀\n\n` +
+    const welcomeMsg = `👋 *Olá, ${userFirstName}! Bem-vindo ao ${SAAS_NAME}* 🚀\n\n` +
         `O sistema definitivo para automação de WhatsApp com IA e Rodízio de Leads.\n\n` +
         `👇 *Escolha uma opção no menu abaixo:*`;
     const buttons = [
