@@ -170,7 +170,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "V1.386";
+const SERVER_VERSION = "V1.387";
 let isAiFollowupRunning = false;
 
 async function checkOwnership(ctx, instId) {
@@ -4958,12 +4958,37 @@ setInterval(startWarmupWorker, 600000); // 10 min
 
 // V1.367: Worker de limpeza de Trials removido
 
+async function registerBotCommands() {
+    try {
+        await bot.telegram.setMyCommands([
+            { command: "start", description: "🚀 Menu Principal / Dashboard" },
+            { command: "stats", description: "📊 Dashboard de Leads (Analytics)" },
+            { command: "disparos", description: "📢 Módulo de Disparo em Massa" },
+            { command: "rodizio", description: "👥 Módulo de Rodízio de Leads" },
+            { command: "agenda", description: "🔔 Follow-ups e Agendamentos" },
+            { command: "instancias", description: "📱 Minhas Instâncias Conectadas" },
+            { command: "conectar", description: "🔗 Conectar Novo WhatsApp" },
+            { command: "vip", description: "💎 Status do Plano Premium" },
+            { command: "admin", description: "👑 Painel Administrativo (Dono)" }
+        ]);
+        log("[BOT LOG] Menu de comandos registrado com sucesso.");
+    } catch (e) {
+        log(`[BOT ERR] Falha ao registrar comandos: ${e.message}`);
+    }
+}
+
+bot.command("refresh", async (ctx) => {
+    const config = await getSystemConfig();
+    if (!isAdmin(ctx.chat.id, config)) return;
+    await registerBotCommands();
+    ctx.reply("🔄 <b>Menu de comandos atualizado!</b>\nSe o ícone '/' não aparecer, reinicie o seu Telegram.", { parse_mode: "HTML" });
+});
+
 // V1.378: Inicialização Resiliente do Bot
 async function startBot(retryCount = 0) {
     log(`[BOT LOG] Tentando iniciar bot (Tentativa ${retryCount + 1})...`);
     try {
-        const isDbReady = await verifyDatabase();
-
+        await registerBotCommands();
         await bot.launch();
         log(`[BOT LOG] Bot ${bot.botInfo.username} iniciado.`);
 
@@ -4979,18 +5004,7 @@ async function startBot(retryCount = 0) {
                     `<i>O sistema só funcionará 100% após você rodar o SQL.</i>`, { parse_mode: "HTML" });
             }
         }
-        log(`[BOT LOG] [${SERVER_VERSION}] ${new Date().toLocaleTimeString()} - ✅ Bot iniciado no Telegram`);
-
-        bot.telegram.setMyCommands([
-            { command: "start", description: "🚀 Menu Principal / Dashboard" },
-            { command: "stats", description: "📊 Dashboard de Leads (Analytics)" },
-            { command: "disparos", description: "📢 Módulo de Disparo em Massa" },
-            { command: "rodizio", description: "👥 Módulo de Rodízio de Leads" },
-            { command: "agenda", description: "🔔 Follow-ups e Agendamentos" },
-            { command: "instancias", description: "📱 Minhas Instâncias Conectadas" },
-            { command: "conectar", description: "🔗 Conectar Novo WhatsApp" },
-            { command: "vip", description: "💎 Status do Plano Premium" }
-        ]).catch(e => log(`[BOT ERR] Erro ao setar comandos: ${e.message}`));
+        log(`[BOT LOG] [${SERVER_VERSION}] ${new Date().toLocaleTimeString()} - ✅ Bot iniciado no Telegram com sucesso.`);
 
     } catch (err) {
         log(`[BOT ERR] Falha ao iniciar bot (Tentativa ${retryCount + 1}): ${err.message}`);
