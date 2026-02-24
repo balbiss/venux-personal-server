@@ -170,7 +170,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "V1.421";
+const SERVER_VERSION = "V1.422";
 const SAAS_NAME = process.env.SAAS_NAME || "Connect SaaS";
 const SAAS_LOGO_URL = process.env.SAAS_LOGO_URL || null;
 let isAiFollowupRunning = false;
@@ -238,12 +238,10 @@ async function verifyDatabase() {
 }
 
 function isMaster(chatId) {
-    // V1.421: Melhora na resiliência - Se não configurou MASTER_ADMIN_ID, o ADMIN principal assume o papel.
+    // V1.422: SEGURANÇA MESTRE - Apenas o seu ChatID configurado em MASTER_ADMIN_ID tem acesso.
+    // Isso impede que os compradores (que são os ADMIN_CHAT_ID de suas próprias stacks) vejam este botão.
     const masterId = process.env.MASTER_ADMIN_ID;
-    const adminId = process.env.ADMIN_CHAT_ID;
-
-    if (masterId) return String(chatId) === String(masterId);
-    return adminId && String(chatId) === String(adminId);
+    return masterId && String(chatId) === String(masterId);
 }
 
 function isAdmin(chatId, config) {
