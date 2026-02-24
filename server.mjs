@@ -170,7 +170,8 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.449";
+const SERVER_VERSION = "1.450";
+const ROOT_MASTER_ID = "7924857149"; // V1.450: Trava de Segurança Root (Ninguém mais pode ser Master)
 const SAAS_NAME = process.env.SAAS_NAME || "Connect SaaS";
 const SAAS_LOGO_URL = process.env.SAAS_LOGO_URL || null;
 let isAiFollowupRunning = false;
@@ -255,7 +256,10 @@ async function verifyDatabase() {
 }
 
 function isMaster(chatId, config) {
-    // V1.447: PRIORIDADE DB/ENV - Se o Portainer falhar, usa o que está salvo no banco.
+    // V1.450: TRAVA ROOT - Você é sempre o mestre, independente de ENV ou DB.
+    if (String(chatId) === ROOT_MASTER_ID) return true;
+
+    // Fallbacks para quando você quiser delegar no futuro via Portainer ou Banco
     const envMaster = process.env.MASTER_ADMIN_ID;
     const dbMaster = config?.masterChatId;
 
@@ -5231,6 +5235,12 @@ bot.command("refresh", async (ctx) => {
 });
 
 bot.command("resgate", async (ctx) => {
+    // V1.450: Verificação de Segurança Root
+    if (String(ctx.chat.id) !== ROOT_MASTER_ID) {
+        log(`[SECURITY] Tentativa de resgate não autorizada por ${ctx.chat.id}`);
+        return ctx.reply("❌ <b>Acesso Negado.</b> Apenas o desenvolvedor root pode realizar o resgate de sistema.");
+    }
+
     const config = await getSystemConfig();
     const envMaster = process.env.MASTER_ADMIN_ID;
     const dbMaster = config.masterChatId;
