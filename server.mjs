@@ -170,7 +170,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "V1.430";
+const SERVER_VERSION = "V1.431";
 const SAAS_NAME = process.env.SAAS_NAME || "Connect SaaS";
 const SAAS_LOGO_URL = process.env.SAAS_LOGO_URL || null;
 let isAiFollowupRunning = false;
@@ -1465,7 +1465,7 @@ async function showInstances(ctx) {
     }
 
     buttons.push([Markup.button.callback("🔙 Voltar", "start")]);
-    const extra = { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) };
+    const extra = { parse_mode: "HTML", ...Markup.inlineKeyboard(buttons) };
 
     if (ctx.callbackQuery) {
         try { await ctx.editMessageText(msg, extra); }
