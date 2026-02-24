@@ -170,7 +170,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "V1.440";
+const SERVER_VERSION = "V1.441";
 const SAAS_NAME = process.env.SAAS_NAME || "Connect SaaS";
 const SAAS_LOGO_URL = process.env.SAAS_LOGO_URL || null;
 let isAiFollowupRunning = false;
@@ -250,11 +250,12 @@ function isMaster(chatId) {
 }
 
 function getUserInstanceLimit(session, config) {
-    // V1.430: Prioriza o limite individual (pacote) se existir, senão usa o global do sistema.
+    // V1.441: Melhora na robustez e tipos
     if (session && session.limits && session.limits.instances !== undefined) {
-        return session.limits.instances;
+        return parseInt(session.limits.instances);
     }
-    return config.limits.vip.instances;
+    const globalLimit = config?.limits?.vip?.instances || 5;
+    return parseInt(globalLimit);
 }
 
 function isAdmin(chatId, config) {
@@ -3912,14 +3913,14 @@ bot.on("text", async (ctx) => {
     if (session.stage === "WA_WAITING_NAME") {
         await cleanup();
         const config = await getSystemConfig();
-        const isVip = await checkVip(ctx.chat.id);
-        const limit = config.limits.vip.instances;
-        const current = session.whatsapp.instances.length;
+        const isAdminUser = isAdmin(ctx.chat.id, config);
+        const userLimit = getUserInstanceLimit(session, config);
+        const current = session.whatsapp?.instances?.length || 0;
 
-        if (current >= limit) {
-            return ctx.reply(`⚠️ *Limite de Instâncias Atingido!*\n\nSeu plano permite apenas **${limit}** instâncias.\n\nFale com o suporte ou use /admin se for o dono.`, {
-                parse_mode: "Markdown",
-                ...Markup.inlineKeyboard([[Markup.button.callback("💎 Ver Planos", "cmd_planos_menu")]])
+        if (!isAdminUser && current >= userLimit) {
+            return ctx.reply(`⚠️ <b>Limite de Instâncias Atingido!</b>\n\nSeu plano permite apenas <b>${userLimit}</b> instâncias.\n\nFale com o suporte ou use /admin se for o dono.`, {
+                parse_mode: "HTML",
+                ...Markup.inlineKeyboard([[Markup.button.callback("💎 Ver Planos", "cmd_planos_menu"), Markup.button.callback("🔙 Voltar", "cmd_instancias_menu")]])
             });
         }
 
