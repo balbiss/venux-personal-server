@@ -170,7 +170,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "V1.444";
+const SERVER_VERSION = "1.445"; // Removido o 'V' aqui pois a função log já adiciona.
 const SAAS_NAME = process.env.SAAS_NAME || "Connect SaaS";
 const SAAS_LOGO_URL = process.env.SAAS_LOGO_URL || null;
 let isAiFollowupRunning = false;
@@ -5208,15 +5208,13 @@ bot.command("refresh", async (ctx) => {
 
 // V1.378: Inicialização Resiliente do Bot
 async function startBot(retryCount = 0) {
-    log(`[BOT LOG] [${SERVER_VERSION}] Tentando iniciar bot (Tentativa ${retryCount + 1})...`);
+    log(`Tentando iniciar bot (Tentativa ${retryCount + 1})...`);
 
-    // V1.444: Logs de ambiente para auxiliar o usuário (Exclusivo no console)
+    // V1.445: Diagnóstico exibe apenas se as variáveis batem
     if (retryCount === 0) {
         console.log(`\n--- DIAGNÓSTICO DE AMBIENTE ---`);
-        console.log(`MASTER_ADMIN_ID: ${process.env.MASTER_ADMIN_ID || "Não Configurado"}`);
-        console.log(`ADMIN_CHAT_ID (Portainer): ${process.env.ADMIN_CHAT_ID || "Não Configurado"}`);
-        console.log(`SUPABASE_URL: ${process.env.SUPABASE_URL ? "Configurado ✅" : "Faltando ❌"}`);
-        console.log(`WUZAPI_BASE_URL: ${process.env.WUZAPI_BASE_URL}`);
+        console.log(`ID Mestre Esperado: ${process.env.MASTER_ADMIN_ID || "Não Configurado"}`);
+        console.log(`Token Atual (Início): ${process.env.TELEGRAM_TOKEN ? process.env.TELEGRAM_TOKEN.substring(0, 10) + "..." : "FALTANDO"}`);
         console.log(`-------------------------------\n`);
     }
 
