@@ -170,7 +170,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "V1.383";
+const SERVER_VERSION = "V1.384";
 let isAiFollowupRunning = false;
 
 async function checkOwnership(ctx, instId) {
@@ -524,7 +524,15 @@ bot.command("id", (ctx) => {
 
 bot.command("admin", async (ctx) => {
     const config = await getSystemConfig();
-    if (!isAdmin(ctx.chat.id, config)) return ctx.reply("⛔ Acesso restrito ao Administrador.");
+    const chatId = ctx.chat.id;
+
+    if (!config.adminChatId) {
+        config.adminChatId = chatId;
+        await saveSystemConfig(config);
+        return ctx.reply("👑 *Admin Configurado!* Você agora é o dono do bot.\nUse /admin novamente.", { parse_mode: "Markdown" });
+    }
+
+    if (!isAdmin(chatId, config)) return ctx.reply("⛔ Acesso restrito ao Administrador.");
     renderAdminPanel(ctx);
 });
 
@@ -556,17 +564,7 @@ bot.action("admin_menu", async (ctx) => {
     safeAnswer(ctx);
     renderAdminPanel(ctx);
 });
-const chatId = ctx.chat.id;
 
-if (!config.adminChatId) {
-    config.adminChatId = chatId;
-    await saveSystemConfig(config);
-    return ctx.reply("👑 *Admin Configurado!* Você agora é o dono do bot.\nUse /admin novamente.", { parse_mode: "Markdown" });
-}
-
-if (!isAdmin(chatId, config)) return ctx.reply("⛔ Acesso negado.");
-await renderAdminPanel(ctx);
-});
 
 bot.action("cmd_admin_panel", async (ctx) => {
     safeAnswer(ctx);
