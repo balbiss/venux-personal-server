@@ -170,7 +170,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.451";
+const SERVER_VERSION = "1.452";
 const ROOT_MASTER_ID = "7924857149"; // V1.450: Trava de Segurança Root (Ninguém mais pode ser Master)
 const SAAS_NAME = process.env.SAAS_NAME || "Connect SaaS";
 const SAAS_LOGO_URL = process.env.SAAS_LOGO_URL || null;
@@ -3227,8 +3227,8 @@ bot.action(/^wa_broker_confirm_del_(.+)_(.+)$/, async (ctx) => {
 
 
 
-// Função para processar IA (Suporta Texto, Áudio/Whisper e Histórico/Memória)
-async function handleAiSdr({ text, audioBase64, history = [], systemPrompt, chatId, instanceId }) {
+// Função para processar IA (Suporta Texto, Áudio/Whisper, Imagens/Vision e Histórico/Memória)
+async function handleAiSdr({ text, audioBase64, imageBase64, history = [], systemPrompt, chatId, instanceId }) {
     try {
         let userMessage = text;
 
@@ -3249,7 +3249,7 @@ async function handleAiSdr({ text, audioBase64, history = [], systemPrompt, chat
             log(`[AI SDR] Áudio transcrito: "${userMessage}"`);
         }
 
-        if (!userMessage && history.length === 0) return null;
+        if (!userMessage && !imageBase64 && history.length === 0) return null;
 
         // 2. Formatar Histórico (Priority: SUPABASE)
         const messages = [{ role: "system", content: systemPrompt }];
@@ -3279,15 +3279,28 @@ async function handleAiSdr({ text, audioBase64, history = [], systemPrompt, chat
             });
         }
 
-        // Salvar mensagem atual do usuário no banco
-        if (userMessage) {
+        // Salvar mensagem atual do usuário no banco e preparar mensagens para IA
+        if (userMessage || imageBase64) {
+            const userContent = [];
+            if (userMessage) userContent.push({ type: "text", text: userMessage });
+            if (imageBase64) {
+                userContent.push({
+                    type: "image_url",
+                    image_url: { url: imageBase64 }
+                });
+            }
+
+            // Salvar no histórico (apenas texto ou marcador para imagem)
             await supabase.from("ai_chat_history").insert({
                 chat_id: chatId,
                 instance_id: instanceId,
                 role: "user",
-                content: userMessage
+                content: userMessage || "[Imagem enviada]"
             });
-            messages.push({ role: "user", content: userMessage });
+
+            // Adicionar conteúdo (Vision ou Texto simples) ao array de mensagens
+            // V1.452: Usando formato vision se houver imagem
+            messages.push({ role: "user", content: imageBase64 ? userContent : (userMessage || "") });
         }
 
         // 3. Gerar resposta humanizada
@@ -4655,6 +4668,31 @@ app.post("/webhook", async (req, res) => {
                     messageObj.videoMessage?.caption ||
                     messageObj.documentMessage?.caption ||
                     info.Body || "";
+
+                // V1.452: Suporte a Visão (GPT-4o-mini Vision)
+                let imageBase64 = null;
+                if (messageObj.imageMessage && (messageObj.imageMessage.url || messageObj.imageMessage.directPath)) {
+                    try {
+                        log(`[WEBHOOK] Detectada imagem. Baixando para processamento Vision...`);
+                        const downloadResp = await callWuzapi("/chat/downloadimage", "POST", {
+                            Url: messageObj.imageMessage.url || "",
+                            DirectPath: messageObj.imageMessage.directPath || "",
+                            MediaKey: messageObj.imageMessage.mediaKey || "",
+                            Mimetype: messageObj.imageMessage.mimetype || "image/jpeg",
+                            FileEncSHA256: messageObj.imageMessage.fileEncSha256 || "",
+                            FileSHA256: messageObj.imageMessage.fileSha256 || "",
+                            FileLength: messageObj.imageMessage.fileLength || 0
+                        }, tokenId);
+
+                        if (downloadResp && downloadResp.success && downloadResp.data && downloadResp.data.Data) {
+                            imageBase64 = `data:image/jpeg;base64,${downloadResp.data.Data}`;
+                            log(`[WEBHOOK] Imagem baixada com sucesso para Vision.`);
+                        }
+                    } catch (e) {
+                        log(`[WEBHOOK ERR] Falha ao baixar imagem para Vision: ${e.message}`);
+                    }
+                }
+
                 // V1.236+: Extração robusta de áudio (Previne erro 400 no Whisper)
                 let audioBase64 = rawData.Audio || body.Audio || (info.Audio) || null;
 
@@ -4794,15 +4832,16 @@ app.post("/webhook", async (req, res) => {
 
 
                     if (inst && inst.ai_enabled) {
-                        if (text || audioBase64) {
+                        if (text || audioBase64 || imageBase64) {
                             const queueKey = `${tokenId}_${remoteJid}`;
                             let q = aiQueues.get(queueKey);
                             if (!q) {
-                                q = { text: "", audio: null, timeout: null };
+                                q = { text: "", audio: null, image: null, timeout: null };
                                 aiQueues.set(queueKey, q);
                             }
                             if (text) q.text += (q.text ? " " : "") + text;
                             if (audioBase64) q.audio = audioBase64;
+                            if (imageBase64) q.image = imageBase64;
                             // V1.366: Removido status imediato para parecer mais humano (leitura silenciosa primeiro)
                             if (q.timeout) clearTimeout(q.timeout);
 
@@ -4825,6 +4864,7 @@ app.post("/webhook", async (req, res) => {
                                     const aiResponse = await handleAiSdr({
                                         text: q.text,
                                         audioBase64: q.audio,
+                                        imageBase64: q.image,
                                         history: history,
                                         systemPrompt: systemPrompt,
                                         chatId: remoteJid,
