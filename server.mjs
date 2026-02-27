@@ -274,77 +274,82 @@ function isMaster(chatId, config) {
     return isMatched;
 }
 
-// V1.460: Central de Licenciamento (Check-in Remoto)
-// V1.460: Central de Licenciamento (Check-in Remoto)
+// V1.465: Central de Licenciamento com Trava de Instância Única (O "Kick")
 async function verifyLicenseStatus() {
     const config = await getSystemConfig();
     const envMasterId = process.env.MASTER_ADMIN_ID || config.masterChatId;
     const MASTER_API_URL = process.env.MASTER_API_URL;
 
+    // Prioridade total para a chave via Variável de Ambiente do Portainer
+    const envLicense = process.env.LICENSE_KEY || config.licenseKey;
+    if (envLicense && envLicense !== config.licenseKey) {
+        config.licenseKey = envLicense;
+        await saveSystemConfig(config);
+    }
+
+    // Gera um ID Único para esta "Máquina/Docker" se não tiver
+    if (!config.machineId) {
+        config.machineId = `INST-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
+        await saveSystemConfig(config);
+    }
+
     // Se for o ROOT_MASTER (você), ignora a licença
     if (String(envMasterId) === ROOT_MASTER_ID) {
-        log("[LICENSE] Modo Desenvolvedor Root Ativo. Ignorando trava de licença.");
+        log("[LICENSE] Modo Desenvolvedor Root Ativo.");
         return { active: true, reason: 'ROOT' };
     }
 
     if (!config.licenseKey) {
-        log("[LICENSE] Sistema sem licença configurada.");
+        console.log("\n\x1b[41m\x1b[37m %s \x1b[0m", " 🚫 ERRO FATAL: LICENÇA NÃO ENCONTRADA! ");
+        console.log("\x1b[31m%s\x1b[0m\n", "Configure a variável LICENSE_KEY na sua stack do Portainer.");
         return { active: false, reason: 'MISSING_KEY' };
     }
 
-    // V1.460 PLUS: Se houver URL de API Mestre, valida remotamente via HTTP (Evita erro de Schema Cache no Supabase do cliente)
     if (MASTER_API_URL) {
         try {
-            log(`[LICENSE] Validando via API Remota: ${MASTER_API_URL}`);
-            const url = `${MASTER_API_URL.replace(/\/$/, "")}/api/license/verify?key=${config.licenseKey}&owner_id=${envMasterId || ''}`;
+            const url = `${MASTER_API_URL.replace(/\/$/, "")}/api/license/verify?key=${config.licenseKey}&owner_id=${envMasterId || ''}&machine_id=${config.machineId}`;
             const resp = await fetch(url, { timeout: 5000 });
             const data = await resp.json();
+
+            // Lógica de Expulsão (Kick)
+            if (data.active && data.machine_id && data.machine_id !== config.machineId) {
+                console.log("\n\x1b[41m\x1b[37m %s \x1b[0m", " ⛔ LICENÇA EM USO EM OUTRO SERVIDOR! ");
+                console.log("\x1b[31m%s\x1b[0m\n", `Esta licença foi ativada na instância ${data.machine_id}.`);
+                return { active: false, reason: 'KICKED_BY_NEW_INSTANCE' };
+            }
+
+            if (!data.active) {
+                console.log("\n\x1b[41m\x1b[37m %s \x1b[0m", ` ❌ LICENÇA INVÁLIDA: ${data.reason} `);
+            }
+
             return data;
         } catch (e) {
-            log(`[LICENSE FAILSAFE] Erro na API Remota: ${e.message}. Usando modo Failsafe.`);
+            log(`[LICENSE FAILSAFE] Master offline. Usando modo Failsafe.`);
             return { active: true, reason: 'FAILSAFE_REMOTE' };
         }
     }
 
     try {
-        // Fallback: Tentativa direta no Supabase (Funciona se for o próprio Master ou se o cliente usar o mesmo projeto)
-        const { data: license, error } = await supabase
-            .from('master_licenses')
-            .select('*')
-            .eq('key', config.licenseKey)
-            .maybeSingle();
+        const { data: license, error } = await supabase.from('master_licenses').select('*').eq('key', config.licenseKey).maybeSingle();
+        if (error || !license) return { active: false, reason: 'INVALID_KEY' };
 
-        if (error) throw error;
+        if (license.status === 'BLOCKED') return { active: false, reason: 'REMOTE_BLOCK' };
 
-        if (!license) {
-            log(`[LICENSE] Chave ${config.licenseKey} não encontrada no Servidor Master.`);
-            return { active: false, reason: 'INVALID_KEY' };
+        // Bind machine_id
+        if (license.machine_id && license.machine_id !== config.machineId) {
+            // Se o IP/Machine mudou, o Mestre (você) decide se permite. 
+            // Para ser automático "ligou o novo, desliga o velho":
+            await supabase.from('master_licenses').update({ machine_id: config.machineId }).eq('key', config.licenseKey);
         }
 
-        // 1. Verificar Bloqueio Remoto
-        if (license.status === 'BLOCKED') {
-            log(`[LICENSE] ⛔ ACESSO BLOQUEADO PELO MESTRE.`);
-            return { active: false, reason: 'REMOTE_BLOCK' };
-        }
-
-        // 2. Verificar Vínculo de ID (Binding)
-        if (license.owner_id && envMasterId && String(license.owner_id) !== String(envMasterId)) {
-            log(`[LICENSE] ⚠️ Conflito de ID! Licença pertence ao ID ${license.owner_id}, mas o servidor é do ID ${envMasterId}.`);
-            return { active: false, reason: 'ID_MISMATCH' };
-        }
-
-        // 3. Atualizar Check-in (Telemetria)
         await supabase.from('master_licenses').update({
             owner_id: envMasterId || license.owner_id,
+            machine_id: config.machineId,
             last_check_in: new Date().toISOString()
         }).eq('key', config.licenseKey);
 
-        log(`[LICENSE] ✅ Licença Válida (Direct DB).`);
-        return { active: true, reason: 'OK' };
-
+        return { active: true, reason: 'OK', machine_id: config.machineId };
     } catch (e) {
-        // FAILSAFE: Se o servidor de licença cair, não trava o cliente
-        log(`[LICENSE FAILSAFE] Erro ao validar (Possível falta de tabela ou DB offline): ${e.message}`);
         return { active: true, reason: 'FAILSAFE' };
     }
 }
@@ -5588,7 +5593,7 @@ app.get("/api/dashboard/stats", async (req, res) => {
 
 // V1.460: Endpoint de Validação de Licença (Centralizador)
 app.get("/api/license/verify", async (req, res) => {
-    const { key, owner_id } = req.query;
+    const { key, owner_id, machine_id } = req.query;
     if (!key) return res.status(400).json({ active: false, reason: 'MISSING_KEY' });
 
     try {
@@ -5598,28 +5603,24 @@ app.get("/api/license/verify", async (req, res) => {
             .eq('key', key)
             .maybeSingle();
 
-        if (error || !license) {
-            return res.json({ active: false, reason: 'INVALID_KEY' });
+        if (error || !license) return res.json({ active: false, reason: 'INVALID_KEY' });
+        if (license.status === 'BLOCKED') return res.json({ active: false, reason: 'REMOTE_BLOCK' });
+
+        // V1.465: Trava de Instância Unica (Kick)
+        // Se já existe uma máquina registrada e é diferente da atual, 
+        // a nova "expulsa" a antiga atualizando o registro.
+        if (machine_id && license.machine_id && license.machine_id !== machine_id) {
+            log(`[KICK] Licença ${key} mudou de ${license.machine_id} para ${machine_id}.`);
         }
 
-        if (license.status === 'BLOCKED') {
-            return res.json({ active: false, reason: 'REMOTE_BLOCK' });
-        }
-
-        // ID Binding
-        if (license.owner_id && owner_id && String(license.owner_id) !== String(owner_id)) {
-            return res.json({ active: false, reason: 'ID_MISMATCH' });
-        }
-
-        // Telemetria e Vínculo
         await supabase.from('master_licenses').update({
             owner_id: owner_id || license.owner_id,
+            machine_id: machine_id || license.machine_id,
             last_check_in: new Date().toISOString()
         }).eq('key', key);
 
-        return res.json({ active: true, reason: 'OK' });
+        return res.json({ active: true, reason: 'OK', machine_id: machine_id || license.machine_id });
     } catch (e) {
-        log(`[API LICENSE ERR] ${e.message}`);
         return res.json({ active: true, reason: 'SERVER_FAILSAFE' });
     }
 });
