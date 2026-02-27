@@ -3809,6 +3809,7 @@ bot.on("text", async (ctx, next) => {
             } else {
                 // Insere novo
                 ({ error } = await supabase.from('master_licenses').insert({
+                    key: `ID-${owner_id}`,
                     owner_id, name, status: 'ACTIVE', created_at: new Date().toISOString()
                 }));
             }
