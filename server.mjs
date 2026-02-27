@@ -1287,16 +1287,13 @@ bot.action("cmd_planos_menu", async (ctx) => {
     }
     buttons.push([Markup.button.callback("🔙 Voltar", "start")]);
 
-    ctx.editMessageText(text, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
+    await safeEdit(ctx, text, Markup.inlineKeyboard(buttons));
 });
 
 bot.action("cmd_suporte", async (ctx) => {
     safeAnswer(ctx);
     const config = await getSystemConfig();
-    ctx.editMessageText(`👤 <b>Suporte & Ajuda</b>\n\nPrecisa de ajuda? Entre em contato com o suporte oficial:\n\n👉 ${config.supportLink || "@SeuUsuarioDeSuporte"}`, {
-        parse_mode: "HTML",
-        ...Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar", "start")]])
-    });
+    await safeEdit(ctx, `👤 <b>Suporte & Ajuda</b>\n\nPrecisa de ajuda? Entre em contato com o suporte oficial:\n\n👉 ${config.supportLink || "@SeuUsuarioDeSuporte"}`, Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar", "start")]]));
 });
 
 bot.action("cmd_tutoriais", async (ctx) => {
@@ -1308,10 +1305,7 @@ bot.action("cmd_tutoriais", async (ctx) => {
         return ctx.reply("❌ *Acesso Restrito*\n\nA área de tutoriais é exclusiva para assinantes Pro ativos.", { parse_mode: "Markdown" });
     }
 
-    ctx.editMessageText(`📺 <b>Área de Tutoriais Exclusiva</b>\n\nAcesse nossa central de vídeos para aprender a usar todo o potencial do Connect:\n\n👉 ${config.tutorialLink || "Ainda não configurado"}`, {
-        parse_mode: "HTML",
-        ...Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar", "start")]])
-    });
+    await safeEdit(ctx, `📺 <b>Área de Tutoriais Exclusiva</b>\n\nAcesse nossa central de vídeos para aprender a usar todo o potencial do Connect:\n\n👉 ${config.tutorialLink || "Ainda não configurado"}`, Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar", "start")]]));
 });
 
 async function renderAffiliateMenu(ctx) {
