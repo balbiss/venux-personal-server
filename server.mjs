@@ -601,7 +601,7 @@ async function renderAdminPanel(ctx) {
         [Markup.button.callback("💰 Alterar Preço", "admin_price"), Markup.button.callback("👤 Configurar Suporte", "admin_support")],
         [Markup.button.callback("💎 Ajustar Limite", "admin_limit_vip"), Markup.button.callback("📺 Configurar Tutoriais", "admin_tutorial_link")],
         [Markup.button.callback("🔄 Reiniciar Servidor", "admin_server_restart"), Markup.button.callback("🔗 Configurar Link VIP", "admin_vip_link")],
-        [Markup.button.callback(`${config.licenseKey ? "🔑 Alterar Licença" : "🔑 Ativar Licença"}`, "cmd_admin_license"), Markup.button.callback("🔙 Voltar", "start")]
+        [Markup.button.callback("🔙 Voltar", "start")]
     ];
 
     // V1.465: Portal do Mestre EXCLUSIVO para o ROOT_MASTER (Dono Real do Software)
