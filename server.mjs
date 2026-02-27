@@ -3798,17 +3798,25 @@ bot.on("text", async (ctx, next) => {
         if (session.stage === "MASTER_WAIT_CLIENT_NAME") {
             const name = ctx.message.text.trim();
             const owner_id = session.pendingClientId;
-            const { error } = await supabase.from('master_licenses').upsert({
-                owner_id: owner_id,
-                name: name,
-                status: 'ACTIVE',
-                created_at: new Date().toISOString()
-            }, { onConflict: 'owner_id' });
+
+            // Verifica se já existe para fazer update ou insert
+            const { data: existing } = await supabase.from('master_licenses').select('id').eq('owner_id', owner_id).maybeSingle();
+
+            let error;
+            if (existing) {
+                // Atualiza
+                ({ error } = await supabase.from('master_licenses').update({ name, status: 'ACTIVE' }).eq('owner_id', owner_id));
+            } else {
+                // Insere novo
+                ({ error } = await supabase.from('master_licenses').insert({
+                    owner_id, name, status: 'ACTIVE', created_at: new Date().toISOString()
+                }));
+            }
 
             if (error) {
                 ctx.reply(`❌ Erro ao salvar: ${error.message}`);
             } else {
-                ctx.reply(`✅ <b>Comprador Cadastrado!</b>\n\n👤 <b>Nome:</b> ${name}\n🆔 <b>ID:</b> <code>${owner_id}</code>\n📅 <b>Ativado em:</b> ${new Date().toLocaleDateString('pt-BR')}\n🟢 <b>Status:</b> ATIVO\n\nEle já pode subir a stack no Portainer!`, { parse_mode: "HTML" });
+                ctx.reply(`✅ <b>Comprador ${existing ? 'Atualizado' : 'Cadastrado'}!</b>\n\n👤 <b>Nome:</b> ${name}\n🆔 <b>ID:</b> <code>${owner_id}</code>\n📅 <b>Data:</b> ${new Date().toLocaleDateString('pt-BR')}\n🟢 <b>Status:</b> ATIVO\n\nEle já pode subir a stack no Portainer!`, { parse_mode: "HTML" });
             }
             delete session.pendingClientId;
             session.stage = "READY";
