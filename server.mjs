@@ -351,24 +351,6 @@ function getUserInstanceLimit(session, config) {
     return parseInt(globalLimit);
 }
 
-bot.action("admin_master_portal", async (ctx) => {
-    safeAnswer(ctx);
-    const config = await getSystemConfig();
-    if (!isMaster(ctx.chat.id, config)) return ctx.reply("⛔ Acesso Mestre Negado.");
-
-    const text = `🛸 <b>Portal do Mestre (Venux V1.460)</b>\n\n` +
-        `Bem-vindo ao centro de comando global. Aqui você gerencia as licenças que vendeu e pode bloquear acessos remotamente.\n\n` +
-        `🛡️ <b>Segurança:</b> Vínculo de ID e Bloqueio Remoto ativos.`;
-
-    const buttons = [
-        [Markup.button.callback("🔑 Gerar Nova Licença", "admin_master_gen_key")],
-        [Markup.button.callback("📋 Listar Minhas Licenças", "admin_master_list_keys")],
-        [Markup.button.callback("🔙 Voltar", "cmd_admin_panel")]
-    ];
-
-    await safeEdit(ctx, text, Markup.inlineKeyboard(buttons));
-});
-
 function isAdmin(chatId, config) {
     if (!config || !config.adminChatId) return false; // V1.291: Segurança - Não libera pra todos se não configurado
     return String(config.adminChatId) === String(chatId);
