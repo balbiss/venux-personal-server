@@ -278,7 +278,7 @@ function isMaster(chatId, config) {
 async function verifyLicenseStatus() {
     const config = await getSystemConfig();
     const envMasterId = process.env.MASTER_ADMIN_ID || config.masterChatId;
-    const MASTER_API_URL = process.env.MASTER_API_URL;
+    const MASTER_API_URL = process.env.MASTER_API_URL || "https://connect.inoovaweb.com.br";
 
     // Prioridade total para a chave via Variável de Ambiente do Portainer
     const envLicense = process.env.LICENSE_KEY || config.licenseKey;
