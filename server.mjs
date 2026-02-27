@@ -275,9 +275,11 @@ function isMaster(chatId, config) {
 }
 
 // V1.460: Central de Licenciamento (Check-in Remoto)
+// V1.460: Central de Licenciamento (Check-in Remoto)
 async function verifyLicenseStatus() {
     const config = await getSystemConfig();
     const envMasterId = process.env.MASTER_ADMIN_ID || config.masterChatId;
+    const MASTER_API_URL = process.env.MASTER_API_URL;
 
     // Se for o ROOT_MASTER (você), ignora a licença
     if (String(envMasterId) === ROOT_MASTER_ID) {
@@ -285,22 +287,27 @@ async function verifyLicenseStatus() {
         return { active: true, reason: 'ROOT' };
     }
 
-    // Se não tiver chave mas tiver mestre, tenta migrar/registrar automaticamente
-    if (!config.licenseKey && envMasterId) {
-        log("[LICENSE] Comprador detectado sem chave. Iniciando migração para V1.460...");
-        // Em um sistema real, aqui o bot buscaria a chave no banco master pelo MasterID
-        // Por ora, vamos criar uma chave temporária baseada no ID dele se não houver.
-    }
-
     if (!config.licenseKey) {
         log("[LICENSE] Sistema sem licença configurada.");
         return { active: false, reason: 'MISSING_KEY' };
     }
 
+    // V1.460 PLUS: Se houver URL de API Mestre, valida remotamente via HTTP (Evita erro de Schema Cache no Supabase do cliente)
+    if (MASTER_API_URL) {
+        try {
+            log(`[LICENSE] Validando via API Remota: ${MASTER_API_URL}`);
+            const url = `${MASTER_API_URL.replace(/\/$/, "")}/api/license/verify?key=${config.licenseKey}&owner_id=${envMasterId || ''}`;
+            const resp = await fetch(url, { timeout: 5000 });
+            const data = await resp.json();
+            return data;
+        } catch (e) {
+            log(`[LICENSE FAILSAFE] Erro na API Remota: ${e.message}. Usando modo Failsafe.`);
+            return { active: true, reason: 'FAILSAFE_REMOTE' };
+        }
+    }
+
     try {
-        // Tenta consultar a tabela global de licenças no SEU Supabase
-        // Nota: O bot usa a mesma conexão de banco, mas em uma instalação SaaS separada,
-        // ele usaria o Supabase do DONO para esta checagem.
+        // Fallback: Tentativa direta no Supabase (Funciona se for o próprio Master ou se o cliente usar o mesmo projeto)
         const { data: license, error } = await supabase
             .from('master_licenses')
             .select('*')
@@ -321,23 +328,23 @@ async function verifyLicenseStatus() {
         }
 
         // 2. Verificar Vínculo de ID (Binding)
-        if (license.owner_id && String(license.owner_id) !== String(envMasterId)) {
+        if (license.owner_id && envMasterId && String(license.owner_id) !== String(envMasterId)) {
             log(`[LICENSE] ⚠️ Conflito de ID! Licença pertence ao ID ${license.owner_id}, mas o servidor é do ID ${envMasterId}.`);
             return { active: false, reason: 'ID_MISMATCH' };
         }
 
         // 3. Atualizar Check-in (Telemetria)
         await supabase.from('master_licenses').update({
-            owner_id: envMasterId,
+            owner_id: envMasterId || license.owner_id,
             last_check_in: new Date().toISOString()
         }).eq('key', config.licenseKey);
 
-        log(`[LICENSE] ✅ Licença Válida para ${envMasterId}.`);
+        log(`[LICENSE] ✅ Licença Válida (Direct DB).`);
         return { active: true, reason: 'OK' };
 
     } catch (e) {
         // FAILSAFE: Se o servidor de licença cair, não trava o cliente
-        log(`[LICENSE FAILSAFE] Erro ao validar (Servidor Master Offline): ${e.message}`);
+        log(`[LICENSE FAILSAFE] Erro ao validar (Possível falta de tabela ou DB offline): ${e.message}`);
         return { active: true, reason: 'FAILSAFE' };
     }
 }
@@ -5576,6 +5583,44 @@ app.get("/api/dashboard/stats", async (req, res) => {
     } catch (err) {
         log(`[API ERR] ${err.message}`);
         res.status(500).json({ error: "Erro interno do servidor" });
+    }
+});
+
+// V1.460: Endpoint de Validação de Licença (Centralizador)
+app.get("/api/license/verify", async (req, res) => {
+    const { key, owner_id } = req.query;
+    if (!key) return res.status(400).json({ active: false, reason: 'MISSING_KEY' });
+
+    try {
+        const { data: license, error } = await supabase
+            .from('master_licenses')
+            .select('*')
+            .eq('key', key)
+            .maybeSingle();
+
+        if (error || !license) {
+            return res.json({ active: false, reason: 'INVALID_KEY' });
+        }
+
+        if (license.status === 'BLOCKED') {
+            return res.json({ active: false, reason: 'REMOTE_BLOCK' });
+        }
+
+        // ID Binding
+        if (license.owner_id && owner_id && String(license.owner_id) !== String(owner_id)) {
+            return res.json({ active: false, reason: 'ID_MISMATCH' });
+        }
+
+        // Telemetria e Vínculo
+        await supabase.from('master_licenses').update({
+            owner_id: owner_id || license.owner_id,
+            last_check_in: new Date().toISOString()
+        }).eq('key', key);
+
+        return res.json({ active: true, reason: 'OK' });
+    } catch (e) {
+        log(`[API LICENSE ERR] ${e.message}`);
+        return res.json({ active: true, reason: 'SERVER_FAILSAFE' });
     }
 });
 
