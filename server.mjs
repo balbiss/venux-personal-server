@@ -170,7 +170,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.455";
+const SERVER_VERSION = "1.460";
 const ROOT_MASTER_ID = "7924857149"; // V1.450: Trava de Segurança Root (Ninguém mais pode ser Master)
 const SAAS_NAME = process.env.SAAS_NAME || "Connect SaaS";
 const SAAS_LOGO_URL = process.env.SAAS_LOGO_URL || null;
@@ -274,6 +274,74 @@ function isMaster(chatId, config) {
     return isMatched;
 }
 
+// V1.460: Central de Licenciamento (Check-in Remoto)
+async function verifyLicenseStatus() {
+    const config = await getSystemConfig();
+    const envMasterId = process.env.MASTER_ADMIN_ID || config.masterChatId;
+
+    // Se for o ROOT_MASTER (você), ignora a licença
+    if (String(envMasterId) === ROOT_MASTER_ID) {
+        log("[LICENSE] Modo Desenvolvedor Root Ativo. Ignorando trava de licença.");
+        return { active: true, reason: 'ROOT' };
+    }
+
+    // Se não tiver chave mas tiver mestre, tenta migrar/registrar automaticamente
+    if (!config.licenseKey && envMasterId) {
+        log("[LICENSE] Comprador detectado sem chave. Iniciando migração para V1.460...");
+        // Em um sistema real, aqui o bot buscaria a chave no banco master pelo MasterID
+        // Por ora, vamos criar uma chave temporária baseada no ID dele se não houver.
+    }
+
+    if (!config.licenseKey) {
+        log("[LICENSE] Sistema sem licença configurada.");
+        return { active: false, reason: 'MISSING_KEY' };
+    }
+
+    try {
+        // Tenta consultar a tabela global de licenças no SEU Supabase
+        // Nota: O bot usa a mesma conexão de banco, mas em uma instalação SaaS separada,
+        // ele usaria o Supabase do DONO para esta checagem.
+        const { data: license, error } = await supabase
+            .from('master_licenses')
+            .select('*')
+            .eq('key', config.licenseKey)
+            .maybeSingle();
+
+        if (error) throw error;
+
+        if (!license) {
+            log(`[LICENSE] Chave ${config.licenseKey} não encontrada no Servidor Master.`);
+            return { active: false, reason: 'INVALID_KEY' };
+        }
+
+        // 1. Verificar Bloqueio Remoto
+        if (license.status === 'BLOCKED') {
+            log(`[LICENSE] ⛔ ACESSO BLOQUEADO PELO MESTRE.`);
+            return { active: false, reason: 'REMOTE_BLOCK' };
+        }
+
+        // 2. Verificar Vínculo de ID (Binding)
+        if (license.owner_id && String(license.owner_id) !== String(envMasterId)) {
+            log(`[LICENSE] ⚠️ Conflito de ID! Licença pertence ao ID ${license.owner_id}, mas o servidor é do ID ${envMasterId}.`);
+            return { active: false, reason: 'ID_MISMATCH' };
+        }
+
+        // 3. Atualizar Check-in (Telemetria)
+        await supabase.from('master_licenses').update({
+            owner_id: envMasterId,
+            last_check_in: new Date().toISOString()
+        }).eq('key', config.licenseKey);
+
+        log(`[LICENSE] ✅ Licença Válida para ${envMasterId}.`);
+        return { active: true, reason: 'OK' };
+
+    } catch (e) {
+        // FAILSAFE: Se o servidor de licença cair, não trava o cliente
+        log(`[LICENSE FAILSAFE] Erro ao validar (Servidor Master Offline): ${e.message}`);
+        return { active: true, reason: 'FAILSAFE' };
+    }
+}
+
 function getUserInstanceLimit(session, config) {
     // V1.441: Melhora na robustez e tipos
     if (session && session.limits && session.limits.instances !== undefined) {
@@ -282,6 +350,24 @@ function getUserInstanceLimit(session, config) {
     const globalLimit = config?.limits?.vip?.instances || 5;
     return parseInt(globalLimit);
 }
+
+bot.action("admin_master_portal", async (ctx) => {
+    safeAnswer(ctx);
+    const config = await getSystemConfig();
+    if (!isMaster(ctx.chat.id, config)) return ctx.reply("⛔ Acesso Mestre Negado.");
+
+    const text = `🛸 <b>Portal do Mestre (Venux V1.460)</b>\n\n` +
+        `Bem-vindo ao centro de comando global. Aqui você gerencia as licenças que vendeu e pode bloquear acessos remotamente.\n\n` +
+        `🛡️ <b>Segurança:</b> Vínculo de ID e Bloqueio Remoto ativos.`;
+
+    const buttons = [
+        [Markup.button.callback("🔑 Gerar Nova Licença", "admin_master_gen_key")],
+        [Markup.button.callback("📋 Listar Minhas Licenças", "admin_master_list_keys")],
+        [Markup.button.callback("🔙 Voltar", "cmd_admin_panel")]
+    ];
+
+    await safeEdit(ctx, text, Markup.inlineKeyboard(buttons));
+});
 
 function isAdmin(chatId, config) {
     if (!config || !config.adminChatId) return false; // V1.291: Segurança - Não libera pra todos se não configurado
@@ -562,7 +648,7 @@ async function renderAdminPanel(ctx) {
         [Markup.button.callback("💰 Alterar Preço", "admin_price"), Markup.button.callback("👤 Configurar Suporte", "admin_support")],
         [Markup.button.callback("💎 Ajustar Limite", "admin_limit_vip"), Markup.button.callback("📺 Configurar Tutoriais", "admin_tutorial_link")],
         [Markup.button.callback("🔄 Reiniciar Servidor", "admin_server_restart"), Markup.button.callback("🔗 Configurar Link VIP", "admin_vip_link")],
-        [Markup.button.callback("🔙 Voltar", "start")]
+        [Markup.button.callback(`${config.licenseKey ? "🔑 Alterar Licença" : "🔑 Ativar Licença"}`, "cmd_admin_license"), Markup.button.callback("🔙 Voltar", "start")]
     ];
 
     // V1.447: Portal do Mestre com fallback de DB
@@ -632,50 +718,81 @@ bot.action("admin_master_gen_key", async (ctx) => {
     const key = `VENUX-${Math.random().toString(36).substring(2, 8).toUpperCase()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
 
     try {
-        const config = await getSystemConfig();
         if (!config.master_keys) config.master_keys = [];
-
         const newLicense = { key, created_at: new Date().toISOString(), status: 'ACTIVE', owner_id: null };
         config.master_keys.push(newLicense);
 
-        await saveSystemConfig(config);
-        log(`[MASTER] Licença ${key} salva com sucesso no SYSTEM_CONFIG.`);
+        // V1.460: Sincroniza com a Tabela Central (Se você for o ROOT)
+        if (String(ctx.chat.id) === ROOT_MASTER_ID) {
+            await supabase.from('master_licenses').insert({
+                key: key,
+                status: 'ACTIVE',
+                created_at: new Date().toISOString()
+            });
+            log(`[MASTER] Sincronizado com Banco Central.`);
+        }
 
-        ctx.reply(`✅ <b>Nova Licença Gerada e Salva!</b>\n\nChave: <code>${key}</code>\n\nEnvie esta chave para o seu comprador. Ela aparecerá na sua lista de licenças ativas.`, { parse_mode: "HTML" });
+        await saveSystemConfig(config);
+        ctx.reply(`✅ <b>Nova Licença Gerada!</b>\n\nChave: <code>${key}</code>\n\nEnvie esta chave para o seu comprador. Ela agora está vinculada ao seu Painel Mestre.`, { parse_mode: "HTML" });
     } catch (e) {
         log(`[MASTER ERR] Falha ao gerar/salvar chave: ${e.message}`);
         ctx.reply("❌ Erro ao salvar a nova licença no banco de dados.");
     }
 });
 
-bot.action("admin_master_list_keys", async (ctx) => {
+bot.action(/^admin_master_block_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
+    const key = ctx.match[1];
     const config = await getSystemConfig();
     if (!isMaster(ctx.chat.id, config)) return;
 
-    log(`[MASTER] Solicitando lista de licenças: User=${ctx.chat.id}`);
-
     try {
-        const config = await getSystemConfig();
-        const keys = config.master_keys || [];
+        const licenseIndex = config.master_keys.findIndex(k => k.key === key);
+        if (licenseIndex === -1) return ctx.reply("❌ Licença não encontrada.");
 
-        if (keys.length === 0) {
-            log("[MASTER] Lista de licenças vazia.");
-            return ctx.reply("📋 <b>Nenhuma licença gerada ainda.</b>\n\nUse o botão acima para gerar a primeira chave.", { parse_mode: "HTML" });
-        }
+        const currentStatus = config.master_keys[licenseIndex].status;
+        const newStatus = currentStatus === 'ACTIVE' ? 'BLOCKED' : 'ACTIVE';
 
-        let text = `📋 <b>Suas Licenças (${keys.length}):</b>\n\n`;
-        keys.forEach((k, i) => {
-            const data = k.created_at ? new Date(k.created_at).toLocaleDateString('pt-BR') : 'N/A';
-            text += `${i + 1}. <code>${k.key}</code>\n📅 ${data} | Status: <b>${k.status}</b>\n\n`;
-        });
+        config.master_keys[licenseIndex].status = newStatus;
 
-        await ctx.reply(text, { parse_mode: "HTML" });
-        log(`[MASTER] Lista de ${keys.length} chaves enviada.`);
+        // Sincroniza central
+        await supabase.from('master_licenses').update({ status: newStatus }).eq('key', key);
+
+        await saveSystemConfig(config);
+        ctx.reply(`✅ Licença <code>${key}</code> alterada para: <b>${newStatus}</b>`, { parse_mode: "HTML" });
+        return renderMasterKeysList(ctx);
     } catch (e) {
-        log(`[MASTER ERR] Erro ao listar chaves: ${e.message}`);
-        ctx.reply("❌ Erro ao recuperar a lista de licenças.");
+        ctx.reply("❌ Erro ao bloquear licença.");
     }
+});
+
+async function renderMasterKeysList(ctx) {
+    const config = await getSystemConfig();
+    const keys = config.master_keys || [];
+
+    if (keys.length === 0) {
+        return ctx.reply("📋 <b>Nenhuma licença gerada ainda.</b>", { parse_mode: "HTML" });
+    }
+
+    let text = `📋 <b>Suas Licenças (${keys.length}):</b>\n\n`;
+    const buttons = [];
+
+    keys.forEach((k) => {
+        const data = k.created_at ? new Date(k.created_at).toLocaleDateString('pt-BR') : 'N/A';
+        const owner = k.owner_id ? `👤 ${k.owner_id}` : '⏳ Pendente';
+        text += `🔑 <code>${k.key}</code>\n📅 ${data} | ${owner} | Status: <b>${k.status}</b>\n\n`;
+
+        buttons.push([Markup.button.callback(`${k.status === 'ACTIVE' ? '🚫 Bloquear' : '✅ Ativar'} ${k.key.split('-')[1]}`, `admin_master_block_${k.key}`)]);
+    });
+
+    buttons.push([Markup.button.callback("🔙 Voltar", "admin_master_portal")]);
+    await safeEdit(ctx, text, Markup.inlineKeyboard(buttons));
+}
+
+bot.action("admin_master_list_keys", async (ctx) => {
+    safeAnswer(ctx);
+    if (!isMaster(ctx.chat.id, await getSystemConfig())) return;
+    await renderMasterKeysList(ctx);
 });
 
 bot.action("admin_menu", async (ctx) => {
@@ -738,6 +855,16 @@ bot.action("admin_tutorial_link", async (ctx) => {
     session.stage = "ADMIN_WAIT_TUTORIAL";
     await syncSession(ctx, session);
     ctx.reply("📺 *Configurar Tutoriais*\n\nDigite o novo Link do Canal/Vídeos:", { parse_mode: "Markdown" });
+});
+
+bot.action("cmd_admin_license", async (ctx) => {
+    safeAnswer(ctx);
+    const config = await getSystemConfig();
+    if (!isAdmin(ctx.chat.id, config)) return;
+    const session = await getSession(ctx.chat.id);
+    session.stage = "ADMIN_WAIT_LICENSE";
+    await syncSession(ctx, session);
+    ctx.reply(`🔑 <b>Ativação de Licença</b>\n\nAtualmente: <code>${config.licenseKey || "Nenhuma"}</code>\n\nPor favor, digite sua <b>Chave de Licença VENUX</b> para ativar todas as funcionalidades profissionais:`, { parse_mode: "HTML" });
 });
 
 bot.action("admin_vip_link", async (ctx) => {
@@ -3735,6 +3862,28 @@ bot.on("text", async (ctx, next) => {
             return renderAdminPanel(ctx);
         }
 
+        if (session.stage === "ADMIN_WAIT_LICENSE") {
+            const key = ctx.message.text.trim().toUpperCase();
+            if (!key.startsWith("VENUX-")) return ctx.reply("❌ Formato de chave inválido. Deve começar com VENUX-");
+
+            config.licenseKey = key;
+            await saveSystemConfig(config);
+
+            ctx.reply("✅ <b>Chave Registrada!</b>\n\nO sistema tentará validar a licença agora. Aguarde um momento...", { parse_mode: "HTML" });
+
+            // Força um check imediato
+            const check = await verifyLicenseStatus();
+            if (check.active) {
+                ctx.reply("🟢 <b>Licença Ativada com Sucesso!</b>\n\nO seu sistema agora está regularizado e protegido.", { parse_mode: "HTML" });
+            } else {
+                ctx.reply(`🔴 <b>Erro na Validação:</b> ${check.reason}\n\nVerifique se a chave está correta ou se o mestre não a bloqueou.`, { parse_mode: "HTML" });
+            }
+
+            session.stage = "READY";
+            await syncSession(ctx, session);
+            return renderAdminPanel(ctx);
+        }
+
         if (session.stage === "ADMIN_WAIT_PRICE") {
             const price = parseFloat(ctx.message.text.replace(",", "."));
             if (isNaN(price)) return ctx.reply("❌ Valor inválido (ex: 49.90).");
@@ -5310,6 +5459,24 @@ async function startBot(retryCount = 0) {
 
     try {
         const isDbReady = await verifyDatabase();
+
+        // V1.460: Verificação de Licença na Partida
+        const license = await verifyLicenseStatus();
+        if (!license.active) {
+            log(`[LICENSE FATAL] Bloqueio de sistema: ${license.reason}`);
+            // Em vez de crashar, o bot fica em modo restrito
+            bot.use(async (ctx, next) => {
+                const config = await getSystemConfig();
+                // Se for o mestre, deixa passar para ele poder digitar /admin e configurar a licença
+                if (isMaster(ctx.chat.id, config)) return next();
+
+                // Para os outros usuários, bloqueia
+                if (ctx.message || ctx.callbackQuery) {
+                    return ctx.reply("⛔ <b>Sistema Temporariamente Suspenso.</b>\n\nO proprietário deste robô precisa validar a licença anual. Se você é o dono, acesse o Painel de Administração.", { parse_mode: "HTML" });
+                }
+            });
+        }
+
         await registerBotCommands();
         await bot.launch({ dropPendingUpdates: true });
         log(`Bot ${bot.botInfo.username ?? 'Telegram'} iniciado.`);
