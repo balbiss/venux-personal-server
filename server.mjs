@@ -170,7 +170,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.452";
+const SERVER_VERSION = "1.455";
 const ROOT_MASTER_ID = "7924857149"; // V1.450: Trava de Segurança Root (Ninguém mais pode ser Master)
 const SAAS_NAME = process.env.SAAS_NAME || "Connect SaaS";
 const SAAS_LOGO_URL = process.env.SAAS_LOGO_URL || null;
@@ -491,8 +491,7 @@ async function ensureWebhookSet(id) {
 
 // (Moved renderWebhookMenu later in the file for better organization)
 
-// -- Cakto Integration (V1.283) --
-const CAKTO_CHECKOUT_URL = "https://pay.cakto.com.br/gvfo9bb_767864";
+// -- Checkout Management --
 
 
 async function getSyncPayToken() {
@@ -3609,13 +3608,28 @@ bot.action(/^wa_del_web_(.+)$/, async (ctx) => {
 bot.action("gen_pix_mensal", async (ctx) => {
     safeAnswer(ctx);
     const chatId = ctx.chat.id;
-    // V1.283: Cakto Link com parâmetro src para identificação do chat_id no webhook
-    const checkoutLink = `${CAKTO_CHECKOUT_URL}?src=${chatId}`;
-
     const config = await getSystemConfig();
-    ctx.reply(`💎 *Plano Pro Connect*\n\nClique no botão abaixo para assinar o plano e liberar todos os recursos:\n\n💰 *Valor:* R$ ${config.planPrice.toFixed(2).replace('.', ',')}/mês`, {
-        parse_mode: "Markdown",
-        ...Markup.inlineKeyboard([[Markup.button.url("🚀 Assinar Agora", checkoutLink)]])
+
+    // Se não tiver link configurado, avisa
+    if (!config.vipCheckoutUrl || config.vipCheckoutUrl === "OFF") {
+        return ctx.reply("❌ *Pagamento Indisponível*\n\nO sistema de pagamentos está sendo configurado pelo administrador. Tente novamente mais tarde.", { parse_mode: "Markdown" });
+    }
+
+    // Se for um link (http), gera o botão
+    if (config.vipCheckoutUrl.startsWith("http")) {
+        const checkoutLink = config.vipCheckoutUrl.includes("?")
+            ? `${config.vipCheckoutUrl}&src=${chatId}`
+            : `${config.vipCheckoutUrl}?src=${chatId}`;
+
+        return ctx.reply(`💎 *Plano Pro Connect*\n\nClique no botão abaixo para assinar o plano e liberar todos os recursos:\n\n💰 *Valor:* R$ ${config.planPrice.toFixed(2).replace('.', ',')}/mês`, {
+            parse_mode: "Markdown",
+            ...Markup.inlineKeyboard([[Markup.button.url("🚀 Assinar Agora", checkoutLink)]])
+        });
+    }
+
+    // Se for texto (manual/PIX), exibe as instruções
+    ctx.reply(`💎 *Assinatura Plano Pro*\n\n${config.vipCheckoutUrl}\n\n💰 *Valor:* R$ ${config.planPrice.toFixed(2).replace('.', ',')}/mês\n\n_Envie o comprovante para o suporte após o pagamento._`, {
+        parse_mode: "Markdown"
     });
 });
 
@@ -3757,8 +3771,8 @@ bot.on("text", async (ctx, next) => {
 
         if (session.stage === "ADMIN_WAIT_VIP_LINK") {
             const link = ctx.message.text.trim();
-            if (!link || (!link.startsWith("http") && !link.includes("stripe.com") && !link.includes("kiwify"))) {
-                return ctx.reply("❌ Por favor, digite um link válido (começando com http).");
+            if (!link) {
+                return ctx.reply("❌ Por favor, digite seu Link de Checkout ou Chave PIX.");
             }
             config.vipCheckoutUrl = link;
             await saveSystemConfig(config);
