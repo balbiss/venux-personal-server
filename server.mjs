@@ -645,8 +645,8 @@ async function renderAdminPanel(ctx) {
         [Markup.button.callback(`${config.licenseKey ? "🔑 Alterar Licença" : "🔑 Ativar Licença"}`, "cmd_admin_license"), Markup.button.callback("🔙 Voltar", "start")]
     ];
 
-    // V1.447: Portal do Mestre com fallback de DB
-    if (isMaster(ctx.chat.id, config)) {
+    // V1.465: Portal do Mestre EXCLUSIVO para o ROOT_MASTER (Dono Real do Software)
+    if (String(ctx.chat.id) === ROOT_MASTER_ID) {
         buttons.splice(4, 0, [Markup.button.callback("🔑 GESTÃO DE LICENÇAS (MESTRE)", "admin_master_portal")]);
     }
 
@@ -688,8 +688,7 @@ bot.command("admin", async (ctx) => {
 // --- Portal do Mestre (V1.383) ---
 bot.action("admin_master_portal", async (ctx) => {
     safeAnswer(ctx);
-    const config = await getSystemConfig();
-    if (!isMaster(ctx.chat.id, config)) return ctx.reply("⛔ Acesso negado: Você não é o Mestre do Software.");
+    if (String(ctx.chat.id) !== ROOT_MASTER_ID) return ctx.reply("⛔ Acesso Global Negado: Você não é o Mestre do Software.");
 
     const text = `🔑 <b>Portal do Mestre (Licenciamento)</b>\n\n` +
         `Aqui você gerencia as licenças que vendeu para outros parceiros instalarem no Portainer deles.\n\n` +
@@ -705,8 +704,7 @@ bot.action("admin_master_portal", async (ctx) => {
 
 bot.action("admin_master_gen_key", async (ctx) => {
     safeAnswer(ctx);
-    const config = await getSystemConfig();
-    if (!isMaster(ctx.chat.id, config)) return;
+    if (String(ctx.chat.id) !== ROOT_MASTER_ID) return;
 
     log(`[MASTER] Gerando nova licença para o Master: ${ctx.chat.id}`);
     const key = `VENUX-${Math.random().toString(36).substring(2, 8).toUpperCase()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
@@ -737,8 +735,7 @@ bot.action("admin_master_gen_key", async (ctx) => {
 bot.action(/^admin_master_block_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const key = ctx.match[1];
-    const config = await getSystemConfig();
-    if (!isMaster(ctx.chat.id, config)) return;
+    if (String(ctx.chat.id) !== ROOT_MASTER_ID) return;
 
     try {
         const licenseIndex = config.master_keys.findIndex(k => k.key === key);
@@ -795,7 +792,7 @@ async function renderMasterKeysList(ctx) {
 
 bot.action("admin_master_list_keys", async (ctx) => {
     safeAnswer(ctx);
-    if (!isMaster(ctx.chat.id, await getSystemConfig())) return;
+    if (String(ctx.chat.id) !== ROOT_MASTER_ID) return;
     await renderMasterKeysList(ctx);
 });
 
