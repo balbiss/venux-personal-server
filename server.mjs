@@ -3782,6 +3782,42 @@ bot.on("text", async (ctx, next) => {
         return renderFunnelBlocksMenu(ctx, instId);
     }
 
+    // --- MASTER STAGES (CRM do Dono) ---
+    if (session.stage && session.stage.startsWith("MASTER_WAIT_")) {
+        if (String(ctx.chat.id) !== ROOT_MASTER_ID) return;
+
+        if (session.stage === "MASTER_WAIT_CLIENT_ID") {
+            const clientId = ctx.message.text.trim();
+            if (!/^\d+$/.test(clientId)) return ctx.reply("❌ ID inválido. Digite apenas números. (Ex: 8148021144)");
+            session.pendingClientId = clientId;
+            session.stage = "MASTER_WAIT_CLIENT_NAME";
+            await syncSession(ctx, session);
+            return ctx.reply(`✅ ID <code>${clientId}</code> registrado!\n\nAgora digite o <b>nome do comprador</b>:\n<i>(Ex: João da Silva)</i>`, { parse_mode: "HTML" });
+        }
+
+        if (session.stage === "MASTER_WAIT_CLIENT_NAME") {
+            const name = ctx.message.text.trim();
+            const owner_id = session.pendingClientId;
+            const { error } = await supabase.from('master_licenses').upsert({
+                owner_id: owner_id,
+                name: name,
+                status: 'ACTIVE',
+                created_at: new Date().toISOString()
+            }, { onConflict: 'owner_id' });
+
+            if (error) {
+                ctx.reply(`❌ Erro ao salvar: ${error.message}`);
+            } else {
+                ctx.reply(`✅ <b>Comprador Cadastrado!</b>\n\n👤 <b>Nome:</b> ${name}\n🆔 <b>ID:</b> <code>${owner_id}</code>\n📅 <b>Ativado em:</b> ${new Date().toLocaleDateString('pt-BR')}\n🟢 <b>Status:</b> ATIVO\n\nEle já pode subir a stack no Portainer!`, { parse_mode: "HTML" });
+            }
+            delete session.pendingClientId;
+            session.stage = "READY";
+            await syncSession(ctx, session);
+            return renderMasterPortal(ctx);
+        }
+        return; // Sai do handler se for stage MASTER_ não reconhecido
+    }
+
     // --- ADMIN STAGES ---
     if (session.stage && session.stage.startsWith("ADMIN_WAIT_")) {
         const config = await getSystemConfig();
