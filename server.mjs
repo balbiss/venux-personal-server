@@ -750,7 +750,17 @@ bot.action(/^admin_master_block_(.+)$/, async (ctx) => {
 
 async function renderMasterKeysList(ctx) {
     const config = await getSystemConfig();
-    const keys = config.master_keys || [];
+
+    // V1.460: Busca tempo real no banco central para evitar status "Pendente" após ativação
+    let keys = config.master_keys || [];
+    try {
+        const { data: dbKeys } = await supabase.from('master_licenses').select('*').order('created_at', { ascending: false });
+        if (dbKeys && dbKeys.length > 0) {
+            keys = dbKeys;
+        }
+    } catch (e) {
+        log(`[MASTER] Erro ao sincronizar chaves do banco: ${e.message}`);
+    }
 
     if (keys.length === 0) {
         return ctx.reply("📋 <b>Nenhuma licença gerada ainda.</b>", { parse_mode: "HTML" });
@@ -761,7 +771,7 @@ async function renderMasterKeysList(ctx) {
 
     keys.forEach((k) => {
         const data = k.created_at ? new Date(k.created_at).toLocaleDateString('pt-BR') : 'N/A';
-        const owner = k.owner_id ? `👤 ${k.owner_id}` : '⏳ Pendente';
+        const owner = k.owner_id ? `👤 <code>${k.owner_id}</code>` : '⏳ Pendente';
         text += `🔑 <code>${k.key}</code>\n📅 ${data} | ${owner} | Status: <b>${k.status}</b>\n\n`;
 
         buttons.push([Markup.button.callback(`${k.status === 'ACTIVE' ? '🚫 Bloquear' : '✅ Ativar'} ${k.key.split('-')[1]}`, `admin_master_block_${k.key}`)]);
