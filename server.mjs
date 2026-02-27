@@ -170,7 +170,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.460";
+const SERVER_VERSION = "1.465";
 const ROOT_MASTER_ID = "7924857149"; // V1.450: Trava de Segurança Root (Ninguém mais pode ser Master)
 const SAAS_NAME = process.env.SAAS_NAME || "Connect SaaS";
 const SAAS_LOGO_URL = process.env.SAAS_LOGO_URL || null;
@@ -5456,7 +5456,9 @@ async function startBot(retryCount = 0) {
     if (retryCount === 0) {
         console.log(`\n--- DIAGNÓSTICO DE AMBIENTE ---`);
         console.log(`ID Mestre Esperado: ${process.env.MASTER_ADMIN_ID || "Não Configurado"}`);
-        console.log(`Chaves de ID/TOKEN encontradas: ${Object.keys(process.env).filter(k => k.includes("ID") || k.includes("TOKEN"))}`);
+        console.log(`Licença Configurada: ${process.env.LICENSE_KEY ? "SIM (Enviada via Portainer)" : "NÃO (Usando DB Local)"}`);
+        const varsFound = Object.keys(process.env).filter(k => k.includes("ID") || k.includes("TOKEN") || k.includes("LICENSE") || k.includes("URL"));
+        console.log(`Chaves encontradas no ENV: ${varsFound.join(",")}`);
         console.log(`Token Atual (Início): ${process.env.TELEGRAM_TOKEN ? process.env.TELEGRAM_TOKEN.substring(0, 10) + "..." : "FALTANDO"}`);
         console.log(`-------------------------------\n`);
     }
