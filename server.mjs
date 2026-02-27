@@ -280,77 +280,36 @@ async function verifyLicenseStatus() {
     const envMasterId = process.env.MASTER_ADMIN_ID || config.masterChatId;
     const MASTER_API_URL = process.env.MASTER_API_URL || "https://connect.inoovaweb.com.br";
 
-    // Prioridade total para a chave via Variável de Ambiente do Portainer
-    const envLicense = process.env.LICENSE_KEY || config.licenseKey;
-    if (envLicense && envLicense !== config.licenseKey) {
-        config.licenseKey = envLicense;
-        await saveSystemConfig(config);
-    }
-
-    // Gera um ID Único para esta "Máquina/Docker" se não tiver
-    if (!config.machineId) {
-        config.machineId = `INST-${Math.random().toString(36).substring(2, 10).toUpperCase()}`;
-        await saveSystemConfig(config);
-    }
-
     // Se for o ROOT_MASTER (você), ignora a licença
     if (String(envMasterId) === ROOT_MASTER_ID) {
-        log("[LICENSE] Modo Desenvolvedor Root Ativo.");
+        log("[LICENSE] Modo Root Ativo — Sem trava de licença.");
         return { active: true, reason: 'ROOT' };
     }
 
-    if (!config.licenseKey) {
-        console.log("\n\x1b[41m\x1b[37m %s \x1b[0m", " 🚫 ERRO FATAL: LICENÇA NÃO ENCONTRADA! ");
-        console.log("\x1b[31m%s\x1b[0m\n", "Configure a variável LICENSE_KEY na sua stack do Portainer.");
-        return { active: false, reason: 'MISSING_KEY' };
+    // V1.470: Sem MASTER_ADMIN_ID configurado = sem acesso
+    if (!envMasterId) {
+        console.log("\n\x1b[41m\x1b[37m %s \x1b[0m", " 🚫 ERRO: MASTER_ADMIN_ID não configurado! ");
+        console.log("\x1b[31m%s\x1b[0m\n", "Adicione seu ID do Telegram na variável MASTER_ADMIN_ID no Portainer.");
+        return { active: false, reason: 'MISSING_ADMIN_ID' };
     }
 
-    if (MASTER_API_URL) {
-        try {
-            const url = `${MASTER_API_URL.replace(/\/$/, "")}/api/license/verify?key=${config.licenseKey}&owner_id=${envMasterId || ''}&machine_id=${config.machineId}`;
-            const resp = await fetch(url, { timeout: 5000 });
-            const data = await resp.json();
-
-            // Lógica de Expulsão (Kick)
-            if (data.active && data.machine_id && data.machine_id !== config.machineId) {
-                console.log("\n\x1b[41m\x1b[37m %s \x1b[0m", " ⛔ LICENÇA EM USO EM OUTRO SERVIDOR! ");
-                console.log("\x1b[31m%s\x1b[0m\n", `Esta licença foi ativada na instância ${data.machine_id}.`);
-                return { active: false, reason: 'KICKED_BY_NEW_INSTANCE' };
-            }
-
-            if (!data.active) {
-                console.log("\n\x1b[41m\x1b[37m %s \x1b[0m", ` ❌ LICENÇA INVÁLIDA: ${data.reason} `);
-            }
-
-            return data;
-        } catch (e) {
-            log(`[LICENSE FAILSAFE] Master offline. Usando modo Failsafe.`);
-            return { active: true, reason: 'FAILSAFE_REMOTE' };
-        }
-    }
-
+    // Valida pelo ID do comprador na API central
     try {
-        const { data: license, error } = await supabase.from('master_licenses').select('*').eq('key', config.licenseKey).maybeSingle();
-        if (error || !license) return { active: false, reason: 'INVALID_KEY' };
+        const url = `${MASTER_API_URL.replace(/\/$/, "")}/api/license/verify?owner_id=${envMasterId}`;
+        const resp = await fetch(url, { timeout: 6000 });
+        const data = await resp.json();
 
-        if (license.status === 'BLOCKED') return { active: false, reason: 'REMOTE_BLOCK' };
-
-        // Bind machine_id
-        if (license.machine_id && license.machine_id !== config.machineId) {
-            // Se o IP/Machine mudou, o Mestre (você) decide se permite. 
-            // Para ser automático "ligou o novo, desliga o velho":
-            await supabase.from('master_licenses').update({ machine_id: config.machineId }).eq('key', config.licenseKey);
+        if (!data.active) {
+            console.log("\n\x1b[41m\x1b[37m %s \x1b[0m", ` ⛔ ACESSO NEGADO: ${data.reason} `);
+            console.log("\x1b[31m%s\x1b[0m\n", `ID ${envMasterId} não está autorizado. Contate o administrador.`);
+        } else {
+            log(`[LICENSE] ✅ Autorizado (${data.reason}) — ID: ${envMasterId}${data.name ? ' | ' + data.name : ''}`);
         }
-
-        await supabase.from('master_licenses').update({
-            owner_id: envMasterId || license.owner_id,
-            machine_id: config.machineId,
-            last_check_in: new Date().toISOString()
-        }).eq('key', config.licenseKey);
-
-        return { active: true, reason: 'OK', machine_id: config.machineId };
+        return data;
     } catch (e) {
-        return { active: true, reason: 'FAILSAFE' };
+        // Failsafe: se o servidor mestre estiver offline, não bloqueia
+        log(`[LICENSE FAILSAFE] Servidor master offline. Modo Failsafe ativo.`);
+        return { active: true, reason: 'FAILSAFE_REMOTE' };
     }
 }
 
@@ -685,115 +644,98 @@ bot.command("admin", async (ctx) => {
     renderAdminPanel(ctx);
 });
 
-// --- Portal do Mestre (V1.383) ---
-bot.action("admin_master_portal", async (ctx) => {
-    safeAnswer(ctx);
-    if (String(ctx.chat.id) !== ROOT_MASTER_ID) return ctx.reply("⛔ Acesso Global Negado: Você não é o Mestre do Software.");
+// --- Portal do Mestre V1.470 — CRM de Compradores por ID ---
 
-    const text = `🔑 <b>Portal do Mestre (Licenciamento)</b>\n\n` +
-        `Aqui você gerencia as licenças que vendeu para outros parceiros instalarem no Portainer deles.\n\n` +
-        `⚠️ <i>Esta área é exclusiva para o Dono do Software.</i>`;
+async function renderMasterPortal(ctx) {
+    const { data: clients } = await supabase.from('master_licenses').select('*').order('created_at', { ascending: false });
+    const total = clients?.length || 0;
+    const ativos = clients?.filter(c => c.status === 'ACTIVE').length || 0;
+    const bloqueados = clients?.filter(c => c.status === 'BLOCKED').length || 0;
+
+    const text = `🛸 <b>Portal do Mestre — CRM de Licenças</b>\n\n` +
+        `👥 <b>Total:</b> ${total} | ✅ <b>Ativos:</b> ${ativos} | 🚫 <b>Bloqueados:</b> ${bloqueados}\n\n` +
+        `<i>Gerencie seus compradores pelo ID do Telegram deles.</i>`;
 
     const buttons = [
-        [Markup.button.callback("🆕 Gerar Nova Licença", "admin_master_gen_key")],
-        [Markup.button.callback("📋 Listar Ativas", "admin_master_list_keys")],
+        [Markup.button.callback("➕ Adicionar Comprador", "master_add_client")],
+        [Markup.button.callback("📋 Ver Todos os Compradores", "master_list_clients")],
         [Markup.button.callback("🔙 Voltar ao Admin", "admin_menu")]
     ];
     await safeEdit(ctx, text, Markup.inlineKeyboard(buttons));
+}
+
+bot.action("admin_master_portal", async (ctx) => {
+    safeAnswer(ctx);
+    if (String(ctx.chat.id) !== ROOT_MASTER_ID) return ctx.reply("⛔ Acesso Negado.");
+    await renderMasterPortal(ctx);
 });
 
-bot.action("admin_master_gen_key", async (ctx) => {
+// Adicionar comprador
+bot.action("master_add_client", async (ctx) => {
     safeAnswer(ctx);
     if (String(ctx.chat.id) !== ROOT_MASTER_ID) return;
-
-    log(`[MASTER] Gerando nova licença para o Master: ${ctx.chat.id}`);
-    const key = `VENUX-${Math.random().toString(36).substring(2, 8).toUpperCase()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-
-    try {
-        if (!config.master_keys) config.master_keys = [];
-        const newLicense = { key, created_at: new Date().toISOString(), status: 'ACTIVE', owner_id: null };
-        config.master_keys.push(newLicense);
-
-        // V1.460: Sincroniza com a Tabela Central (Se você for o ROOT)
-        if (String(ctx.chat.id) === ROOT_MASTER_ID) {
-            await supabase.from('master_licenses').insert({
-                key: key,
-                status: 'ACTIVE',
-                created_at: new Date().toISOString()
-            });
-            log(`[MASTER] Sincronizado com Banco Central.`);
-        }
-
-        await saveSystemConfig(config);
-        ctx.reply(`✅ <b>Nova Licença Gerada!</b>\n\nChave: <code>${key}</code>\n\nEnvie esta chave para o seu comprador. Ela agora está vinculada ao seu Painel Mestre.`, { parse_mode: "HTML" });
-    } catch (e) {
-        log(`[MASTER ERR] Falha ao gerar/salvar chave: ${e.message}`);
-        ctx.reply("❌ Erro ao salvar a nova licença no banco de dados.");
-    }
+    const session = await getSession(ctx.chat.id);
+    session.stage = "MASTER_WAIT_CLIENT_ID";
+    await syncSession(ctx, session);
+    await safeEdit(ctx, `➕ <b>Adicionar Comprador</b>\n\nDigite o <b>ID do Telegram</b> do comprador:\n<i>(Ex: 8148021144)</i>`, Markup.inlineKeyboard([[Markup.button.callback("❌ Cancelar", "admin_master_portal")]]));
 });
 
-bot.action(/^admin_master_block_(.+)$/, async (ctx) => {
-    safeAnswer(ctx);
-    const key = ctx.match[1];
-    if (String(ctx.chat.id) !== ROOT_MASTER_ID) return;
+// Listar compradores
+async function renderMasterClientList(ctx) {
+    const { data: clients } = await supabase.from('master_licenses').select('*').order('created_at', { ascending: false });
 
-    try {
-        const licenseIndex = config.master_keys.findIndex(k => k.key === key);
-        if (licenseIndex === -1) return ctx.reply("❌ Licença não encontrada.");
-
-        const currentStatus = config.master_keys[licenseIndex].status;
-        const newStatus = currentStatus === 'ACTIVE' ? 'BLOCKED' : 'ACTIVE';
-
-        config.master_keys[licenseIndex].status = newStatus;
-
-        // Sincroniza central
-        await supabase.from('master_licenses').update({ status: newStatus }).eq('key', key);
-
-        await saveSystemConfig(config);
-        ctx.reply(`✅ Licença <code>${key}</code> alterada para: <b>${newStatus}</b>`, { parse_mode: "HTML" });
-        return renderMasterKeysList(ctx);
-    } catch (e) {
-        ctx.reply("❌ Erro ao bloquear licença.");
-    }
-});
-
-async function renderMasterKeysList(ctx) {
-    const config = await getSystemConfig();
-
-    // V1.460: Busca tempo real no banco central para evitar status "Pendente" após ativação
-    let keys = config.master_keys || [];
-    try {
-        const { data: dbKeys } = await supabase.from('master_licenses').select('*').order('created_at', { ascending: false });
-        if (dbKeys && dbKeys.length > 0) {
-            keys = dbKeys;
-        }
-    } catch (e) {
-        log(`[MASTER] Erro ao sincronizar chaves do banco: ${e.message}`);
+    if (!clients || clients.length === 0) {
+        return safeEdit(ctx, "📋 <b>Nenhum comprador cadastrado ainda.</b>", Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar", "admin_master_portal")]]));
     }
 
-    if (keys.length === 0) {
-        return ctx.reply("📋 <b>Nenhuma licença gerada ainda.</b>", { parse_mode: "HTML" });
-    }
-
-    let text = `📋 <b>Suas Licenças (${keys.length}):</b>\n\n`;
+    let text = `📋 <b>Compradores (${clients.length}):</b>\n\n`;
     const buttons = [];
 
-    keys.forEach((k) => {
-        const data = k.created_at ? new Date(k.created_at).toLocaleDateString('pt-BR') : 'N/A';
-        const owner = k.owner_id ? `👤 <code>${k.owner_id}</code>` : '⏳ Pendente';
-        text += `🔑 <code>${k.key}</code>\n📅 ${data} | ${owner} | Status: <b>${k.status}</b>\n\n`;
-
-        buttons.push([Markup.button.callback(`${k.status === 'ACTIVE' ? '🚫 Bloquear' : '✅ Ativar'} ${k.key.split('-')[1]}`, `admin_master_block_${k.key}`)]);
+    clients.forEach((c, i) => {
+        const data = c.created_at ? new Date(c.created_at).toLocaleDateString('pt-BR') : 'N/A';
+        const statusIcon = c.status === 'ACTIVE' ? '✅' : '🚫';
+        const nome = c.name ? ` — ${c.name}` : '';
+        const checkin = c.last_check_in ? `🕐 ${new Date(c.last_check_in).toLocaleString('pt-BR')}` : '📴 Nunca conectou';
+        text += `${statusIcon} <b>${i + 1}.</b> <code>${c.owner_id}</code>${nome}\n📅 Ativado: ${data} | ${checkin}\n\n`;
+        buttons.push([
+            Markup.button.callback(`${c.status === 'ACTIVE' ? '🚫 Bloquear' : '✅ Liberar'} ${c.owner_id}`, `master_toggle_${c.owner_id}`),
+            Markup.button.callback(`🗑️ Deletar`, `master_delete_${c.owner_id}`)
+        ]);
     });
 
     buttons.push([Markup.button.callback("🔙 Voltar", "admin_master_portal")]);
     await safeEdit(ctx, text, Markup.inlineKeyboard(buttons));
 }
 
-bot.action("admin_master_list_keys", async (ctx) => {
+bot.action("master_list_clients", async (ctx) => {
     safeAnswer(ctx);
     if (String(ctx.chat.id) !== ROOT_MASTER_ID) return;
-    await renderMasterKeysList(ctx);
+    await renderMasterClientList(ctx);
+});
+
+// Bloquear/Liberar comprador por ID
+bot.action(/^master_toggle_(.+)$/, async (ctx) => {
+    safeAnswer(ctx);
+    if (String(ctx.chat.id) !== ROOT_MASTER_ID) return;
+    const owner_id = ctx.match[1];
+
+    const { data: client } = await supabase.from('master_licenses').select('*').eq('owner_id', owner_id).maybeSingle();
+    if (!client) return ctx.reply("❌ Comprador não encontrado.");
+
+    const newStatus = client.status === 'ACTIVE' ? 'BLOCKED' : 'ACTIVE';
+    await supabase.from('master_licenses').update({ status: newStatus }).eq('owner_id', owner_id);
+    log(`[MASTER CRM] ${owner_id} alterado para ${newStatus}`);
+    await renderMasterClientList(ctx);
+});
+
+// Deletar comprador por ID
+bot.action(/^master_delete_(.+)$/, async (ctx) => {
+    safeAnswer(ctx);
+    if (String(ctx.chat.id) !== ROOT_MASTER_ID) return;
+    const owner_id = ctx.match[1];
+    await supabase.from('master_licenses').delete().eq('owner_id', owner_id);
+    log(`[MASTER CRM] Comprador ${owner_id} DELETADO.`);
+    await renderMasterClientList(ctx);
 });
 
 bot.action("admin_menu", async (ctx) => {
@@ -3863,6 +3805,41 @@ bot.on("text", async (ctx, next) => {
             return renderAdminPanel(ctx);
         }
 
+        // V1.470: CRM — Cadastro de comprador por ID e Nome
+        if (session.stage === "MASTER_WAIT_CLIENT_ID") {
+            if (String(ctx.chat.id) !== ROOT_MASTER_ID) return;
+            const clientId = ctx.message.text.trim();
+            if (!/^\d+$/.test(clientId)) return ctx.reply("❌ ID inválido. Digite apenas números. (Ex: 8148021144)");
+            session.pendingClientId = clientId;
+            session.stage = "MASTER_WAIT_CLIENT_NAME";
+            await syncSession(ctx, session);
+            return ctx.reply(`✅ ID <code>${clientId}</code> registrado!\n\nAgora digite o <b>nome do comprador</b>:\n<i>(Ex: João da Silva)</i>`, { parse_mode: "HTML" });
+        }
+
+        if (session.stage === "MASTER_WAIT_CLIENT_NAME") {
+            if (String(ctx.chat.id) !== ROOT_MASTER_ID) return;
+            const name = ctx.message.text.trim();
+            const owner_id = session.pendingClientId;
+
+            const { error } = await supabase.from('master_licenses').upsert({
+                owner_id: owner_id,
+                name: name,
+                status: 'ACTIVE',
+                created_at: new Date().toISOString()
+            }, { onConflict: 'owner_id' });
+
+            if (error) {
+                ctx.reply(`❌ Erro ao salvar: ${error.message}`);
+            } else {
+                ctx.reply(`✅ <b>Comprador Cadastrado!</b>\n\n👤 <b>Nome:</b> ${name}\n🆔 <b>ID:</b> <code>${owner_id}</code>\n📅 <b>Ativado em:</b> ${new Date().toLocaleDateString('pt-BR')}\n🟢 <b>Status:</b> ATIVO\n\nEle já pode subir a stack no Portainer!`, { parse_mode: "HTML" });
+            }
+
+            delete session.pendingClientId;
+            session.stage = "READY";
+            await syncSession(ctx, session);
+            return renderMasterPortal(ctx);
+        }
+
         if (session.stage === "ADMIN_WAIT_LICENSE") {
             const key = ctx.message.text.trim().toUpperCase();
             if (!key.startsWith("VENUX-")) return ctx.reply("❌ Formato de chave inválido. Deve começar com VENUX-");
@@ -5590,36 +5567,34 @@ app.get("/api/dashboard/stats", async (req, res) => {
     }
 });
 
-// V1.460: Endpoint de Validação de Licença (Centralizador)
+// V1.470: Endpoint de Validação por ID do Comprador (Sem chave aleatória)
 app.get("/api/license/verify", async (req, res) => {
-    const { key, owner_id, machine_id } = req.query;
-    if (!key) return res.status(400).json({ active: false, reason: 'MISSING_KEY' });
+    const { owner_id } = req.query;
+    if (!owner_id) return res.status(400).json({ active: false, reason: 'MISSING_ID' });
+
+    // ROOT_MASTER sempre passa
+    if (owner_id === ROOT_MASTER_ID) return res.json({ active: true, reason: 'ROOT' });
 
     try {
-        const { data: license, error } = await supabase
+        const { data: client, error } = await supabase
             .from('master_licenses')
             .select('*')
-            .eq('key', key)
+            .eq('owner_id', owner_id)
             .maybeSingle();
 
-        if (error || !license) return res.json({ active: false, reason: 'INVALID_KEY' });
-        if (license.status === 'BLOCKED') return res.json({ active: false, reason: 'REMOTE_BLOCK' });
+        if (error) throw error;
+        if (!client) return res.json({ active: false, reason: 'NOT_AUTHORIZED' });
+        if (client.status === 'BLOCKED') return res.json({ active: false, reason: 'BLOCKED' });
 
-        // V1.465: Trava de Instância Unica (Kick)
-        // Se já existe uma máquina registrada e é diferente da atual, 
-        // a nova "expulsa" a antiga atualizando o registro.
-        if (machine_id && license.machine_id && license.machine_id !== machine_id) {
-            log(`[KICK] Licença ${key} mudou de ${license.machine_id} para ${machine_id}.`);
-        }
-
+        // Telemetria: atualiza último check-in
         await supabase.from('master_licenses').update({
-            owner_id: owner_id || license.owner_id,
-            machine_id: machine_id || license.machine_id,
             last_check_in: new Date().toISOString()
-        }).eq('key', key);
+        }).eq('owner_id', owner_id);
 
-        return res.json({ active: true, reason: 'OK', machine_id: machine_id || license.machine_id });
+        return res.json({ active: true, reason: 'OK', name: client.name || '' });
     } catch (e) {
+        // Failsafe: se o banco sair do ar, não bloqueia comprador ativo
+        log(`[LICENSE API ERR] ${e.message}`);
         return res.json({ active: true, reason: 'SERVER_FAILSAFE' });
     }
 });
