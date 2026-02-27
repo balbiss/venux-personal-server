@@ -1143,17 +1143,14 @@ bot.action("cmd_shortcuts_disparos", async (ctx) => {
     const isVip = await checkVip(ctx.chat.id);
     const config = await getSystemConfig();
     if (!isVip && !isAdmin(ctx.chat.id, config)) {
-        return ctx.editMessageText("❌ *Acesso Restrito*\n\nO envio de mensagens em massa é do Plano Connect Pro.", {
-            parse_mode: "Markdown",
-            ...Markup.inlineKeyboard([[Markup.button.callback("💎 Assinar Agora", "cmd_planos_menu")], [Markup.button.callback("🔙 Voltar", "start")]])
-        });
+        return await safeEdit(ctx, "❌ *Acesso Restrito*\n\nO envio de mensagens em massa é do Plano Connect Pro.", Markup.inlineKeyboard([[Markup.button.callback("💎 Assinar Agora", "cmd_planos_menu")], [Markup.button.callback("🔙 Voltar", "start")]]));
     }
     const session = await getSession(ctx.chat.id);
     if (session.whatsapp.instances.length === 0) return ctx.reply("❌ Você não tem nenhuma instância conectada.");
 
     const buttons = session.whatsapp.instances.map(inst => [Markup.button.callback(`📢 Campanhas: ${inst.name}`, `wa_mass_init_${inst.id}`)]);
     buttons.push([Markup.button.callback("🔙 Voltar", "start")]);
-    ctx.editMessageText("📢 *Escolha uma instância para gerenciar Disparos:*", { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
+    await safeEdit(ctx, "📢 *Escolha uma instância para gerenciar Disparos:*", Markup.inlineKeyboard(buttons));
 });
 
 bot.command("stats", async (ctx) => {
@@ -1206,17 +1203,14 @@ bot.action("cmd_shortcuts_rodizio", async (ctx) => {
     const isVip = await checkVip(ctx.chat.id);
     const config = await getSystemConfig();
     if (!isVip && !isAdmin(ctx.chat.id, config)) {
-        return ctx.editMessageText("❌ *Acesso Restrito*\n\nO Rodízio de Leads Inteligente é exclusivo do Plano Connect Pro.", {
-            parse_mode: "Markdown",
-            ...Markup.inlineKeyboard([[Markup.button.callback("💎 Ver Planos", "cmd_planos_menu")], [Markup.button.callback("🔙 Voltar", "start")]])
-        });
+        return await safeEdit(ctx, "❌ *Acesso Restrito*\n\nO Rodízio de Leads Inteligente é exclusivo do Plano Connect Pro.", Markup.inlineKeyboard([[Markup.button.callback("💎 Ver Planos", "cmd_planos_menu")], [Markup.button.callback("🔙 Voltar", "start")]]));
     }
     const session = await getSession(ctx.chat.id);
     if (session.whatsapp.instances.length === 0) return ctx.reply("❌ Você não tem nenhuma instância conectada.");
 
     const buttons = session.whatsapp.instances.map(inst => [Markup.button.callback(`👥 Rodízio: ${inst.name}`, `wa_brokers_menu_${inst.id}`)]);
     buttons.push([Markup.button.callback("🔙 Voltar", "start")]);
-    ctx.editMessageText("👥 *Escolha uma instância para gerenciar Rodízio de Corretores:*", { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
+    await safeEdit(ctx, "👥 *Escolha uma instância para gerenciar Rodízio de Corretores:*", Markup.inlineKeyboard(buttons));
 });
 
 bot.action("cmd_shortcuts_followups", async (ctx) => {
@@ -1224,17 +1218,14 @@ bot.action("cmd_shortcuts_followups", async (ctx) => {
     const isVip = await checkVip(ctx.chat.id);
     const config = await getSystemConfig();
     if (!isVip && !isAdmin(ctx.chat.id, config)) {
-        return ctx.editMessageText("❌ *Acesso Restrito*\n\nO Follow-up e Agenda Inteligente são recursos do Plano Connect Pro.", {
-            parse_mode: "Markdown",
-            ...Markup.inlineKeyboard([[Markup.button.callback("🚀 Assinar Agora", "cmd_planos_menu")], [Markup.button.callback("🔙 Voltar", "start")]])
-        });
+        return await safeEdit(ctx, "❌ *Acesso Restrito*\n\nO Follow-up e Agenda Inteligente são recursos do Plano Connect Pro.", Markup.inlineKeyboard([[Markup.button.callback("🚀 Assinar Agora", "cmd_planos_menu")], [Markup.button.callback("🔙 Voltar", "start")]]));
     }
     const session = await getSession(ctx.chat.id);
     if (session.whatsapp.instances.length === 0) return ctx.reply("❌ Você não tem nenhuma instância conectada.");
 
     const buttons = session.whatsapp.instances.map(inst => [Markup.button.callback(`🔔 Follow-ups: ${inst.name}`, `wa_ai_followup_menu_${inst.id}`)]);
     buttons.push([Markup.button.callback("🔙 Voltar", "start")]);
-    ctx.editMessageText("🔔 *Escolha uma instância para gerenciar Agendamentos:*", { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
+    await safeEdit(ctx, "🔔 *Escolha uma instância para gerenciar Agendamentos:*", Markup.inlineKeyboard(buttons));
 });
 
 bot.action("start", async (ctx) => {
