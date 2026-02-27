@@ -5442,19 +5442,20 @@ async function startBot(retryCount = 0) {
 
         // V1.460: Verificação de Licença na Partida
         const license = await verifyLicenseStatus();
+        // V1.470: Bloqueio REAL na partida
         if (!license.active) {
-            log(`[LICENSE FATAL] Bloqueio de sistema: ${license.reason}`);
-            // Em vez de crashar, o bot fica em modo restrito
-            bot.use(async (ctx, next) => {
-                const config = await getSystemConfig();
-                // Se for o mestre, deixa passar para ele poder digitar /admin e configurar a licença
-                if (isMaster(ctx.chat.id, config)) return next();
-
-                // Para os outros usuários, bloqueia
-                if (ctx.message || ctx.callbackQuery) {
-                    return ctx.reply("⛔ <b>Sistema Temporariamente Suspenso.</b>\n\nO proprietário deste robô precisa validar a licença anual. Se você é o dono, acesse o Painel de Administração.", { parse_mode: "HTML" });
-                }
-            });
+            const FAILSAFE_REASONS = ['FAILSAFE_REMOTE', 'FAILSAFE', 'SERVER_FAILSAFE'];
+            if (FAILSAFE_REASONS.includes(license.reason)) {
+                // Servidor master offline: continua com aviso
+                log(`[LICENSE] ⚠️ Modo Failsafe ativo. Bot continua sem confirmação do master.`);
+            } else {
+                // Falha real: ID não autorizado, bloqueado, sem ID configurado
+                console.log("\n\x1b[41m\x1b[37m %s \x1b[0m", " 🚫 BOOT BLOQUEADO — LICENÇA INVÁLIDA ");
+                console.log("\x1b[31m%s\x1b[0m", `Motivo: ${license.reason}`);
+                console.log("\x1b[31m%s\x1b[0m\n", "Contate o administrador para regularizar sua licença.");
+                log(`[LICENSE FATAL] Boot cancelado: ${license.reason}`);
+                process.exit(1); // Para o container — Docker vai mostrar o erro no log
+            }
         }
 
         await registerBotCommands();
