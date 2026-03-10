@@ -184,7 +184,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.498"; // V1.498: Correção AI Tools Google Calendar - ID Profissional opcional
+const SERVER_VERSION = "1.499"; // V1.499: Correção da versão da API do Google Calendar (v3)
 const ROOT_MASTER_ID = "7924857149"; // V1.450: Trava de Segurança Root (Ninguém mais pode ser Master)
 const SAAS_NAME = process.env.SAAS_NAME || "Connect SaaS";
 const SAAS_LOGO_URL = process.env.SAAS_LOGO_URL || null;
@@ -728,7 +728,7 @@ async function getGoogleCalendarClient(ownerId) {
     );
 
     client.setCredentials({ refresh_token: data.google_refresh_token });
-    return google.calendar({ version: "v4", auth: client });
+    return google.calendar({ version: "v3", auth: client });
 }
 
 async function listAvailableSlots(ownerId, profissionalId, date) {
