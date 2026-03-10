@@ -184,7 +184,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.497"; // V1.497: Correção de variável session indefinida no bot IA
+const SERVER_VERSION = "1.498"; // V1.498: Correção AI Tools Google Calendar - ID Profissional opcional
 const ROOT_MASTER_ID = "7924857149"; // V1.450: Trava de Segurança Root (Ninguém mais pode ser Master)
 const SAAS_NAME = process.env.SAAS_NAME || "Connect SaaS";
 const SAAS_LOGO_URL = process.env.SAAS_LOGO_URL || null;
@@ -736,11 +736,23 @@ async function listAvailableSlots(ownerId, profissionalId, date) {
         const calendar = await getGoogleCalendarClient(ownerId);
 
         // Buscar o calendar_id do médico
-        const { data: prof } = await supabase
-            .from('profissionais')
-            .select('google_calendar_id, individual_working_hours')
-            .eq('id', profissionalId)
-            .single();
+        let prof;
+        if (profissionalId) {
+            const res = await supabase
+                .from('profissionais')
+                .select('google_calendar_id, individual_working_hours')
+                .eq('id', profissionalId)
+                .single();
+            prof = res.data;
+        } else {
+            const res = await supabase
+                .from('profissionais')
+                .select('google_calendar_id, individual_working_hours')
+                .eq('owner_id', ownerId)
+                .limit(1)
+                .single();
+            prof = res.data;
+        }
 
         if (!prof) throw new Error("Profissional não encontrado.");
 
@@ -777,11 +789,23 @@ async function listAvailableSlots(ownerId, profissionalId, date) {
 async function createGoogleEvent(ownerId, profissionalId, eventDetails) {
     try {
         const calendar = await getGoogleCalendarClient(ownerId);
-        const { data: prof } = await supabase
-            .from('profissionais')
-            .select('google_calendar_id')
-            .eq('id', profissionalId)
-            .single();
+        let prof;
+        if (profissionalId) {
+            const res = await supabase
+                .from('profissionais')
+                .select('google_calendar_id')
+                .eq('id', profissionalId)
+                .single();
+            prof = res.data;
+        } else {
+            const res = await supabase
+                .from('profissionais')
+                .select('google_calendar_id')
+                .eq('owner_id', ownerId)
+                .limit(1)
+                .single();
+            prof = res.data;
+        }
 
         const calendarId = prof?.google_calendar_id || 'primary';
 
