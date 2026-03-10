@@ -184,7 +184,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.491"; // V1.491: Frontend Router Basename Fix (404)
+const SERVER_VERSION = "1.492"; // V1.492: Google Auth DB Fix (Missing Columns)
 const ROOT_MASTER_ID = "7924857149"; // V1.450: Trava de Segurança Root (Ninguém mais pode ser Master)
 const SAAS_NAME = process.env.SAAS_NAME || "Connect SaaS";
 const SAAS_LOGO_URL = process.env.SAAS_LOGO_URL || null;
@@ -3695,7 +3695,9 @@ async function handleAiSdr({ text, audioBase64, imageBase64, history = [], syste
                             chat_id: chatId,
                             data_agendamento: `${args.date}T${args.time}:00`,
                             status: "CONFIRMADO",
-                            google_event_id: result.id
+                            google_event_id: result.id,
+                            patient_name: args.client_name,
+                            patient_phone: args.client_phone || chatId
                         });
 
                         functionResponse = JSON.stringify({ success: true, event_id: result.id });
