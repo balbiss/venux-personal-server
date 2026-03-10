@@ -40,6 +40,9 @@ services:
       - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
       - MASTER_ADMIN_ID=${MASTER_ADMIN_ID}
       - ADMIN_CHAT_ID=${ADMIN_CHAT_ID}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI}
       - TZ=America/Sao_Paulo
     volumes:
       - venux_data:/app/bot_sessions
