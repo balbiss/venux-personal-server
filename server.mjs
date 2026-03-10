@@ -11,6 +11,7 @@ import OpenAI from "openai";
 import cors from "cors";
 import { createClient } from "@supabase/supabase-js";
 import { PDFParse } from "pdf-parse";
+import { google } from "googleapis";
 
 dotenv.config();
 
@@ -55,6 +56,19 @@ const WEBHOOK_URL = process.env.WEBHOOK_URL || `http://localhost:${PORT}/webhook
 const supabase = createClient(
     process.env.SUPABASE_URL,
     process.env.SUPABASE_SERVICE_ROLE_KEY
+);
+
+// -- Google Calendar Configuration --
+const googleConfig = {
+    clientId: process.env.GOOGLE_CLIENT_ID,
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+    redirectUri: process.env.GOOGLE_REDIRECT_URI
+};
+
+const oauth2Client = new google.auth.OAuth2(
+    googleConfig.clientId,
+    googleConfig.clientSecret,
+    googleConfig.redirectUri
 );
 
 // -- Persistence Layer (Supabase) --
@@ -643,6 +657,152 @@ bot.command("admin", async (ctx) => {
     if (!isAdmin(chatId, config)) return ctx.reply("⛔ Acesso restrito ao Administrador.");
     renderAdminPanel(ctx);
 });
+
+// --- GOOGLE CALENDAR OAUTH ROUTES ---
+
+// Rota para iniciar o login do Google
+app.get("/auth/google", (req, res) => {
+    const ownerId = req.query.owner_id;
+    if (!ownerId) return res.status(400).send("Owner ID é obrigatório.");
+
+    const url = oauth2Client.generateAuthUrl({
+        access_type: "offline",
+        scope: ["https://www.googleapis.com/auth/calendar"],
+        prompt: "consent",
+        state: ownerId // Passamos o ID do usuário para recuperar no callback
+    });
+    res.redirect(url);
+});
+
+// Rota de callback do Google
+app.get("/auth/google/callback", async (req, res) => {
+    const { code, state: ownerId } = req.query;
+
+    if (!code) return res.status(400).send("Código não fornecido.");
+
+    try {
+        const { tokens } = await oauth2Client.getToken(code);
+
+        // Se não vier refresh_token (já tinha autorizado antes), precisamos tratar.
+        // O prompt: 'consent' garante que venha sempre no primeiro login ou se forçado.
+        const refreshToken = tokens.refresh_token;
+
+        if (refreshToken) {
+            // Salvar no Supabase
+            const { error } = await supabase
+                .from('clinic_agendas')
+                .upsert({
+                    owner_id: ownerId,
+                    google_refresh_token: refreshToken,
+                    google_email: "pendente", // Podemos buscar depois via API se necessário
+                    updated_at: new Date().toISOString()
+                }, { onConflict: 'owner_id' });
+
+            if (error) throw error;
+        }
+
+        res.send("<h1>✅ Conectado com sucesso!</h1><p>Você já pode fechar esta aba e voltar para o sistema.</p>");
+    } catch (e) {
+        log(`[GOOGLE AUTH ERR] ${e.message}`);
+        res.status(500).send("Erro ao processar autenticação do Google.");
+    }
+});
+
+// --- GOOGLE CALENDAR CORE FUNCTIONS ---
+
+async function getGoogleCalendarClient(ownerId) {
+    const { data, error } = await supabase
+        .from('clinic_agendas')
+        .select('google_refresh_token')
+        .eq('owner_id', ownerId)
+        .single();
+
+    if (error || !data?.google_refresh_token) {
+        throw new Error("Google Calendar não conectado para esta clínica.");
+    }
+
+    const client = new google.auth.OAuth2(
+        googleConfig.clientId,
+        googleConfig.clientSecret,
+        googleConfig.redirectUri
+    );
+
+    client.setCredentials({ refresh_token: data.google_refresh_token });
+    return google.calendar({ version: "v4", auth: client });
+}
+
+async function listAvailableSlots(ownerId, profissionalId, date) {
+    try {
+        const calendar = await getGoogleCalendarClient(ownerId);
+
+        // Buscar o calendar_id do médico
+        const { data: prof } = await supabase
+            .from('profissionais')
+            .select('google_calendar_id, individual_working_hours')
+            .eq('id', profissionalId)
+            .single();
+
+        if (!prof) throw new Error("Profissional não encontrado.");
+
+        const calendarId = prof.google_calendar_id || 'primary';
+
+        // Definir o range do dia
+        const startOfDay = new Date(date);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(date);
+        endOfDay.setHours(23, 59, 59, 999);
+
+        const response = await calendar.events.list({
+            calendarId: calendarId,
+            timeMin: startOfDay.toISOString(),
+            timeMax: endOfDay.toISOString(),
+            singleEvents: true,
+            orderBy: 'startTime',
+        });
+
+        const events = response.data.items;
+        // Aqui entraria a lógica de "Slots" comparando working_hours com events
+        // Por enquanto retornamos os eventos para a IA decidir
+        return events.map(e => ({
+            summary: e.summary,
+            start: e.start.dateTime || e.start.date,
+            end: e.end.dateTime || e.end.date
+        }));
+    } catch (e) {
+        log(`[CALENDAR LIST ERR] ${e.message}`);
+        return { error: e.message };
+    }
+}
+
+async function createGoogleEvent(ownerId, profissionalId, eventDetails) {
+    try {
+        const calendar = await getGoogleCalendarClient(ownerId);
+        const { data: prof } = await supabase
+            .from('profissionais')
+            .select('google_calendar_id')
+            .eq('id', profissionalId)
+            .single();
+
+        const calendarId = prof?.google_calendar_id || 'primary';
+
+        const event = {
+            summary: eventDetails.summary,
+            description: eventDetails.description,
+            start: { dateTime: eventDetails.startTime, timeZone: 'America/Sao_Paulo' },
+            end: { dateTime: eventDetails.endTime, timeZone: 'America/Sao_Paulo' },
+        };
+
+        const res = await calendar.events.insert({
+            calendarId: calendarId,
+            resource: event,
+        });
+
+        return res.data;
+    } catch (e) {
+        log(`[CALENDAR INSERT ERR] ${e.message}`);
+        return { error: e.message };
+    }
+}
 
 // --- Portal do Mestre V1.470 — CRM de Compradores por ID ---
 
@@ -5652,8 +5812,8 @@ app.get("/dashboard/*", (req, res) => {
 
 // Catch-all para Landing Page (SPA)
 app.get("*", (req, res) => {
-    // Evita interceptar rotas de API, Webhook, Uploads, MiniApp e QR Client
-    const skipPaths = ["/api", "/webhook", "/uploads", "/miniapp", "/qr-client", "/health"];
+    // Evita interceptar rotas de API, Webhook, Uploads, MiniApp e QR Client e AUTH
+    const skipPaths = ["/api", "/webhook", "/uploads", "/miniapp", "/qr-client", "/health", "/auth"];
     if (skipPaths.some(path => req.path.startsWith(path))) {
         return res.status(404).json({ error: "Not Found" });
     }
