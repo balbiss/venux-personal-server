@@ -18,7 +18,13 @@ export default function Agenda() {
     const [clinicData, setClinicData] = useState<any>(null);
     const [profissionais, setProfissionais] = useState<any[]>([]);
     const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-    const [newProf, setNewProf] = useState({ nome: "", especialidade: "", google_calendar_id: "" });
+    const [newProf, setNewProf] = useState({
+        nome: "",
+        especialidade: "",
+        google_calendar_id: "",
+        duracao_consulta: "30",
+        individual_working_hours: ""
+    });
 
     const fetchData = async () => {
         if (!tid) return;
@@ -66,14 +72,22 @@ export default function Agenda() {
                     owner_id: tid,
                     nome: newProf.nome,
                     especialidade: newProf.especialidade,
-                    google_calendar_id: newProf.google_calendar_id || "primary"
+                    google_calendar_id: newProf.google_calendar_id || "primary",
+                    duracao_consulta: parseInt(newProf.duracao_consulta) || 30,
+                    individual_working_hours: newProf.individual_working_hours
                 }]);
 
             if (error) throw error;
 
             toast.success("Profissional adicionado com sucesso!");
             setIsAddDialogOpen(false);
-            setNewProf({ nome: "", especialidade: "", google_calendar_id: "" });
+            setNewProf({
+                nome: "",
+                especialidade: "",
+                google_calendar_id: "",
+                duracao_consulta: "30",
+                individual_working_hours: ""
+            });
             fetchData();
         } catch (err: any) {
             toast.error("Erro ao adicionar: " + err.message);
@@ -109,20 +123,25 @@ export default function Agenda() {
 
     return (
         <div className="space-y-6">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                <h1 className="text-2xl font-display font-bold text-foreground">Agenda e Médicos</h1>
-                <p className="text-muted-foreground mt-1">Gerencie a conexão com Google Calendar e seus profissionais.</p>
-            </motion.div>
+            <div className="flex items-center justify-between">
+                <div>
+                    <h1 className="text-2xl font-bold tracking-tight">Agenda / Médicos</h1>
+                    <p className="text-muted-foreground">Gerencie os profissionais e a conexão com o Google Agenda.</p>
+                </div>
+            </div>
 
             <Tabs defaultValue="profissionais" className="w-full">
-                <TabsList className="grid w-[400px] grid-cols-2">
-                    <TabsTrigger value="profissionais">Profissionais</TabsTrigger>
-                    <TabsTrigger value="configuracao">Configuração Google</TabsTrigger>
+                <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="profissionais" className="gap-2">
+                        <UserPlus className="h-4 w-4" /> Profissionais
+                    </TabsTrigger>
+                    <TabsTrigger value="configuracao" className="gap-2">
+                        <Calendar className="h-4 w-4" /> Configuração Google
+                    </TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="profissionais" className="space-y-4 mt-4">
-                    <div className="flex justify-between items-center">
-                        <h2 className="text-lg font-semibold">Lista de Médicos/Vendedores</h2>
+                    <div className="flex justify-end">
                         <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
                             <DialogTrigger asChild>
                                 <Button className="gap-2">
@@ -137,33 +156,56 @@ export default function Agenda() {
                                     </DialogDescription>
                                 </DialogHeader>
                                 <div className="space-y-4 py-4">
-                                    <div className="space-y-2">
-                                        <Label htmlFor="nome">Nome Completo</Label>
-                                        <Input
-                                            id="nome"
-                                            placeholder="Ex: Dr. João Silva"
-                                            value={newProf.nome}
-                                            onChange={(e) => setNewProf({ ...newProf, nome: e.target.value })}
-                                        />
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-2">
+                                            <Label htmlFor="nome">Nome Completo</Label>
+                                            <Input
+                                                id="nome"
+                                                placeholder="Ex: Dr. João Silva"
+                                                value={newProf.nome}
+                                                onChange={(e) => setNewProf({ ...newProf, nome: e.target.value })}
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label htmlFor="especialidade">Especialidade / Cargo</Label>
+                                            <Input
+                                                id="especialidade"
+                                                placeholder="Ex: Cardiologista"
+                                                value={newProf.especialidade}
+                                                onChange={(e) => setNewProf({ ...newProf, especialidade: e.target.value })}
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-2">
+                                            <Label htmlFor="duracao">Duração (minutos)</Label>
+                                            <Input
+                                                id="duracao"
+                                                type="number"
+                                                placeholder="30"
+                                                value={newProf.duracao_consulta || "30"}
+                                                onChange={(e) => setNewProf({ ...newProf, duracao_consulta: e.target.value })}
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label htmlFor="calendar_id">ID Agenda (Opcional)</Label>
+                                            <Input
+                                                id="calendar_id"
+                                                placeholder="primary"
+                                                value={newProf.google_calendar_id}
+                                                onChange={(e) => setNewProf({ ...newProf, google_calendar_id: e.target.value })}
+                                            />
+                                        </div>
                                     </div>
                                     <div className="space-y-2">
-                                        <Label htmlFor="especialidade">Especialidade / Cargo</Label>
+                                        <Label htmlFor="horario">Horário de Atendimento (Para a IA)</Label>
                                         <Input
-                                            id="especialidade"
-                                            placeholder="Ex: Cardiologista"
-                                            value={newProf.especialidade}
-                                            onChange={(e) => setNewProf({ ...newProf, especialidade: e.target.value })}
+                                            id="horario"
+                                            placeholder="Ex: Seg a Sex, 08:00 às 18:00"
+                                            value={newProf.individual_working_hours}
+                                            onChange={(e) => setNewProf({ ...newProf, individual_working_hours: e.target.value })}
                                         />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label htmlFor="calendar_id">ID da Agenda Google (Opcional)</Label>
-                                        <Input
-                                            id="calendar_id"
-                                            placeholder="Identificador da agenda secundária ou 'primary'"
-                                            value={newProf.google_calendar_id}
-                                            onChange={(e) => setNewProf({ ...newProf, google_calendar_id: e.target.value })}
-                                        />
-                                        <p className="text-[10px] text-muted-foreground">Deixe em branco para usar a agenda principal da conta conectada.</p>
+                                        <p className="text-[10px] text-muted-foreground">Isso orienta a IA sobre quando oferecer horários.</p>
                                     </div>
                                 </div>
                                 <DialogFooter>
@@ -252,7 +294,7 @@ export default function Agenda() {
 
                             <div className="space-y-4">
                                 <Button
-                                    onClick={() => window.open(googleAuthUrl, '_blank')}
+                                    onClick={() => window.open(`https://accounts.google.com/o/oauth2/v2/auth?client_id=${process.env.GOOGLE_CLIENT_ID}&redirect_uri=${encodeURIComponent(process.env.GOOGLE_REDIRECT_URI)}&response_type=code&scope=https://www.googleapis.com/auth/calendar&access_type=offline&prompt=consent&state=${tid}`, '_blank')}
                                     variant={clinicData?.google_refresh_token ? "secondary" : "default"}
                                     className="gap-2"
                                 >

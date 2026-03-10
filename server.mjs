@@ -184,7 +184,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.493"; // V1.493: AI Real-Time Awareness (Date/Time Fix)
+const SERVER_VERSION = "1.494"; // V1.494: Dynamic Professional Data & Optional Booking
 const ROOT_MASTER_ID = "7924857149"; // V1.450: Trava de Segurança Root (Ninguém mais pode ser Master)
 const SAAS_NAME = process.env.SAAS_NAME || "Connect SaaS";
 const SAAS_LOGO_URL = process.env.SAAS_LOGO_URL || null;
@@ -3107,20 +3107,30 @@ bot.action(/^wa_toggle_presence_(.+)$/, async (ctx) => {
     }
 });
 
-function generateSystemPrompt(inst) {
+function generateSystemPrompt(inst, professionalsList = "") {
     const userPrompt = inst.ai_prompt || "Você é um assistente virtual prestativo.";
     const humanTopics = inst.ai_human_topics || "Não há temas específicos; tente ajudar o cliente o máximo possível.";
     const knowledgeBase = inst.ai_knowledge_base ? `\n# BASE DE CONHECIMENTO EXTRA (USE PARA RESPONDER)\n${inst.ai_knowledge_base}\n` : "";
+
+    let bookingInstructions = "";
+    if (inst.ai_booking_enabled) {
+        bookingInstructions = `
+# AGENDAMENTO DE CONSULTAS (VOCÊ TEM ACESSO)
+- Você pode listar horários disponíveis e realizar agendamentos diretamente no Google Calendar.
+- Pergunte sempre se o cliente deseja agendar um horário após ele demonstrar interesse.
+- Seja proativo em oferecer datas próximas se o cliente estiver livre.
+- **IMPORTANTE:** Use os IDs exatos dos profissionais abaixo para realizar as operações.
+
+# PROFISSIONAIS DISPONÍVEIS
+${professionalsList || "Nenhum profissional cadastrado para agendamento manual. Use apenas os slots disponíveis."}
+`;
+    }
 
     return `
 # OBJETIVO E PERSONA
 ${userPrompt}
 ${knowledgeBase}
-
-# AGENDAMENTO DE CONSULTAS (VOCÊ TEM ACESSO)
-- Você pode listar horários disponíveis e realizar agendamentos diretamente no Google Calendar.
-- Pergunte sempre se o cliente deseja agendar um horário após ele demonstrar interesse.
-- Seja proativo em oferecer datas próximas se o cliente estiver livre.
+${bookingInstructions}
 
 # MODO HUMANIZADO (HIGH-CONVERSION)
 - Use gírias leves se o tom for amigável.
@@ -3613,47 +3623,53 @@ async function handleAiSdr({ text, audioBase64, imageBase64, history = [], syste
 
         // 3. Gerar resposta humanizada com Function Calling (Google Calendar)
         const ownerId = instanceId.split("_")[1] || ROOT_MASTER_ID;
-        const tools = [
-            {
-                type: "function",
-                function: {
-                    name: "list_available_slots",
-                    description: "Lista horários disponíveis para agendamento em uma data específica.",
-                    parameters: {
-                        type: "object",
-                        properties: {
-                            date: { type: "string", description: "Data no formato YYYY-MM-DD" },
-                            profissional_id: { type: "string", description: "ID opcional do profissional específico." }
-                        },
-                        required: ["date"]
+        const inst = session.whatsapp.instances.find(i => i.id === instanceId);
+        const bookingEnabled = inst && inst.ai_booking_enabled === true;
+
+        let tools = undefined;
+        if (bookingEnabled) {
+            tools = [
+                {
+                    type: "function",
+                    function: {
+                        name: "list_available_slots",
+                        description: "Lista horários disponíveis para agendamento em uma data específica.",
+                        parameters: {
+                            type: "object",
+                            properties: {
+                                date: { type: "string", description: "Data no formato YYYY-MM-DD" },
+                                profissional_id: { type: "string", description: "ID opcional do profissional específico." }
+                            },
+                            required: ["date"]
+                        }
+                    }
+                },
+                {
+                    type: "function",
+                    function: {
+                        name: "book_appointment",
+                        description: "Agenda uma consulta/atendimento para um cliente.",
+                        parameters: {
+                            type: "object",
+                            properties: {
+                                date: { type: "string", description: "Data no formato YYYY-MM-DD" },
+                                time: { type: "string", description: "Horário no formato HH:MM" },
+                                profissional_id: { type: "string", description: "ID do profissional (médico/vendedor)." },
+                                client_name: { type: "string", description: "Nome do cliente." },
+                                client_phone: { type: "string", description: "Telefone do cliente." }
+                            },
+                            required: ["date", "time", "profissional_id", "client_name"]
+                        }
                     }
                 }
-            },
-            {
-                type: "function",
-                function: {
-                    name: "book_appointment",
-                    description: "Agenda uma consulta/atendimento para um cliente.",
-                    parameters: {
-                        type: "object",
-                        properties: {
-                            date: { type: "string", description: "Data no formato YYYY-MM-DD" },
-                            time: { type: "string", description: "Horário no formato HH:MM" },
-                            profissional_id: { type: "string", description: "ID do profissional (médico/vendedor)." },
-                            client_name: { type: "string", description: "Nome do cliente." },
-                            client_phone: { type: "string", description: "Telefone do cliente." }
-                        },
-                        required: ["date", "time", "profissional_id", "client_name"]
-                    }
-                }
-            }
-        ];
+            ];
+        }
 
         let response = await openai.chat.completions.create({
             model: DEFAULT_MODEL,
             messages: messages,
             tools: tools,
-            tool_choice: "auto",
+            tool_choice: bookingEnabled ? "auto" : undefined,
             temperature: 0.8,
             max_tokens: 500
         });
@@ -5389,7 +5405,24 @@ app.post("/webhook", async (req, res) => {
                                     log(`[WEBHOOK AI] Prompt: ${q.text.substring(0, 50)}... | Inst: ${tokenId}`);
 
                                     // Gerar Prompt Dinâmico baseado no Nicho (V1.1.14-PRO)
-                                    const systemPrompt = generateSystemPrompt(inst);
+                                    // V1.494: Injetar lista de profissionais se o agendamento estiver ativo
+                                    let professionalsList = "";
+                                    const ownerId = tokenId.split("_")[1] || ROOT_MASTER_ID;
+
+                                    if (inst.ai_booking_enabled) {
+                                        const { data: profs } = await supabase
+                                            .from("profissionais")
+                                            .select("id, nome, especialidade, individual_working_hours")
+                                            .eq("owner_id", ownerId);
+
+                                        if (profs && profs.length > 0) {
+                                            professionalsList = profs.map(p =>
+                                                `- ID: ${p.id} | Nome: ${p.nome} | Especialidade: ${p.especialidade || 'N/A'} | Horário: ${p.individual_working_hours || 'Não informado'}`
+                                            ).join("\n");
+                                        }
+                                    }
+
+                                    const systemPrompt = generateSystemPrompt(inst, professionalsList);
 
                                     const aiResponse = await handleAiSdr({
                                         text: q.text,

@@ -20,6 +20,7 @@ export default function IaSdr() {
 
   // Estados locais para edição
   const [aiEnabled, setAiEnabled] = useState(false);
+  const [aiBookingEnabled, setAiBookingEnabled] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
   const [aiHumanTopics, setAiHumanTopics] = useState("");
 
@@ -41,6 +42,7 @@ export default function IaSdr() {
           if (insts.length > 0) {
             setSelectedInstId(insts[0].id);
             setAiEnabled(insts[0].ai_enabled || false);
+            setAiBookingEnabled(insts[0].ai_booking_enabled || false);
             setAiPrompt(insts[0].ai_prompt || "");
             setAiHumanTopics(insts[0].ai_human_topics || "");
           }
@@ -61,6 +63,7 @@ export default function IaSdr() {
       const inst = sessionData.whatsapp?.instances?.find((i: any) => i.id === selectedInstId);
       if (inst) {
         setAiEnabled(inst.ai_enabled || false);
+        setAiBookingEnabled(inst.ai_booking_enabled || false);
         setAiPrompt(inst.ai_prompt || "");
         setAiHumanTopics(inst.ai_human_topics || "");
       }
@@ -77,6 +80,7 @@ export default function IaSdr() {
           return {
             ...inst,
             ai_enabled: aiEnabled,
+            ai_booking_enabled: aiBookingEnabled,
             ai_prompt: aiPrompt,
             ai_human_topics: aiHumanTopics
           };
@@ -171,11 +175,24 @@ export default function IaSdr() {
               <Switch checked={aiEnabled} onCheckedChange={setAiEnabled} />
             </div>
 
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                  <Sparkles className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <Label className="text-foreground font-semibold">Agendamento de Consultas (Beta)</Label>
+                  <p className="text-xs text-muted-foreground">Ative para permitir que a IA agende no Google Calendar</p>
+                </div>
+              </div>
+              <Switch checked={aiBookingEnabled} onCheckedChange={setAiBookingEnabled} />
+            </div>
+
             <div className="h-px bg-border" />
 
             <div className="space-y-3">
               <Label className="text-foreground font-medium flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-primary" />
+                <Brain className="h-4 w-4 text-accent" />
                 System Prompt
               </Label>
               <Textarea
