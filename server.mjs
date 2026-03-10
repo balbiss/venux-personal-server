@@ -184,7 +184,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.499"; // V1.499: Correção da versão da API do Google Calendar (v3)
+const SERVER_VERSION = "1.500"; // V1.500: Correção lógica de horários livres vs ocupados (Calendar AI)
 const ROOT_MASTER_ID = "7924857149"; // V1.450: Trava de Segurança Root (Ninguém mais pode ser Master)
 const SAAS_NAME = process.env.SAAS_NAME || "Connect SaaS";
 const SAAS_LOGO_URL = process.env.SAAS_LOGO_URL || null;
@@ -772,14 +772,16 @@ async function listAvailableSlots(ownerId, profissionalId, date) {
             orderBy: 'startTime',
         });
 
-        const events = response.data.items;
-        // Aqui entraria a lógica de "Slots" comparando working_hours com events
-        // Por enquanto retornamos os eventos para a IA decidir
-        return events.map(e => ({
-            summary: e.summary,
+        const events = response.data.items || [];
+        const ocupados = events.map(e => ({
             start: e.start.dateTime || e.start.date,
             end: e.end.dateTime || e.end.date
         }));
+
+        return {
+            instrucao_para_ia: "A lista 'horarios_ocupados' abaixo contém os horários que já estão PREENCHIDOS. Você pode agendar em qualquer horário comercial (ex: 08:00 às 18:00) que NÃO cruze com estes horários. Se a lista estiver vazia, o dia inteiro está livre para agendar.",
+            horarios_ocupados: ocupados
+        };
     } catch (e) {
         log(`[CALENDAR LIST ERR] ${e.message}`);
         return { error: e.message };
