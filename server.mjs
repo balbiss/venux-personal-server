@@ -184,7 +184,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.495"; // V1.495: Adicionado toggle de agendamento no bot Telegram
+const SERVER_VERSION = "1.496"; // V1.496: Correção de conflito de regex no menu de agendamento
 const ROOT_MASTER_ID = "7924857149"; // V1.450: Trava de Segurança Root (Ninguém mais pode ser Master)
 const SAAS_NAME = process.env.SAAS_NAME || "Connect SaaS";
 const SAAS_LOGO_URL = process.env.SAAS_LOGO_URL || null;
@@ -3210,18 +3210,6 @@ bot.action(/^wa_ai_menu_(.+)$/, async (ctx) => {
 });
 
 
-bot.action(/^wa_toggle_ai_(.+)$/, async (ctx) => {
-    safeAnswer(ctx);
-    const id = ctx.match[1];
-    const { inst, session } = await checkOwnership(ctx, id);
-    if (!inst) return;
-    if (inst) {
-        inst.ai_enabled = !inst.ai_enabled;
-        await syncSession(ctx, session);
-        await renderAiMenu(ctx, id);
-    }
-});
-
 bot.action(/^wa_toggle_ai_booking_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
@@ -3229,6 +3217,18 @@ bot.action(/^wa_toggle_ai_booking_(.+)$/, async (ctx) => {
     if (!inst) return;
     if (inst) {
         inst.ai_booking_enabled = !inst.ai_booking_enabled;
+        await syncSession(ctx, session);
+        await renderAiMenu(ctx, id);
+    }
+});
+
+bot.action(/^wa_toggle_ai_(.+)$/, async (ctx) => {
+    safeAnswer(ctx);
+    const id = ctx.match[1];
+    const { inst, session } = await checkOwnership(ctx, id);
+    if (!inst) return;
+    if (inst) {
+        inst.ai_enabled = !inst.ai_enabled;
         await syncSession(ctx, session);
         await renderAiMenu(ctx, id);
     }
