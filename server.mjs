@@ -58,18 +58,6 @@ const supabase = createClient(
     process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-// -- Google Calendar Configuration --
-const googleConfig = {
-    clientId: process.env.GOOGLE_CLIENT_ID,
-    clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-    redirectUri: process.env.GOOGLE_REDIRECT_URI
-};
-
-const oauth2Client = new google.auth.OAuth2(
-    googleConfig.clientId,
-    googleConfig.clientSecret,
-    googleConfig.redirectUri
-);
 
 // -- Persistence Layer (Supabase) --
 const activePolls = new Map();
@@ -658,200 +646,8 @@ bot.command("admin", async (ctx) => {
     renderAdminPanel(ctx);
 });
 
-// --- GOOGLE CALENDAR OAUTH ROUTES ---
 
-// Rota para iniciar o login do Google
-app.get("/auth/google", (req, res) => {
-    const ownerId = req.query.owner_id;
-    if (!ownerId) return res.status(400).send("Owner ID é obrigatório.");
 
-    const url = oauth2Client.generateAuthUrl({
-        access_type: "offline",
-        scope: ["https://www.googleapis.com/auth/calendar"],
-        prompt: "consent",
-        state: ownerId // Passamos o ID do usuário para recuperar no callback
-    });
-    res.redirect(url);
-});
-
-// Rota de callback do Google
-app.get("/auth/google/callback", async (req, res) => {
-    const { code, state: ownerId } = req.query;
-
-    if (!code) return res.status(400).send("Código não fornecido.");
-
-    try {
-        const { tokens } = await oauth2Client.getToken(code);
-
-        // Se não vier refresh_token (já tinha autorizado antes), precisamos tratar.
-        // O prompt: 'consent' garante que venha sempre no primeiro login ou se forçado.
-        const refreshToken = tokens.refresh_token;
-
-        if (refreshToken) {
-            // Salvar no Supabase
-            const { error } = await supabase
-                .from('clinic_agendas')
-                .upsert({
-                    owner_id: ownerId,
-                    google_refresh_token: refreshToken,
-                    google_email: "pendente", // Podemos buscar depois via API se necessário
-                    updated_at: new Date().toISOString()
-                }, { onConflict: 'owner_id' });
-
-            if (error) throw error;
-        }
-
-        res.send("<h1>✅ Conectado com sucesso!</h1><p>Você já pode fechar esta aba e voltar para o sistema.</p>");
-    } catch (e) {
-        log(`[GOOGLE AUTH ERR] ${e.message}`);
-        res.status(500).send("Erro ao processar autenticação do Google.");
-    }
-});
-
-// --- GOOGLE CALENDAR CORE FUNCTIONS ---
-
-async function getGoogleCalendarClient(ownerId) {
-    const { data, error } = await supabase
-        .from('clinic_agendas')
-        .select('google_refresh_token')
-        .eq('owner_id', ownerId)
-        .single();
-
-    if (error || !data?.google_refresh_token) {
-        throw new Error("Google Calendar não conectado para esta clínica.");
-    }
-
-    const client = new google.auth.OAuth2(
-        googleConfig.clientId,
-        googleConfig.clientSecret,
-        googleConfig.redirectUri
-    );
-
-    client.setCredentials({ refresh_token: data.google_refresh_token });
-    return google.calendar({ version: "v3", auth: client });
-}
-
-async function listAvailableSlots(ownerId, profissionalId, date) {
-    try {
-        const calendar = await getGoogleCalendarClient(ownerId);
-
-        // Buscar o calendar_id do médico
-        let prof;
-        if (profissionalId) {
-            const res = await supabase
-                .from('profissionais')
-                .select('google_calendar_id, individual_working_hours, duracao_consulta')
-                .eq('id', profissionalId)
-                .single();
-            prof = res.data;
-        } else {
-            const res = await supabase
-                .from('profissionais')
-                .select('google_calendar_id, individual_working_hours, duracao_consulta')
-                .eq('owner_id', ownerId)
-                .limit(1)
-                .single();
-            prof = res.data;
-        }
-
-        if (!prof) throw new Error("Profissional não encontrado.");
-
-        const calendarId = prof.google_calendar_id || 'primary';
-        const duracao = prof.duracao_consulta || 30;
-        const workingHours = prof.individual_working_hours || "08:00 às 18:00 (Segunda a Sexta)";
-
-        // Definir o range do dia
-        const startOfDay = new Date(date);
-        startOfDay.setHours(0, 0, 0, 0);
-        const endOfDay = new Date(date);
-        endOfDay.setHours(23, 59, 59, 999);
-
-        const response = await calendar.events.list({
-            calendarId: calendarId,
-            timeMin: startOfDay.toISOString(),
-            timeMax: endOfDay.toISOString(),
-            singleEvents: true,
-            orderBy: 'startTime',
-        });
-
-        const events = response.data.items || [];
-        const ocupados = events.map(e => ({
-            start: e.start.dateTime || e.start.date,
-            end: e.end.dateTime || e.end.date
-        }));
-
-        return {
-            instrucao_para_ia: `A lista 'horarios_ocupados' abaixo contém os horários que já estão PREENCHIDOS. Você deve agendar consultas considerando as seguintes regras do profissional: 1) Horário de funcionamento: ${workingHours}. 2) Duração de cada consulta: ${duracao} minutos. Você pode agendar em qualquer horário dentro do expediente que NÃO cruze com os horários ocupados. Se a lista estiver vazia, todo o expediente está livre.`,
-            horarios_ocupados: ocupados
-        };
-    } catch (e) {
-        log(`[CALENDAR LIST ERR] ${e.message}`);
-        return { error: e.message };
-    }
-}
-
-async function createGoogleEvent(ownerId, profissionalId, eventDetails) {
-    try {
-        const calendar = await getGoogleCalendarClient(ownerId);
-        let prof;
-        if (profissionalId) {
-            const res = await supabase
-                .from('profissionais')
-                .select('google_calendar_id, duracao_consulta')
-                .eq('id', profissionalId)
-                .single();
-            prof = res.data;
-        } else {
-            const res = await supabase
-                .from('profissionais')
-                .select('google_calendar_id, duracao_consulta')
-                .eq('owner_id', ownerId)
-                .limit(1)
-                .single();
-            prof = res.data;
-        }
-
-        const calendarId = prof?.google_calendar_id || 'primary';
-        const duracao = prof?.duracao_consulta || 30;
-
-        let startObj = eventDetails.start;
-        let endObj = eventDetails.end;
-
-        if (eventDetails.date && eventDetails.time) {
-            const startStr = `${eventDetails.date}T${eventDetails.time}:00`;
-            startObj = { dateTime: startStr, timeZone: 'America/Sao_Paulo' };
-
-            const [hours, minutes] = eventDetails.time.split(':').map(Number);
-            const endDate = new Date(eventDetails.date + 'T00:00:00');
-            endDate.setHours(hours, minutes + duracao, 0);
-
-            const endHours = String(endDate.getHours()).padStart(2, '0');
-            const endMinutes = String(endDate.getMinutes()).padStart(2, '0');
-            const endStr = `${eventDetails.date}T${endHours}:${endMinutes}:00`;
-            endObj = { dateTime: endStr, timeZone: 'America/Sao_Paulo' };
-        } else if (!startObj || !endObj) {
-            startObj = { dateTime: eventDetails.startTime, timeZone: 'America/Sao_Paulo' };
-            endObj = { dateTime: eventDetails.endTime, timeZone: 'America/Sao_Paulo' };
-        }
-
-        const event = {
-            summary: eventDetails.summary,
-            description: eventDetails.description,
-            start: startObj,
-            end: endObj,
-        };
-
-        const res = await calendar.events.insert({
-            calendarId: calendarId,
-            resource: event,
-        });
-
-        return res.data;
-    } catch (e) {
-        log(`[CALENDAR INSERT ERR] ${e.message}`);
-        return { error: e.message };
-    }
-}
 
 // --- Portal do Mestre V1.470 — CRM de Compradores por ID ---
 
@@ -1310,7 +1106,6 @@ bot.start(async (ctx) => {
     const buttons = [
         [Markup.button.callback("🚀 Minhas Instâncias", "cmd_instancias_menu")],
         [Markup.button.callback("📢 Disparo em Massa", "cmd_shortcuts_disparos")],
-        [Markup.button.callback("🔔 Follow-ups / Agenda", "cmd_shortcuts_followups")],
         [Markup.button.callback("💎 Seu Plano (Ativo)", "cmd_planos_menu"), Markup.button.callback("👤 Suporte / Ajuda", "cmd_suporte")]
     ];
 
@@ -1491,107 +1286,6 @@ bot.action("cmd_shortcuts_rodizio", async (ctx) => {
     await safeEdit(ctx, "👥 *Escolha uma instância para gerenciar Rodízio de Corretores:*", Markup.inlineKeyboard(buttons));
 });
 
-bot.action("cmd_shortcuts_followups", async (ctx) => {
-    safeAnswer(ctx);
-    const isVip = await checkVip(ctx.chat.id);
-    const config = await getSystemConfig();
-    if (!isVip && !isAdmin(ctx.chat.id, config)) {
-        return await safeEdit(ctx, "❌ *Acesso Restrito*\n\nO Follow-up e Agenda Inteligente são recursos do Plano Connect Pro.", Markup.inlineKeyboard([[Markup.button.callback("🚀 Assinar Agora", "cmd_planos_menu")], [Markup.button.callback("🔙 Voltar", "start")]]));
-    }
-
-    const text = `📅 *Módulo de Agenda e Agendamentos*\n\n` +
-        `Aqui você pode gerenciar a conexão com o Google Calendar e visualizar seus compromissos.\n\n` +
-        `👇 *Escolha uma das opções:*`;
-
-    const buttons = [
-        [Markup.button.callback("👥 Gerenciar Profissionais", "bot_list_profs")],
-        [Markup.button.callback("🗓️ Ver Agendamentos de Hoje", "bot_view_appointments")],
-        [Markup.button.url("💻 Abrir Painel Web", `${process.env.WEBHOOK_URL?.replace("/webhook", "")}/dashboard/agenda?tid=${ctx.chat.id}`)],
-        [Markup.button.callback("🔙 Voltar", "start")]
-    ];
-    await safeEdit(ctx, text, Markup.inlineKeyboard(buttons));
-});
-
-bot.command("agenda", async (ctx) => {
-    const isVip = await checkVip(ctx.chat.id);
-    const config = await getSystemConfig();
-    if (!isVip && !isAdmin(ctx.chat.id, config)) {
-        return ctx.reply("❌ *Acesso Restrito*\n\nO Módulo de Agenda está disponível apenas para assinantes do Plano Pro.", { parse_mode: "Markdown" });
-    }
-
-    const text = `📅 *Sua Agenda Inteligente*\n\n` +
-        `Gerencie seus profissionais e horários direto pelo bot ou pelo painel web.\n\n` +
-        `👇 *O que deseja fazer?*`;
-
-    const buttons = [
-        [Markup.button.callback("👥 Seus Profissionais", "bot_list_profs")],
-        [Markup.button.callback("🗓️ Agendamentos do Dia", "bot_view_appointments")],
-        [Markup.button.callback("🔙 Voltar", "start")]
-    ];
-    await ctx.reply(text, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
-});
-
-bot.action("bot_list_profs", async (ctx) => {
-    safeAnswer(ctx);
-    try {
-        const { data: profs } = await supabase
-            .from("profissionais")
-            .select("*")
-            .eq("owner_id", String(ctx.chat.id));
-
-        if (!profs || profs.length === 0) {
-            return safeEdit(ctx, "⚠️ *Nenhum profissional cadastrado.* \n\nCadastre seus médicos ou vendedores pelo Painel Web para que a IA possa agendar horários para eles.",
-                Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar", "cmd_shortcuts_followups")]])
-            );
-        }
-
-        let text = `👥 *Seus Profissionais Cadastrados:*\n\n`;
-        profs.forEach(p => {
-            text += `• *${p.nome}* (${p.especialidade || 'Geral'})\n`;
-        });
-
-        await safeEdit(ctx, text, Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar", "cmd_shortcuts_followups")]]));
-    } catch (e) {
-        log(`[BOT ERR] Falha ao listar profs: ${e.message}`);
-        ctx.reply("❌ Erro ao buscar lista de profissionais.");
-    }
-});
-
-bot.action("bot_view_appointments", async (ctx) => {
-    safeAnswer(ctx);
-    try {
-        const hoje = new Date();
-        hoje.setHours(0, 0, 0, 0);
-        const amanha = new Date(hoje);
-        amanha.setDate(amanha.getDate() + 1);
-
-        const { data: agendamentos } = await supabase
-            .from("agendamentos")
-            .select("*, profissionais(nome)")
-            .eq("owner_id", String(ctx.chat.id))
-            .gte("data_agendamento", hoje.toISOString())
-            .lt("data_agendamento", amanha.toISOString())
-            .order("data_agendamento", { ascending: true });
-
-        if (!agendamentos || agendamentos.length === 0) {
-            return safeEdit(ctx, "🗓️ *Sem agendamentos para hoje.* \n\nAssim que os clientes marcarem via WhatsApp, eles aparecerão aqui.",
-                Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar", "cmd_shortcuts_followups")]])
-            );
-        }
-
-        let text = `🗓️ *Agendamentos para Hoje:*\n\n`;
-        agendamentos.forEach(a => {
-            const data = new Date(a.data_agendamento);
-            const hora = data.toLocaleTimeString("pt-BR", { hour: '2-digit', minute: '2-digit' });
-            text += `• *${hora}* - ${a.profissionais?.nome || 'Profissional'}\n  └ Lead: \`${a.chat_id.split('@')[0]}\`\n\n`;
-        });
-
-        await safeEdit(ctx, text, Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar", "cmd_shortcuts_followups")]]));
-    } catch (e) {
-        log(`[BOT ERR] Falha ao listar agendamentos: ${e.message}`);
-        ctx.reply("❌ Erro ao buscar agendamentos.");
-    }
-});
 
 bot.action("start", async (ctx) => {
     safeAnswer(ctx);
@@ -1606,7 +1300,6 @@ bot.action("start", async (ctx) => {
     const buttons = [
         [Markup.button.callback("🚀 Minhas Instâncias", "cmd_instancias_menu")],
         [Markup.button.callback("📢 Disparo em Massa", "cmd_shortcuts_disparos"), Markup.button.callback("👥 Rodízio de Leads", "cmd_shortcuts_rodizio")],
-        [Markup.button.callback("🔔 Follow-ups / Agenda", "cmd_shortcuts_followups")],
         [Markup.button.callback(isVip ? "💎 Área VIP (Ativa)" : "💎 Assinar Premium", "cmd_planos_menu"), Markup.button.callback("👤 Suporte / Ajuda", "cmd_suporte")]
     ];
     if (isAdmin(ctx.chat.id, config)) buttons.push([Markup.button.callback("👑 Painel Admin", "cmd_admin_panel")]);
@@ -1768,21 +1461,7 @@ bot.command("rodizio", async (ctx) => {
     ctx.reply("👥 *Módulo de Rodízio de Leads*\n\nEscolha uma instância:", { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
 });
 
-bot.command("agenda", async (ctx) => {
-    const isVip = await checkVip(ctx.chat.id);
-    const config = await getSystemConfig();
-    if (!isVip && !isAdmin(ctx.chat.id, config)) {
-        return ctx.reply("❌ *Acesso Restrito*\n\nAgendamentos e Follow-ups automáticos exigem uma assinatura Pro ativa.", {
-            parse_mode: "Markdown",
-            ...Markup.inlineKeyboard([[Markup.button.callback("🚀 Assinar", "cmd_planos_menu")]])
-        });
-    }
-    const session = await getSession(ctx.chat.id);
-    if (session.whatsapp.instances.length === 0) return ctx.reply("❌ Você não tem nenhuma instância conectada.");
-    const buttons = session.whatsapp.instances.map(inst => [Markup.button.callback(`🔔 Follow-ups: ${inst.name}`, `wa_ai_followup_menu_${inst.id}`)]);
-    buttons.push([Markup.button.callback("🔙 Voltar", "start")]);
-    ctx.reply("🔔 *Módulo de Follow-ups e Agendamentos*\n\nEscolha uma instância:", { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
-});
+
 
 async function showInstances(ctx) {
     const session = await getSession(ctx.chat.id);
@@ -3161,25 +2840,10 @@ function generateSystemPrompt(inst, professionalsList = "") {
     const humanTopics = inst.ai_human_topics || "Não há temas específicos; tente ajudar o cliente o máximo possível.";
     const knowledgeBase = inst.ai_knowledge_base ? `\n# BASE DE CONHECIMENTO EXTRA (USE PARA RESPONDER)\n${inst.ai_knowledge_base}\n` : "";
 
-    let bookingInstructions = "";
-    if (inst.ai_booking_enabled) {
-        bookingInstructions = `
-# AGENDAMENTO DE CONSULTAS (VOCÊ TEM ACESSO)
-- Você pode listar horários disponíveis e realizar agendamentos diretamente no Google Calendar.
-- Pergunte sempre se o cliente deseja agendar um horário após ele demonstrar interesse.
-- Seja proativo em oferecer datas próximas se o cliente estiver livre.
-- **IMPORTANTE:** Use os IDs exatos dos profissionais abaixo para realizar as operações.
-
-# PROFISSIONAIS DISPONÍVEIS
-${professionalsList || "Nenhum profissional cadastrado para agendamento manual. Use apenas os slots disponíveis."}
-`;
-    }
-
     return `
 # OBJETIVO E PERSONA
 ${userPrompt}
 ${knowledgeBase}
-${bookingInstructions}
 
 # MODO HUMANIZADO (HIGH-CONVERSION)
 - Use gírias leves se o tom for amigável.
@@ -3199,7 +2863,7 @@ Se o cliente pedir para falar com humano, atendente, ou citar os seguintes temas
 Ao identificar que o cliente está pronto ou qualificado, encerre com [QUALIFICADO].
 
 - Se for transbordo: Despeça-se cordialmente e informe que um especialista vai assumir agora. Ex: "Perfeito, vou te passar para um especialista que vai te ajudar com isso agora mesmo! [TRANSFERIR]"
-- Se for qualificado: Parabenize e informe que o link de agendamento ou o corretor será enviado a seguir. [QUALIFICADO]
+- Se for qualificado: Parabenize e informe que o corretor fará contato em seguida. [QUALIFICADO]
 - Caso contrário: Apenas a resposta direta e curta.
 `;
 }
@@ -3216,19 +2880,16 @@ async function renderAiMenu(ctx, instId) {
     const humanTopics = inst.ai_human_topics || "❌ Nenhum tema definido (IA tentará resolver tudo).";
 
     const text = `🤖 *Configuração de IA SDR (${instId})*\n\n` +
-        `🔋 *Status IA:* ${isEnabled ? "✅ Ativado" : "❌ Desativado"}\n` +
-        `📅 *Agendamento:* ${isBookingEnabled ? "✅ Ativado" : "❌ Desativado"}\n\n` +
+        `🔋 *Status IA:* ${isEnabled ? "✅ Ativado" : "❌ Desativado"}\n\n` +
         `📝 *Instruções (System Prompt):*\n\`${prompt.substring(0, 200)}${prompt.length > 200 ? "..." : ""}\`\n\n` +
         `🤝 *Temas para Humano:* \n_${humanTopics}_`;
 
     const buttons = [
         [Markup.button.callback(isEnabled ? "🔴 Desativar IA" : "🟢 Ativar IA", `wa_toggle_ai_${instId}`)],
-        [Markup.button.callback(isBookingEnabled ? "📅 Desativar Agendamento" : "📅 Ativar Agendamento", `wa_toggle_ai_booking_${instId}`)],
         [Markup.button.callback("📝 Editar System Prompt", `wa_set_ai_prompt_${instId}`)],
         [Markup.button.callback("🤝 Temas para Humano", `wa_set_ai_human_${instId}`)],
         [Markup.button.callback("📚 Base de Conhecimento (PDF)", `wa_set_ai_knowledge_${instId}`)],
         [Markup.button.callback("⏱️ Tempo de Reativação", `wa_ai_resume_time_${instId}`)],
-        [Markup.button.callback("🔔 Follow-ups", `wa_ai_followup_menu_${instId}`)],
         [Markup.button.callback("🔙 Voltar", `manage_${instId}`)]
     ];
 
@@ -3691,119 +3352,14 @@ async function handleAiSdr({ text, audioBase64, imageBase64, history = [], syste
         const inst = session.whatsapp.instances.find(i => i.id === instanceId);
         const bookingEnabled = inst && inst.ai_booking_enabled === true;
 
-        let tools = undefined;
-        if (bookingEnabled) {
-            tools = [
-                {
-                    type: "function",
-                    function: {
-                        name: "list_available_slots",
-                        description: "Lista horários disponíveis para agendamento em uma data específica.",
-                        parameters: {
-                            type: "object",
-                            properties: {
-                                date: { type: "string", description: "Data no formato YYYY-MM-DD" },
-                                profissional_id: { type: "string", description: "ID opcional do profissional específico." }
-                            },
-                            required: ["date"]
-                        }
-                    }
-                },
-                {
-                    type: "function",
-                    function: {
-                        name: "book_appointment",
-                        description: "Agenda uma consulta/atendimento para um cliente. REGRA ESTRITA: Você DEVE perguntar ao usuário qual o NOME e o TELEFONE dele ANTES de chamar esta função, caso ainda não tenha coletado essas informações na conversa.",
-                        parameters: {
-                            type: "object",
-                            properties: {
-                                date: { type: "string", description: "Data no formato YYYY-MM-DD" },
-                                time: { type: "string", description: "Horário no formato HH:MM" },
-                                profissional_id: { type: "string", description: "ID do profissional (médico/vendedor)." },
-                                client_name: { type: "string", description: "Nome do cliente." },
-                                client_phone: { type: "string", description: "Telefone do cliente (WhatsApp atual)." }
-                            },
-                            required: ["date", "time", "profissional_id", "client_name", "client_phone"]
-                        }
-                    }
-                }
-            ];
-        }
-
         let response = await openai.chat.completions.create({
             model: DEFAULT_MODEL,
             messages: messages,
-            tools: tools,
-            tool_choice: bookingEnabled ? "auto" : undefined,
             temperature: 0.8,
             max_tokens: 500
         });
 
         let responseMessage = response.choices[0].message;
-
-        // Loop para lidar com chamadas de ferramentas (até 2 iterações)
-        let iterations = 0;
-        while (responseMessage.tool_calls && iterations < 2) {
-            iterations++;
-            messages.push(responseMessage);
-
-            for (const toolCall of responseMessage.tool_calls) {
-                const functionName = toolCall.function.name;
-                const args = JSON.parse(toolCall.function.arguments);
-                let functionResponse = "";
-
-                log(`[AI TOOL] Executando ${functionName} para ${chatId}...`);
-
-                if (functionName === "list_available_slots") {
-                    try {
-                        const slots = await listAvailableSlots(ownerId, args.profissional_id, args.date);
-                        functionResponse = JSON.stringify({ slots });
-                    } catch (e) {
-                        functionResponse = JSON.stringify({ error: e.message });
-                    }
-                } else if (functionName === "book_appointment") {
-                    try {
-                        const eventDetails = {
-                            summary: `Agendamento: ${args.client_name}`,
-                            description: `Agendado via IA. Cliente: ${args.client_name}, Fone: ${args.client_phone || chatId}`,
-                            date: args.date,
-                            time: args.time
-                        };
-                        const result = await createGoogleEvent(ownerId, args.profissional_id, eventDetails);
-
-                        // Registrar no banco de dados
-                        await supabase.from("agendamentos").insert({
-                            owner_id: ownerId,
-                            profissional_id: args.profissional_id,
-                            chat_id: chatId,
-                            data_agendamento: `${args.date}T${args.time}:00`,
-                            status: "CONFIRMADO",
-                            google_event_id: result.id,
-                            patient_name: args.client_name,
-                            patient_phone: args.client_phone || chatId
-                        });
-
-                        functionResponse = JSON.stringify({ success: true, event_id: result.id });
-                    } catch (e) {
-                        functionResponse = JSON.stringify({ error: e.message });
-                    }
-                }
-
-                messages.push({
-                    tool_call_id: toolCall.id,
-                    role: "tool",
-                    name: functionName,
-                    content: functionResponse,
-                });
-            }
-
-            response = await openai.chat.completions.create({
-                model: DEFAULT_MODEL,
-                messages: messages,
-                max_tokens: 500
-            });
-            responseMessage = response.choices[0].message;
-        }
 
         const aiResponse = responseMessage.content;
         log(`[AI SDR RAW] Resposta para ${chatId}: ${aiResponse?.substring(0, 500)}`);
@@ -5470,24 +5026,7 @@ app.post("/webhook", async (req, res) => {
                                     log(`[WEBHOOK AI] Prompt: ${q.text.substring(0, 50)}... | Inst: ${tokenId}`);
 
                                     // Gerar Prompt Dinâmico baseado no Nicho (V1.1.14-PRO)
-                                    // V1.494: Injetar lista de profissionais se o agendamento estiver ativo
-                                    let professionalsList = "";
-                                    const ownerId = tokenId.split("_")[1] || ROOT_MASTER_ID;
-
-                                    if (inst.ai_booking_enabled) {
-                                        const { data: profs } = await supabase
-                                            .from("profissionais")
-                                            .select("id, nome, especialidade, individual_working_hours")
-                                            .eq("owner_id", ownerId);
-
-                                        if (profs && profs.length > 0) {
-                                            professionalsList = profs.map(p =>
-                                                `- ID: ${p.id} | Nome: ${p.nome} | Especialidade: ${p.especialidade || 'N/A'} | Horário: ${p.individual_working_hours || 'Não informado'}`
-                                            ).join("\n");
-                                        }
-                                    }
-
-                                    const systemPrompt = generateSystemPrompt(inst, professionalsList);
+                                    const systemPrompt = generateSystemPrompt(inst);
 
                                     const aiResponse = await handleAiSdr({
                                         text: q.text,
@@ -5510,7 +5049,7 @@ app.post("/webhook", async (req, res) => {
                                             finalResponse = "Entendido! Vou te transferir para um de nossos especialistas agora mesmo. Aguarde um instante...";
                                         }
                                         if (aiResponse.includes("[QUALIFICADO]") && finalResponse.length < 5) {
-                                            finalResponse = "Excelente! Você foi qualificado. Vou te encaminhar para finalizar o agendamento...";
+                                            finalResponse = "Excelente! Você foi qualificado. O corretor responsável fará contato em seguida...";
                                         }
 
                                         if (aiResponse.includes("[TRANSFERIR]")) {
@@ -5883,7 +5422,6 @@ async function registerBotCommands() {
             { command: "stats", description: "📊 Dashboard de Leads (Analytics)" },
             { command: "disparos", description: "📢 Módulo de Disparo em Massa" },
             { command: "rodizio", description: "👥 Módulo de Rodízio de Leads" },
-            { command: "agenda", description: "🔔 Follow-ups e Agendamentos" },
             { command: "instancias", description: "📱 Minhas Instâncias Conectadas" },
             { command: "conectar", description: "🔗 Conectar Novo WhatsApp" },
             { command: "vip", description: "💎 Status do Plano Premium" },
@@ -6102,10 +5640,7 @@ app.get("/api/license/verify", async (req, res) => {
     }
 });
 
-// V1.489: Redirecionamento amigável para Agenda
-app.get("/agenda", (req, res) => {
-    res.redirect("/dashboard/agenda" + (req.url.includes("?") ? req.url.substring(req.url.indexOf("?")) : ""));
-});
+
 
 // Catch-all para Dashboard (SPA)
 app.get("/dashboard/*", (req, res) => {
