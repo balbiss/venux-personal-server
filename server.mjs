@@ -184,7 +184,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.500"; // V1.500: Correção lógica de horários livres vs ocupados (Calendar AI)
+const SERVER_VERSION = "1.501"; // V1.501: Duração de consulta dinâmica e horário de funcionamento parametrizável
 const ROOT_MASTER_ID = "7924857149"; // V1.450: Trava de Segurança Root (Ninguém mais pode ser Master)
 const SAAS_NAME = process.env.SAAS_NAME || "Connect SaaS";
 const SAAS_LOGO_URL = process.env.SAAS_LOGO_URL || null;
@@ -740,14 +740,14 @@ async function listAvailableSlots(ownerId, profissionalId, date) {
         if (profissionalId) {
             const res = await supabase
                 .from('profissionais')
-                .select('google_calendar_id, individual_working_hours')
+                .select('google_calendar_id, individual_working_hours, duracao_consulta')
                 .eq('id', profissionalId)
                 .single();
             prof = res.data;
         } else {
             const res = await supabase
                 .from('profissionais')
-                .select('google_calendar_id, individual_working_hours')
+                .select('google_calendar_id, individual_working_hours, duracao_consulta')
                 .eq('owner_id', ownerId)
                 .limit(1)
                 .single();
@@ -757,6 +757,8 @@ async function listAvailableSlots(ownerId, profissionalId, date) {
         if (!prof) throw new Error("Profissional não encontrado.");
 
         const calendarId = prof.google_calendar_id || 'primary';
+        const duracao = prof.duracao_consulta || 30;
+        const workingHours = prof.individual_working_hours || "08:00 às 18:00 (Segunda a Sexta)";
 
         // Definir o range do dia
         const startOfDay = new Date(date);
@@ -779,7 +781,7 @@ async function listAvailableSlots(ownerId, profissionalId, date) {
         }));
 
         return {
-            instrucao_para_ia: "A lista 'horarios_ocupados' abaixo contém os horários que já estão PREENCHIDOS. Você pode agendar em qualquer horário comercial (ex: 08:00 às 18:00) que NÃO cruze com estes horários. Se a lista estiver vazia, o dia inteiro está livre para agendar.",
+            instrucao_para_ia: `A lista 'horarios_ocupados' abaixo contém os horários que já estão PREENCHIDOS. Você deve agendar consultas considerando as seguintes regras do profissional: 1) Horário de funcionamento: ${workingHours}. 2) Duração de cada consulta: ${duracao} minutos. Você pode agendar em qualquer horário dentro do expediente que NÃO cruze com os horários ocupados. Se a lista estiver vazia, todo o expediente está livre.`,
             horarios_ocupados: ocupados
         };
     } catch (e) {
@@ -795,14 +797,14 @@ async function createGoogleEvent(ownerId, profissionalId, eventDetails) {
         if (profissionalId) {
             const res = await supabase
                 .from('profissionais')
-                .select('google_calendar_id')
+                .select('google_calendar_id, duracao_consulta')
                 .eq('id', profissionalId)
                 .single();
             prof = res.data;
         } else {
             const res = await supabase
                 .from('profissionais')
-                .select('google_calendar_id')
+                .select('google_calendar_id, duracao_consulta')
                 .eq('owner_id', ownerId)
                 .limit(1)
                 .single();
@@ -810,12 +812,33 @@ async function createGoogleEvent(ownerId, profissionalId, eventDetails) {
         }
 
         const calendarId = prof?.google_calendar_id || 'primary';
+        const duracao = prof?.duracao_consulta || 30;
+
+        let startObj = eventDetails.start;
+        let endObj = eventDetails.end;
+
+        if (eventDetails.date && eventDetails.time) {
+            const startStr = `${eventDetails.date}T${eventDetails.time}:00`;
+            startObj = { dateTime: startStr, timeZone: 'America/Sao_Paulo' };
+
+            const [hours, minutes] = eventDetails.time.split(':').map(Number);
+            const endDate = new Date(eventDetails.date + 'T00:00:00');
+            endDate.setHours(hours, minutes + duracao, 0);
+
+            const endHours = String(endDate.getHours()).padStart(2, '0');
+            const endMinutes = String(endDate.getMinutes()).padStart(2, '0');
+            const endStr = `${eventDetails.date}T${endHours}:${endMinutes}:00`;
+            endObj = { dateTime: endStr, timeZone: 'America/Sao_Paulo' };
+        } else if (!startObj || !endObj) {
+            startObj = { dateTime: eventDetails.startTime, timeZone: 'America/Sao_Paulo' };
+            endObj = { dateTime: eventDetails.endTime, timeZone: 'America/Sao_Paulo' };
+        }
 
         const event = {
             summary: eventDetails.summary,
             description: eventDetails.description,
-            start: eventDetails.start || { dateTime: eventDetails.startTime, timeZone: 'America/Sao_Paulo' },
-            end: eventDetails.end || { dateTime: eventDetails.endTime, timeZone: 'America/Sao_Paulo' },
+            start: startObj,
+            end: endObj,
         };
 
         const res = await calendar.events.insert({
@@ -3743,8 +3766,8 @@ async function handleAiSdr({ text, audioBase64, imageBase64, history = [], syste
                         const eventDetails = {
                             summary: `Agendamento: ${args.client_name}`,
                             description: `Agendado via IA. Cliente: ${args.client_name}, Fone: ${args.client_phone || chatId}`,
-                            start: { dateTime: `${args.date}T${args.time}:00`, timeZone: "America/Sao_Paulo" },
-                            end: { dateTime: `${args.date}T${args.time}:30`, timeZone: "America/Sao_Paulo" } // 30 min padrão
+                            date: args.date,
+                            time: args.time
                         };
                         const result = await createGoogleEvent(ownerId, args.profissional_id, eventDetails);
 
