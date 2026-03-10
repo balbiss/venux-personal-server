@@ -1449,12 +1449,99 @@ bot.action("cmd_shortcuts_followups", async (ctx) => {
     if (!isVip && !isAdmin(ctx.chat.id, config)) {
         return await safeEdit(ctx, "❌ *Acesso Restrito*\n\nO Follow-up e Agenda Inteligente são recursos do Plano Connect Pro.", Markup.inlineKeyboard([[Markup.button.callback("🚀 Assinar Agora", "cmd_planos_menu")], [Markup.button.callback("🔙 Voltar", "start")]]));
     }
-    const session = await getSession(ctx.chat.id);
-    if (session.whatsapp.instances.length === 0) return ctx.reply("❌ Você não tem nenhuma instância conectada.");
 
-    const buttons = session.whatsapp.instances.map(inst => [Markup.button.callback(`🔔 Follow-ups: ${inst.name}`, `wa_ai_followup_menu_${inst.id}`)]);
-    buttons.push([Markup.button.callback("🔙 Voltar", "start")]);
-    await safeEdit(ctx, "🔔 *Escolha uma instância para gerenciar Agendamentos:*", Markup.inlineKeyboard(buttons));
+    const text = `📅 *Módulo de Agenda e Agendamentos*\n\n` +
+        `Aqui você pode gerenciar a conexão com o Google Calendar e visualizar seus compromissos.\n\n` +
+        `👇 *Escolha uma das opções:*`;
+
+    const buttons = [
+        [Markup.button.callback("👥 Gerenciar Profissionais", "bot_list_profs")],
+        [Markup.button.callback("🗓️ Ver Agendamentos de Hoje", "bot_view_appointments")],
+        [Markup.button.url("💻 Abrir Painel Web", `${process.env.WEBHOOK_URL?.replace("/webhook", "")}/agenda?tid=${ctx.chat.id}`)],
+        [Markup.button.callback("🔙 Voltar", "start")]
+    ];
+    await safeEdit(ctx, text, Markup.inlineKeyboard(buttons));
+});
+
+bot.command("agenda", async (ctx) => {
+    const isVip = await checkVip(ctx.chat.id);
+    const config = await getSystemConfig();
+    if (!isVip && !isAdmin(ctx.chat.id, config)) {
+        return ctx.reply("❌ *Acesso Restrito*\n\nO Módulo de Agenda está disponível apenas para assinantes do Plano Pro.", { parse_mode: "Markdown" });
+    }
+
+    const text = `📅 *Sua Agenda Inteligente*\n\n` +
+        `Gerencie seus profissionais e horários direto pelo bot ou pelo painel web.\n\n` +
+        `👇 *O que deseja fazer?*`;
+
+    const buttons = [
+        [Markup.button.callback("👥 Seus Profissionais", "bot_list_profs")],
+        [Markup.button.callback("🗓️ Agendamentos do Dia", "bot_view_appointments")],
+        [Markup.button.callback("🔙 Voltar", "start")]
+    ];
+    await ctx.reply(text, { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
+});
+
+bot.action("bot_list_profs", async (ctx) => {
+    safeAnswer(ctx);
+    try {
+        const { data: profs } = await supabase
+            .from("profissionais")
+            .select("*")
+            .eq("owner_id", String(ctx.chat.id));
+
+        if (!profs || profs.length === 0) {
+            return safeEdit(ctx, "⚠️ *Nenhum profissional cadastrado.* \n\nCadastre seus médicos ou vendedores pelo Painel Web para que a IA possa agendar horários para eles.",
+                Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar", "cmd_shortcuts_followups")]])
+            );
+        }
+
+        let text = `👥 *Seus Profissionais Cadastrados:*\n\n`;
+        profs.forEach(p => {
+            text += `• *${p.nome}* (${p.especialidade || 'Geral'})\n`;
+        });
+
+        await safeEdit(ctx, text, Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar", "cmd_shortcuts_followups")]]));
+    } catch (e) {
+        log(`[BOT ERR] Falha ao listar profs: ${e.message}`);
+        ctx.reply("❌ Erro ao buscar lista de profissionais.");
+    }
+});
+
+bot.action("bot_view_appointments", async (ctx) => {
+    safeAnswer(ctx);
+    try {
+        const hoje = new Date();
+        hoje.setHours(0, 0, 0, 0);
+        const amanha = new Date(hoje);
+        amanha.setDate(amanha.getDate() + 1);
+
+        const { data: agendamentos } = await supabase
+            .from("agendamentos")
+            .select("*, profissionais(nome)")
+            .eq("owner_id", String(ctx.chat.id))
+            .gte("data_agendamento", hoje.toISOString())
+            .lt("data_agendamento", amanha.toISOString())
+            .order("data_agendamento", { ascending: true });
+
+        if (!agendamentos || agendamentos.length === 0) {
+            return safeEdit(ctx, "🗓️ *Sem agendamentos para hoje.* \n\nAssim que os clientes marcarem via WhatsApp, eles aparecerão aqui.",
+                Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar", "cmd_shortcuts_followups")]])
+            );
+        }
+
+        let text = `🗓️ *Agendamentos para Hoje:*\n\n`;
+        agendamentos.forEach(a => {
+            const data = new Date(a.data_agendamento);
+            const hora = data.toLocaleTimeString("pt-BR", { hour: '2-digit', minute: '2-digit' });
+            text += `• *${hora}* - ${a.profissionais?.nome || 'Profissional'}\n  └ Lead: \`${a.chat_id.split('@')[0]}\`\n\n`;
+        });
+
+        await safeEdit(ctx, text, Markup.inlineKeyboard([[Markup.button.callback("🔙 Voltar", "cmd_shortcuts_followups")]]));
+    } catch (e) {
+        log(`[BOT ERR] Falha ao listar agendamentos: ${e.message}`);
+        ctx.reply("❌ Erro ao buscar agendamentos.");
+    }
 });
 
 bot.action("start", async (ctx) => {
