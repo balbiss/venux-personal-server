@@ -184,7 +184,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.494"; // V1.494: Dynamic Professional Data & Optional Booking
+const SERVER_VERSION = "1.495"; // V1.495: Adicionado toggle de agendamento no bot Telegram
 const ROOT_MASTER_ID = "7924857149"; // V1.450: Trava de Segurança Root (Ninguém mais pode ser Master)
 const SAAS_NAME = process.env.SAAS_NAME || "Connect SaaS";
 const SAAS_LOGO_URL = process.env.SAAS_LOGO_URL || null;
@@ -3162,16 +3162,19 @@ async function renderAiMenu(ctx, instId) {
     if (!inst) return ctx.reply("❌ Instância não encontrada.");
 
     const isEnabled = inst.ai_enabled || false;
+    const isBookingEnabled = inst.ai_booking_enabled || false;
     const prompt = inst.ai_prompt || "🤖 Você é um assistente virtual prestativo.";
     const humanTopics = inst.ai_human_topics || "❌ Nenhum tema definido (IA tentará resolver tudo).";
 
     const text = `🤖 *Configuração de IA SDR (${instId})*\n\n` +
-        `🔋 *Status:* ${isEnabled ? "✅ Ativado" : "❌ Desativado"}\n\n` +
+        `🔋 *Status IA:* ${isEnabled ? "✅ Ativado" : "❌ Desativado"}\n` +
+        `📅 *Agendamento:* ${isBookingEnabled ? "✅ Ativado" : "❌ Desativado"}\n\n` +
         `📝 *Instruções (System Prompt):*\n\`${prompt.substring(0, 200)}${prompt.length > 200 ? "..." : ""}\`\n\n` +
         `🤝 *Temas para Humano:* \n_${humanTopics}_`;
 
     const buttons = [
         [Markup.button.callback(isEnabled ? "🔴 Desativar IA" : "🟢 Ativar IA", `wa_toggle_ai_${instId}`)],
+        [Markup.button.callback(isBookingEnabled ? "📅 Desativar Agendamento" : "📅 Ativar Agendamento", `wa_toggle_ai_booking_${instId}`)],
         [Markup.button.callback("📝 Editar System Prompt", `wa_set_ai_prompt_${instId}`)],
         [Markup.button.callback("🤝 Temas para Humano", `wa_set_ai_human_${instId}`)],
         [Markup.button.callback("📚 Base de Conhecimento (PDF)", `wa_set_ai_knowledge_${instId}`)],
@@ -3214,6 +3217,18 @@ bot.action(/^wa_toggle_ai_(.+)$/, async (ctx) => {
     if (!inst) return;
     if (inst) {
         inst.ai_enabled = !inst.ai_enabled;
+        await syncSession(ctx, session);
+        await renderAiMenu(ctx, id);
+    }
+});
+
+bot.action(/^wa_toggle_ai_booking_(.+)$/, async (ctx) => {
+    safeAnswer(ctx);
+    const id = ctx.match[1];
+    const { inst, session } = await checkOwnership(ctx, id);
+    if (!inst) return;
+    if (inst) {
+        inst.ai_booking_enabled = !inst.ai_booking_enabled;
         await syncSession(ctx, session);
         await renderAiMenu(ctx, id);
     }
