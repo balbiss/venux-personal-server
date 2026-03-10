@@ -184,7 +184,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.501"; // V1.501: Duração de consulta dinâmica e horário de funcionamento parametrizável
+const SERVER_VERSION = "1.502"; // V1.502: Exigir expressamente nome e telefone para agendamento (book_appointment)
 const ROOT_MASTER_ID = "7924857149"; // V1.450: Trava de Segurança Root (Ninguém mais pode ser Master)
 const SAAS_NAME = process.env.SAAS_NAME || "Connect SaaS";
 const SAAS_LOGO_URL = process.env.SAAS_LOGO_URL || null;
@@ -3713,7 +3713,7 @@ async function handleAiSdr({ text, audioBase64, imageBase64, history = [], syste
                     type: "function",
                     function: {
                         name: "book_appointment",
-                        description: "Agenda uma consulta/atendimento para um cliente.",
+                        description: "Agenda uma consulta/atendimento para um cliente. REGRA ESTRITA: Você DEVE perguntar ao usuário qual o NOME e o TELEFONE dele ANTES de chamar esta função, caso ainda não tenha coletado essas informações na conversa.",
                         parameters: {
                             type: "object",
                             properties: {
@@ -3721,9 +3721,9 @@ async function handleAiSdr({ text, audioBase64, imageBase64, history = [], syste
                                 time: { type: "string", description: "Horário no formato HH:MM" },
                                 profissional_id: { type: "string", description: "ID do profissional (médico/vendedor)." },
                                 client_name: { type: "string", description: "Nome do cliente." },
-                                client_phone: { type: "string", description: "Telefone do cliente." }
+                                client_phone: { type: "string", description: "Telefone do cliente (WhatsApp atual)." }
                             },
-                            required: ["date", "time", "profissional_id", "client_name"]
+                            required: ["date", "time", "profissional_id", "client_name", "client_phone"]
                         }
                     }
                 }
