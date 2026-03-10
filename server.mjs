@@ -184,7 +184,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.488"; // V1.488: Nested Git Fix (Submodule)
+const SERVER_VERSION = "1.489"; // V1.489: Bot Dashboard URL Fix + Redirect
 const ROOT_MASTER_ID = "7924857149"; // V1.450: Trava de Segurança Root (Ninguém mais pode ser Master)
 const SAAS_NAME = process.env.SAAS_NAME || "Connect SaaS";
 const SAAS_LOGO_URL = process.env.SAAS_LOGO_URL || null;
@@ -1457,7 +1457,7 @@ bot.action("cmd_shortcuts_followups", async (ctx) => {
     const buttons = [
         [Markup.button.callback("👥 Gerenciar Profissionais", "bot_list_profs")],
         [Markup.button.callback("🗓️ Ver Agendamentos de Hoje", "bot_view_appointments")],
-        [Markup.button.url("💻 Abrir Painel Web", `${process.env.WEBHOOK_URL?.replace("/webhook", "")}/agenda?tid=${ctx.chat.id}`)],
+        [Markup.button.url("💻 Abrir Painel Web", `${process.env.WEBHOOK_URL?.replace("/webhook", "")}/dashboard/agenda?tid=${ctx.chat.id}`)],
         [Markup.button.callback("🔙 Voltar", "start")]
     ];
     await safeEdit(ctx, text, Markup.inlineKeyboard(buttons));
@@ -5998,6 +5998,11 @@ app.get("/api/license/verify", async (req, res) => {
         log(`[LICENSE API ERR] ${e.message}`);
         return res.json({ active: true, reason: 'SERVER_FAILSAFE' });
     }
+});
+
+// V1.489: Redirecionamento amigável para Agenda
+app.get("/agenda", (req, res) => {
+    res.redirect("/dashboard/agenda" + (req.url.includes("?") ? req.url.substring(req.url.indexOf("?")) : ""));
 });
 
 // Catch-all para Dashboard (SPA)
