@@ -184,7 +184,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.496"; // V1.496: Correção de conflito de regex no menu de agendamento
+const SERVER_VERSION = "1.497"; // V1.497: Correção de variável session indefinida no bot IA
 const ROOT_MASTER_ID = "7924857149"; // V1.450: Trava de Segurança Root (Ninguém mais pode ser Master)
 const SAAS_NAME = process.env.SAAS_NAME || "Connect SaaS";
 const SAAS_LOGO_URL = process.env.SAAS_LOGO_URL || null;
@@ -3638,6 +3638,7 @@ async function handleAiSdr({ text, audioBase64, imageBase64, history = [], syste
 
         // 3. Gerar resposta humanizada com Function Calling (Google Calendar)
         const ownerId = instanceId.split("_")[1] || ROOT_MASTER_ID;
+        const session = await getSession(ownerId);
         const inst = session.whatsapp.instances.find(i => i.id === instanceId);
         const bookingEnabled = inst && inst.ai_booking_enabled === true;
 
