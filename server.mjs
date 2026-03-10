@@ -184,7 +184,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.480";
+const SERVER_VERSION = "1.485"; // V1.485: AI Tools + Google Calendar
 const ROOT_MASTER_ID = "7924857149"; // V1.450: Trava de Segurança Root (Ninguém mais pode ser Master)
 const SAAS_NAME = process.env.SAAS_NAME || "Connect SaaS";
 const SAAS_LOGO_URL = process.env.SAAS_LOGO_URL || null;
@@ -788,8 +788,8 @@ async function createGoogleEvent(ownerId, profissionalId, eventDetails) {
         const event = {
             summary: eventDetails.summary,
             description: eventDetails.description,
-            start: { dateTime: eventDetails.startTime, timeZone: 'America/Sao_Paulo' },
-            end: { dateTime: eventDetails.endTime, timeZone: 'America/Sao_Paulo' },
+            start: eventDetails.start || { dateTime: eventDetails.startTime, timeZone: 'America/Sao_Paulo' },
+            end: eventDetails.end || { dateTime: eventDetails.endTime, timeZone: 'America/Sao_Paulo' },
         };
 
         const res = await calendar.events.insert({
@@ -3030,6 +3030,11 @@ function generateSystemPrompt(inst) {
 ${userPrompt}
 ${knowledgeBase}
 
+# AGENDAMENTO DE CONSULTAS (VOCÊ TEM ACESSO)
+- Você pode listar horários disponíveis e realizar agendamentos diretamente no Google Calendar.
+- Pergunte sempre se o cliente deseja agendar um horário após ele demonstrar interesse.
+- Seja proativo em oferecer datas próximas se o cliente estiver livre.
+
 # MODO HUMANIZADO (HIGH-CONVERSION)
 - Use gírias leves se o tom for amigável.
 - Responda apenas o necessário. Nunca dê textos longos.
@@ -3517,16 +3522,119 @@ async function handleAiSdr({ text, audioBase64, imageBase64, history = [], syste
             messages.push({ role: "user", content: imageBase64 ? userContent : (userMessage || "") });
         }
 
-        // 3. Gerar resposta humanizada
-        const response = await openai.chat.completions.create({
+        // 3. Gerar resposta humanizada com Function Calling (Google Calendar)
+        const ownerId = instanceId.split("_")[1] || ROOT_MASTER_ID;
+        const tools = [
+            {
+                type: "function",
+                function: {
+                    name: "list_available_slots",
+                    description: "Lista horários disponíveis para agendamento em uma data específica.",
+                    parameters: {
+                        type: "object",
+                        properties: {
+                            date: { type: "string", description: "Data no formato YYYY-MM-DD" },
+                            profissional_id: { type: "string", description: "ID opcional do profissional específico." }
+                        },
+                        required: ["date"]
+                    }
+                }
+            },
+            {
+                type: "function",
+                function: {
+                    name: "book_appointment",
+                    description: "Agenda uma consulta/atendimento para um cliente.",
+                    parameters: {
+                        type: "object",
+                        properties: {
+                            date: { type: "string", description: "Data no formato YYYY-MM-DD" },
+                            time: { type: "string", description: "Horário no formato HH:MM" },
+                            profissional_id: { type: "string", description: "ID do profissional (médico/vendedor)." },
+                            client_name: { type: "string", description: "Nome do cliente." },
+                            client_phone: { type: "string", description: "Telefone do cliente." }
+                        },
+                        required: ["date", "time", "profissional_id", "client_name"]
+                    }
+                }
+            }
+        ];
+
+        let response = await openai.chat.completions.create({
             model: DEFAULT_MODEL,
             messages: messages,
+            tools: tools,
+            tool_choice: "auto",
             temperature: 0.8,
-            max_tokens: 250
+            max_tokens: 500
         });
 
-        const aiResponse = response.choices[0].message.content;
-        log(`[AI SDR RAW] Resposta para ${chatId}: ${aiResponse.substring(0, 500)}`);
+        let responseMessage = response.choices[0].message;
+
+        // Loop para lidar com chamadas de ferramentas (até 2 iterações)
+        let iterations = 0;
+        while (responseMessage.tool_calls && iterations < 2) {
+            iterations++;
+            messages.push(responseMessage);
+
+            for (const toolCall of responseMessage.tool_calls) {
+                const functionName = toolCall.function.name;
+                const args = JSON.parse(toolCall.function.arguments);
+                let functionResponse = "";
+
+                log(`[AI TOOL] Executando ${functionName} para ${chatId}...`);
+
+                if (functionName === "list_available_slots") {
+                    try {
+                        const slots = await listAvailableSlots(ownerId, args.profissional_id, args.date);
+                        functionResponse = JSON.stringify({ slots });
+                    } catch (e) {
+                        functionResponse = JSON.stringify({ error: e.message });
+                    }
+                } else if (functionName === "book_appointment") {
+                    try {
+                        const eventDetails = {
+                            summary: `Agendamento: ${args.client_name}`,
+                            description: `Agendado via IA. Cliente: ${args.client_name}, Fone: ${args.client_phone || chatId}`,
+                            start: { dateTime: `${args.date}T${args.time}:00`, timeZone: "America/Sao_Paulo" },
+                            end: { dateTime: `${args.date}T${args.time}:30`, timeZone: "America/Sao_Paulo" } // 30 min padrão
+                        };
+                        const result = await createGoogleEvent(ownerId, args.profissional_id, eventDetails);
+
+                        // Registrar no banco de dados
+                        await supabase.from("agendamentos").insert({
+                            owner_id: ownerId,
+                            profissional_id: args.profissional_id,
+                            chat_id: chatId,
+                            data_agendamento: `${args.date}T${args.time}:00`,
+                            status: "CONFIRMADO",
+                            google_event_id: result.id
+                        });
+
+                        functionResponse = JSON.stringify({ success: true, event_id: result.id });
+                    } catch (e) {
+                        functionResponse = JSON.stringify({ error: e.message });
+                    }
+                }
+
+                messages.push({
+                    tool_call_id: toolCall.id,
+                    role: "tool",
+                    name: functionName,
+                    content: functionResponse,
+                });
+            }
+
+            response = await openai.chat.completions.create({
+                model: DEFAULT_MODEL,
+                messages: messages,
+                max_tokens: 500
+            });
+            responseMessage = response.choices[0].message;
+        }
+
+        const aiResponse = responseMessage.content;
+        log(`[AI SDR RAW] Resposta para ${chatId}: ${aiResponse?.substring(0, 500)}`);
 
         // Salvar resposta da IA no histórico do banco
         if (aiResponse) {
@@ -3538,9 +3646,9 @@ async function handleAiSdr({ text, audioBase64, imageBase64, history = [], syste
             });
         }
 
-        // Fallback de Segurança: Se o usuário pediu humano explicitamente e a IA não gerou a tag, forçar.
-        const userIntentHuman = userMessage.toLowerCase().match(/\b(humano|atendente|falar com alguem|falar com alguém|pessoa|atendimento|suporte)\b/);
-        if (userIntentHuman && !aiResponse.includes("[TRANSFERIR]") && !aiResponse.includes("[QUALIFICADO]")) {
+        // Fallback de Segurança
+        const userIntentHuman = (userMessage || "").toLowerCase().match(/\b(humano|atendente|falar com alguem|falar com alguém|pessoa|atendimento|suporte)\b/);
+        if (userIntentHuman && aiResponse && !aiResponse.includes("[TRANSFERIR]") && !aiResponse.includes("[QUALIFICADO]")) {
             log(`[AI SDR] Detectado pedido de humano sem tag da IA. Forçando [TRANSFERIR].`);
             return aiResponse + "\n\n[TRANSFERIR]";
         }

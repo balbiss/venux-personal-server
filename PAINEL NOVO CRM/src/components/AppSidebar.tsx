@@ -1,5 +1,5 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { LayoutDashboard, Smartphone, Brain, Users, CreditCard, ChevronLeft, Zap } from "lucide-react";
+import { LayoutDashboard, Smartphone, Brain, Users, CreditCard, ChevronLeft, Zap, Calendar } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 const navItems = [
@@ -7,6 +7,7 @@ const navItems = [
   { title: "Minhas Instâncias", path: "/instancias", icon: Smartphone },
   { title: "Módulo IA SDR", path: "/ia-sdr", icon: Brain },
   { title: "CRM / Leads", path: "/crm", icon: Users },
+  { title: "Agenda / Médicos", path: "/agenda", icon: Calendar },
   { title: "Meu Plano", path: "/plano", icon: CreditCard },
 ];
 
