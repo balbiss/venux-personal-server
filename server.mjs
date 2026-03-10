@@ -5636,7 +5636,7 @@ async function startBot(retryCount = 0) {
         console.log(`\n--- DIAGNÓSTICO DE AMBIENTE ---`);
         console.log(`ID Mestre Esperado: ${process.env.MASTER_ADMIN_ID || "Não Configurado"}`);
         console.log(`Licença Configurada: ${process.env.LICENSE_KEY ? "SIM (Enviada via Portainer)" : "NÃO (Usando DB Local)"}`);
-        const varsFound = Object.keys(process.env).filter(k => k.includes("ID") || k.includes("TOKEN") || k.includes("LICENSE") || k.includes("URL"));
+        const varsFound = Object.keys(process.env).filter(k => k.includes("ID") || k.includes("TOKEN") || k.includes("LICENSE") || k.includes("URL") || k.includes("GOOGLE") || k.includes("SECRET") || k.includes("URI"));
         console.log(`Chaves encontradas no ENV: ${varsFound.join(",")}`);
         console.log(`Token Atual (Início): ${process.env.TELEGRAM_TOKEN ? process.env.TELEGRAM_TOKEN.substring(0, 10) + "..." : "FALTANDO"}`);
         console.log(`-------------------------------\n`);
