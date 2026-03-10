@@ -1461,6 +1461,24 @@ bot.command("rodizio", async (ctx) => {
     ctx.reply("👥 *Módulo de Rodízio de Leads*\n\nEscolha uma instância:", { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
 });
 
+bot.command("followups", async (ctx) => {
+    const isVip = await checkVip(ctx.chat.id);
+    const config = await getSystemConfig();
+    if (!isVip && !isAdmin(ctx.chat.id, config)) {
+        return ctx.reply("❌ *Acesso Restrito*\n\nFollow-ups automáticos exigem uma assinatura Pro ativa.", {
+            parse_mode: "Markdown",
+            ...Markup.inlineKeyboard([[Markup.button.callback("🚀 Assinar", "cmd_planos_menu")]])
+        });
+    }
+    const session = await getSession(ctx.chat.id);
+    if (!session.whatsapp || !Array.isArray(session.whatsapp.instances) || session.whatsapp.instances.length === 0) {
+        return ctx.reply("❌ Você não tem nenhuma instância conectada.");
+    }
+    const buttons = session.whatsapp.instances.map(inst => [Markup.button.callback(`🔔 Follow-ups: ${inst.name}`, `wa_ai_followup_menu_${inst.id}`)]);
+    buttons.push([Markup.button.callback("🔙 Voltar", "start")]);
+    ctx.reply("🔔 *Módulo de Follow-ups*\n\nEscolha uma instância:", { parse_mode: "Markdown", ...Markup.inlineKeyboard(buttons) });
+});
+
 
 
 async function showInstances(ctx) {
@@ -2890,6 +2908,7 @@ async function renderAiMenu(ctx, instId) {
         [Markup.button.callback("🤝 Temas para Humano", `wa_set_ai_human_${instId}`)],
         [Markup.button.callback("📚 Base de Conhecimento (PDF)", `wa_set_ai_knowledge_${instId}`)],
         [Markup.button.callback("⏱️ Tempo de Reativação", `wa_ai_resume_time_${instId}`)],
+        [Markup.button.callback("🔔 Follow-ups", `wa_ai_followup_menu_${instId}`)],
         [Markup.button.callback("🔙 Voltar", `manage_${instId}`)]
     ];
 
@@ -5422,6 +5441,7 @@ async function registerBotCommands() {
             { command: "stats", description: "📊 Dashboard de Leads (Analytics)" },
             { command: "disparos", description: "📢 Módulo de Disparo em Massa" },
             { command: "rodizio", description: "👥 Módulo de Rodízio de Leads" },
+            { command: "followups", description: "🔔 Follow-ups" },
             { command: "instancias", description: "📱 Minhas Instâncias Conectadas" },
             { command: "conectar", description: "🔗 Conectar Novo WhatsApp" },
             { command: "vip", description: "💎 Status do Plano Premium" },
