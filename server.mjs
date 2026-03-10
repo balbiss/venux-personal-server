@@ -184,7 +184,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.492"; // V1.492: Google Auth DB Fix (Missing Columns)
+const SERVER_VERSION = "1.493"; // V1.493: AI Real-Time Awareness (Date/Time Fix)
 const ROOT_MASTER_ID = "7924857149"; // V1.450: Trava de Segurança Root (Ninguém mais pode ser Master)
 const SAAS_NAME = process.env.SAAS_NAME || "Connect SaaS";
 const SAAS_LOGO_URL = process.env.SAAS_LOGO_URL || null;
@@ -3558,7 +3558,9 @@ async function handleAiSdr({ text, audioBase64, imageBase64, history = [], syste
         if (!userMessage && !imageBase64 && history.length === 0) return null;
 
         // 2. Formatar Histórico (Priority: SUPABASE)
-        const messages = [{ role: "system", content: systemPrompt }];
+        const now = new Date().toLocaleString('pt-BR', { dateStyle: 'full', timeStyle: 'short' });
+        const timeContext = `\n\n[CONTEXTO TEMPORAL]\nData/Hora atual: ${now}\nFuso Horário: America/Sao_Paulo\nUse esta informação para interpretar termos como "hoje", "amanhã", "quarta-feira", etc.`;
+        const messages = [{ role: "system", content: systemPrompt + timeContext }];
 
         // Buscar histórico no banco de dados
         const { data: dbHistory, error: dbErr } = await supabase
