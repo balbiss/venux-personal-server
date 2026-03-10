@@ -1644,6 +1644,7 @@ async function renderManageMenu(ctx, id) {
 
     buttons.push([Markup.button.callback("👥 Rodízio de Atendimento", `wa_brokers_menu_${id}`)]);
     buttons.push([Markup.button.callback("📋 Leads em Atendimento", `wa_list_paused_leads_${id}`)]);
+    buttons.push([Markup.button.callback("🔔 Follow-ups", `wa_ai_followup_menu_${id}`)]);
     buttons.push([Markup.button.callback(inst.warmupEnabled ? "🔥 Maturação: [ON]" : "🔥 Maturação: [OFF]", `wa_warmup_toggle_${id}`)]);
 
     buttons.push([Markup.button.callback("🚪 Logout", `wa_logout_${id}`), Markup.button.callback("🗑️ Deletar", `wa_del_${id}`)]);
