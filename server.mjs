@@ -172,7 +172,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.502"; // V1.502: Exigir expressamente nome e telefone para agendamento (book_appointment)
+const SERVER_VERSION = "1.503"; // V1.503: Retry Loop para QR Code e Pairing Code (Auto-Heal Melhorado)
 const ROOT_MASTER_ID = "7924857149"; // V1.450: Trava de Segurança Root (Ninguém mais pode ser Master)
 const SAAS_NAME = process.env.SAAS_NAME || "Connect SaaS";
 const SAAS_LOGO_URL = process.env.SAAS_LOGO_URL || null;
@@ -442,7 +442,7 @@ async function callWuzapi(endpoint, method = "GET", body = null, userToken = nul
         if (body) options.body = JSON.stringify(body);
 
         const url = `${WUZAPI_BASE_URL}${endpoint}`;
-        const resp = await fetch(url, options);
+        let resp = await fetch(url, options);
         let data = { success: false };
         try {
             data = await resp.json();
@@ -452,8 +452,45 @@ async function callWuzapi(endpoint, method = "GET", body = null, userToken = nul
             return { error: true, text, success: false };
         }
 
-        if (data.code === 401 || data.message === "unauthorized") {
+        if (data.code === 401 || data.message === "unauthorized" || data.error === "unauthorized") {
             log(`[WUZAPI AUTH ERR] ${endpoint} | Token: ${userToken ? "User" : "Admin"}`);
+
+            // Auto-heal Wuzapi missing instance
+            if (userToken && endpoint !== "/admin/users" && !endpoint.includes("/admin/")) {
+                log(`[WUZAPI AUTO-HEAL] Instância ${userToken} não encontrada no Wuzapi. Recriando...`);
+                // 1. Recria o usuário no Wuzapi usando o Admin Token
+                const createResp = await fetch(`${WUZAPI_BASE_URL}/admin/users`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Accept": "application/json",
+                        "Authorization": WUZAPI_ADMIN_TOKEN
+                    },
+                    body: JSON.stringify({ name: userToken, token: userToken })
+                });
+
+                if (createResp.ok) {
+                    log(`[WUZAPI AUTO-HEAL] Usuário ${userToken} recriado. Sincronizando Webhook...`);
+                    // 2. Garante o Webhook
+                    await fetch(`${WUZAPI_BASE_URL}/webhook`, {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            "Accept": "application/json",
+                            "token": userToken
+                        },
+                        body: JSON.stringify({ webhook: WEBHOOK_URL, events: ["All"] })
+                    });
+
+                    log(`[WUZAPI AUTO-HEAL] Pronto! Repetindo comando original para ${endpoint}...`);
+                    // 3. Tenta a requisição original de novo
+                    resp = await fetch(url, options);
+                    data = await resp.json();
+                } else {
+                    const errTxt = await createResp.text();
+                    log(`[WUZAPI AUTO-HEAL FATAL] Falha ao recriar: ${errTxt}`);
+                }
+            }
         }
 
         if (data.code >= 400 || data.success === false) {
@@ -2617,8 +2654,16 @@ bot.action(/^wa_qr_(.+)$/, async (ctx) => {
     // Inicia polling proativo
     startConnectionPolling(ctx.chat.id, id);
 
-    await new Promise(r => setTimeout(r, 1000));
-    const res = await callWuzapi("/session/qr", "GET", null, id);
+    // V1.503: Loop de Retry para captura do QR Code (Wuzapi pode demorar alguns segundos na 1ª vez)
+    let res;
+    let qrAttempt = 0;
+    while (qrAttempt < 5) {
+        qrAttempt++;
+        await new Promise(r => setTimeout(r, 1500));
+        res = await callWuzapi("/session/qr", "GET", null, id);
+        if (res.data && res.data.QRCode) break;
+        log(`[QR RETRY ${qrAttempt}/5] QR Code ainda não gerado para ${id}...`);
+    }
 
     if (res.data && res.data.QRCode) {
         const qrBase64 = res.data.QRCode.split(",")[1];
@@ -4436,19 +4481,26 @@ bot.on("text", async (ctx, next) => {
 
         // WUZAPI: connect first
         await callWuzapi("/session/connect", "POST", { Immediate: true }, instId);
-        await new Promise(r => setTimeout(r, 1000));
 
-        // Envia o número LIMPO para disparar o Push Notification
-        const res = await callWuzapi("/session/pairphone", "POST", { Phone: phone }, instId);
+        // V1.503: Loop de Retry para Pairing Code (Igual ao QR Code)
+        let res;
+        let pairAttempt = 0;
+        while (pairAttempt < 5) {
+            pairAttempt++;
+            await new Promise(r => setTimeout(r, 1500));
+            res = await callWuzapi("/session/pairphone", "POST", { Phone: phone }, instId);
+            if (res.success && res.data && res.data.LinkingCode) break;
+            log(`[PAIR RETRY ${pairAttempt}/5] Código de pareamento ainda não gerado para ${instId}...`);
+        }
 
         if (res.success && res.data && res.data.LinkingCode) {
             ctx.reply(`🔢 *Código de Pareamento:* \`${res.data.LinkingCode}\`\n\nConfira seu celular agora! Toque na notificação do WhatsApp e digite o código acima.`, {
                 parse_mode: "Markdown"
             });
         } else {
-            ctx.reply("❌ Erro ao gerar código. Tente usar o **QR Code**.");
+            log(`[PAIR FAIL] Res: ${JSON.stringify(res)}`);
+            ctx.reply("❌ Erro ao gerar código de pareamento. Tente novamente em alguns segundos ou use o QR Code.");
         }
-
     } else if (session.stage && session.stage.startsWith("WA_WAITING_WEBHOOK_URL_")) {
         const instId = session.stage.replace("WA_WAITING_WEBHOOK_URL_", "");
         const { inst: ownershipOk } = await checkOwnership(ctx, instId);
