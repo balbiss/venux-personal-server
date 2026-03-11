@@ -172,7 +172,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.505"; // V1.505: FIX REAL - Immediate:false no /session/connect aguarda WS conectar antes de pedir QR/Pair
+const SERVER_VERSION = "1.506"; // V1.506: waitForConnected() - loop /session/connect + poll status antes do QR/Pair
 const ROOT_MASTER_ID = "7924857149"; // V1.450: Trava de Segurança Root (Ninguém mais pode ser Master)
 const SAAS_NAME = process.env.SAAS_NAME || "Connect SaaS";
 const SAAS_LOGO_URL = process.env.SAAS_LOGO_URL || null;
@@ -2633,6 +2633,42 @@ async function startConnectionPolling(chatId, instId) {
     activePolls.set(instId, interval);
 }
 
+// V1.506: Helper que garante que a sessão está CONECTADA antes de prosseguir
+// Chama /session/connect em loop até connected:true aparecer no /session/status
+async function waitForConnected(id, timeoutMs = 30000) {
+    const start = Date.now();
+    let attempt = 0;
+    while (Date.now() - start < timeoutMs) {
+        attempt++;
+        log(`[CONNECT LOOP ${attempt}] Tentando conectar ${id}...`);
+
+        // Tenta conectar (pode falhar com 500 na 1ª vez para instâncias novas)
+        await callWuzapi("/session/connect", "POST", { Immediate: true }, id);
+
+        // Aguarda 2s e verifica se ficou conectado
+        await new Promise(r => setTimeout(r, 2000));
+        const status = await callWuzapi("/session/status", "GET", null, id);
+
+        if (status.success && status.data) {
+            const d = status.data;
+            // connected:true = WebSocket com WA estabelecido
+            if (d.connected === true || d.Connected === true) {
+                log(`[CONNECT LOOP] ${id} CONECTADO após ${attempt} tentativa(s)!`);
+                return true;
+            }
+            // Já logado = também está ok
+            if (d.loggedIn === true || d.LoggedIn === true) {
+                log(`[CONNECT LOOP] ${id} JA LOGADO - ok!`);
+                return true;
+            }
+        }
+        log(`[CONNECT LOOP ${attempt}] ${id} ainda não conectado. Aguardando 2s...`);
+        await new Promise(r => setTimeout(r, 2000));
+    }
+    log(`[CONNECT LOOP TIMEOUT] ${id} não conectou em ${timeoutMs}ms.`);
+    return false;
+}
+
 bot.action(/^wa_qr_(.+)$/, async (ctx) => {
     safeAnswer(ctx);
     const id = ctx.match[1];
@@ -2642,24 +2678,25 @@ bot.action(/^wa_qr_(.+)$/, async (ctx) => {
 
     await ensureWebhookSet(id);
 
-    // Antes de gerar, verifica se já não está logado
+    // Verifica se já está logado
     const stats = await callWuzapi("/session/status", "GET", null, id);
     if (stats.success && (stats.data?.LoggedIn || stats.data?.loggedIn)) {
         return ctx.reply("✅ Você já está conectado!");
     }
 
-    // WUZAPI: connect
-    // V1.505: Immediate:false faz o Wuzapi AGUARDAR até 10s pela conexão real do WebSocket antes de retornar.
-    // Com Immediate:true ele retorna imediatamente e o QR code falha pois o WS ainda não está pronto.
-    ctx.reply("⏳ Conectando ao WhatsApp... Aguarde (~10s)");
-    await callWuzapi("/session/connect", "POST", { Immediate: false }, id);
-
-    // Inicia polling proativo
+    // V1.506: Loop de conexão - chama /session/connect até connected:true
+    ctx.reply("🔄 Estabelecendo conexão com o WhatsApp... Aguarde.");
     startConnectionPolling(ctx.chat.id, id);
+    const connected = await waitForConnected(id, 40000); // até 40s
 
-    log(`[QR] /session/connect concluído. Solicitando QR Code para ${id}...`);
+    if (!connected) {
+        log(`[QR FAIL] Não foi possível conectar ${id} ao WhatsApp.`);
+        return ctx.reply("❌ Não foi possível conectar ao WhatsApp. Verifique se o Wuzapi está online e tente novamente.");
+    }
 
-    // Loop de Retry (até 4 tentativas com intervalo de 2s)
+    log(`[QR] Conectado! Solicitando QR Code para ${id}...`);
+
+    // Loop de Retry para o QR (até 4 tentativas com intervalo de 2s)
     let res;
     let qrAttempt = 0;
     while (qrAttempt < 4) {
@@ -4484,14 +4521,18 @@ bot.on("text", async (ctx, next) => {
         // Inicia polling proativo
         startConnectionPolling(ctx.chat.id, instId);
 
-        // WUZAPI: connect first
-        // V1.505: Immediate:false faz o Wuzapi AGUARDAR até 10s pela conexão real do WebSocket antes de retornar.
-        ctx.reply("⏳ Conectando ao WhatsApp... Aguarde (~10s)");
-        await callWuzapi("/session/connect", "POST", { Immediate: false }, instId);
+        // WUZAPI: connect first (V1.506: loop até connected:true)
+        ctx.reply("🔄 Estabelecendo conexão com o WhatsApp... Aguarde.");
+        const connected = await waitForConnected(instId, 40000); // até 40s
 
-        log(`[PAIR] /session/connect concluído. Solicitando código de pareamento para ${instId}...`);
+        if (!connected) {
+            log(`[PAIR FAIL] Não foi possível conectar ${instId} ao WhatsApp.`);
+            return ctx.reply("❌ Não foi possível conectar ao WhatsApp. Verifique se o Wuzapi está online e tente novamente.");
+        }
 
-        // Loop de Retry (até 4 tentativas com intervalo de 2s)
+        log(`[PAIR] Conectado! Solicitando código de pareamento para ${instId}...`);
+
+        // Loop de Retry para pair code (até 4 tentativas com intervalo de 2s)
         let res;
         let pairAttempt = 0;
         while (pairAttempt < 4) {
