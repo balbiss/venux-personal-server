@@ -2675,27 +2675,31 @@ bot.action(/^wa_qr_(.+)$/, async (ctx) => {
     const id = ctx.match[1];
     const { inst, session } = await checkOwnership(ctx, id);
     if (!inst) return;
-    ctx.reply("⏳ Gerando QR Code...");
-
+    const statusMsg = await ctx.reply("⏳ Gerando QR Code...").catch(() => null);
     await ensureWebhookSet(id);
 
     // Verifica se já está logado
     const stats = await callWuzapi("/session/status", "GET", null, id);
     if (stats.success && (stats.data?.LoggedIn || stats.data?.loggedIn)) {
-        return ctx.reply("✅ Você já está conectado!");
+        if (statusMsg) ctx.telegram.editMessageText(ctx.chat.id, statusMsg.message_id, null, "✅ Você já está conectado!");
+        else ctx.reply("✅ Você já está conectado!");
+        return;
     }
 
     // V1.506: Loop de conexão - chama /session/connect até connected:true
-    ctx.reply("🔄 Estabelecendo conexão com o WhatsApp... Aguarde.");
+    if (statusMsg) ctx.telegram.editMessageText(ctx.chat.id, statusMsg.message_id, null, "🔄 Estabelecendo conexão com o WhatsApp... Aguarde.").catch(() => { });
     startConnectionPolling(ctx.chat.id, id);
     const connected = await waitForConnected(id, 40000); // até 40s
 
     if (!connected) {
         log(`[QR FAIL] Não foi possível conectar ${id} ao WhatsApp.`);
-        return ctx.reply("❌ Não foi possível conectar ao WhatsApp. Verifique se o Wuzapi está online e tente novamente.");
+        const errMsg = "❌ Não foi possível conectar ao WhatsApp. Verifique se o Wuzapi está online e tente novamente.";
+        if (statusMsg) return ctx.telegram.editMessageText(ctx.chat.id, statusMsg.message_id, null, errMsg).catch(() => ctx.reply(errMsg));
+        return ctx.reply(errMsg);
     }
 
     log(`[QR] Conectado! Solicitando QR Code para ${id}...`);
+    if (statusMsg) ctx.telegram.editMessageText(ctx.chat.id, statusMsg.message_id, null, "📷 Gerando imagem do QR Code...").catch(() => { });
 
     // Loop de Retry para o QR (até 4 tentativas com intervalo de 2s)
     let res;
@@ -2710,10 +2714,13 @@ bot.action(/^wa_qr_(.+)$/, async (ctx) => {
 
     if (res.data && res.data.QRCode) {
         const qrBase64 = res.data.QRCode.split(",")[1];
+        if (statusMsg) ctx.telegram.deleteMessage(ctx.chat.id, statusMsg.message_id).catch(() => { });
         ctx.replyWithPhoto({ source: Buffer.from(qrBase64, "base64") }, { caption: "📷 Escaneie para conectar\n\n_O bot avisará assim que detectar o login com sucesso._", parse_mode: "Markdown" });
     } else {
         log(`[QR FAIL] Res: ${JSON.stringify(res)}`);
-        ctx.reply("❌ Erro ao gerar QR Code. Certifique-se de que a instância não esteja já online. Caso persista, dê Logout e tente novamente.");
+        const errMsg = "❌ Erro ao gerar QR Code. Certifique-se de que a instância não esteja já online. Caso persista, dê Logout e tente novamente.";
+        if (statusMsg) ctx.telegram.editMessageText(ctx.chat.id, statusMsg.message_id, null, errMsg).catch(() => ctx.reply(errMsg));
+        else ctx.reply(errMsg);
     }
 });
 
@@ -4514,7 +4521,7 @@ bot.on("text", async (ctx, next) => {
 
         session.stage = "READY";
         await syncSession(ctx, session);
-        ctx.reply("⏳ Solicitando código e disparando notificação...");
+        const statusMsg = await ctx.reply("⏳ Solicitando código e disparando notificação...").catch(() => null);
 
         // Garante webhook para o aviso de sucesso chegar
         await ensureWebhookSet(instId);
@@ -4523,15 +4530,18 @@ bot.on("text", async (ctx, next) => {
         startConnectionPolling(ctx.chat.id, instId);
 
         // WUZAPI: connect first (V1.506: loop até connected:true)
-        ctx.reply("🔄 Estabelecendo conexão com o WhatsApp... Aguarde.");
+        if (statusMsg) ctx.telegram.editMessageText(ctx.chat.id, statusMsg.message_id, null, "🔄 Estabelecendo conexão com o WhatsApp... Aguarde.").catch(() => { });
         const connected = await waitForConnected(instId, 40000); // até 40s
 
         if (!connected) {
             log(`[PAIR FAIL] Não foi possível conectar ${instId} ao WhatsApp.`);
-            return ctx.reply("❌ Não foi possível conectar ao WhatsApp. Verifique se o Wuzapi está online e tente novamente.");
+            const errMsg = "❌ Não foi possível conectar ao WhatsApp. Verifique se o Wuzapi está online e tente novamente.";
+            if (statusMsg) return ctx.telegram.editMessageText(ctx.chat.id, statusMsg.message_id, null, errMsg).catch(() => ctx.reply(errMsg));
+            return ctx.reply(errMsg);
         }
 
         log(`[PAIR] Conectado! Solicitando código de pareamento para ${instId}...`);
+        if (statusMsg) ctx.telegram.editMessageText(ctx.chat.id, statusMsg.message_id, null, "🔢 Gerando código de pareamento...").catch(() => { });
 
         // Loop de Retry para pair code (até 4 tentativas com intervalo de 2s)
         let res;
@@ -4545,12 +4555,17 @@ bot.on("text", async (ctx, next) => {
         }
 
         if (res.success && res.data && res.data.LinkingCode) {
-            ctx.reply(`🔢 *Código de Pareamento:* \`${res.data.LinkingCode}\`\n\nConfira seu celular agora! Toque na notificação do WhatsApp e digite o código acima.`, {
-                parse_mode: "Markdown"
+            if (statusMsg) ctx.telegram.editMessageText(ctx.chat.id, statusMsg.message_id, null, `🔢 *Código de Pareamento:* \`${res.data.LinkingCode}\`\n\nConfira seu celular agora! Toque na notificação do WhatsApp e digite o código acima.`, { parse_mode: "Markdown" }).catch(() => {
+                ctx.reply(`🔢 *Código de Pareamento:* \`${res.data.LinkingCode}\`\n\nConfira seu celular agora! Toque na notificação do WhatsApp e digite o código acima.`, { parse_mode: "Markdown" });
             });
+            else {
+                ctx.reply(`🔢 *Código de Pareamento:* \`${res.data.LinkingCode}\`\n\nConfira seu celular agora! Toque na notificação do WhatsApp e digite o código acima.`, { parse_mode: "Markdown" });
+            }
         } else {
             log(`[PAIR FAIL] Res: ${JSON.stringify(res)}`);
-            ctx.reply("❌ Erro ao gerar código de pareamento. Tente novamente em alguns segundos ou use o QR Code.");
+            const errMsg = "❌ Erro ao gerar código de pareamento. Tente novamente em alguns segundos ou use o QR Code.";
+            if (statusMsg) ctx.telegram.editMessageText(ctx.chat.id, statusMsg.message_id, null, errMsg).catch(() => ctx.reply(errMsg));
+            else ctx.reply(errMsg);
         }
     } else if (session.stage && session.stage.startsWith("WA_WAITING_WEBHOOK_URL_")) {
         const instId = session.stage.replace("WA_WAITING_WEBHOOK_URL_", "");
