@@ -147,6 +147,14 @@ async function getSession(chatId) {
         });
     }
 
+    // V1.506: Auto-Cura de Bloat (Evita timeouts no Supabase)
+    const sessionSize = JSON.stringify(sessionObj).length;
+    if (sessionSize > 500 * 1024) { // > 500KB
+        log(`[DB HEAL] Sessão ${id} muito grande (${(sessionSize / 1024).toFixed(1)}KB). Limpando rascunhos antigos...`);
+        clearMassDraft(sessionObj);
+        await saveSession(id, sessionObj);
+    }
+
     return sessionObj;
 }
 
@@ -165,6 +173,35 @@ async function saveSession(chatId, sessionData) {
         });
 
     if (error) log(`[DB ERR] Erro ao salvar sessão ${id}: ${error.message}`);
+
+    const size = JSON.stringify(sessionData).length;
+    if (size > 300 * 1024) { // > 300KB
+        log(`[DB WARN] Sessão ${id} salva com tamanho elevado: ${(size / 1024).toFixed(1)}KB`);
+    }
+}
+
+async function clearMassDraft(session) {
+    if (!session) return;
+    const fieldsToClear = [
+        'mass_contacts', 'mass_msgs', 'mass_media_data', 'mass_media_url',
+        'mass_file_name', 'mass_media_type', 'temp_mass_min', 'temp_mass_max',
+        'mass_msg', 'mass_media_caption'
+    ];
+    fieldsToClear.forEach(f => {
+        if (session[f] !== undefined) delete session[f];
+    });
+    // Limpar logs de relatórios muito antigos (> 5 campanhas) para evitar bloat constante
+    if (session.reports && Object.keys(session.reports).length > 5) {
+        const sortedKeys = Object.keys(session.reports).sort((a, b) => {
+            const timeA = new Date(session.reports[a].timestamp || 0).getTime();
+            const timeB = new Date(session.reports[b].timestamp || 0).getTime();
+            return timeA - timeB;
+        });
+        while (sortedKeys.length > 5) {
+            const oldest = sortedKeys.shift();
+            delete session.reports[oldest];
+        }
+    }
 }
 
 // Helper para salvar sessão atual rapidamente
@@ -172,7 +209,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.506"; // V1.506: waitForConnected() - loop /session/connect + poll status antes do QR/Pair
+const SERVER_VERSION = "1.507"; // V1.507: Sessão Clean - Limpeza de rascunhos em massa + Auto-heal bloat
 const ROOT_MASTER_ID = "7924857149"; // V1.450: Trava de Segurança Root (Ninguém mais pode ser Master)
 const SAAS_NAME = process.env.SAAS_NAME || "Connect SaaS";
 const SAAS_LOGO_URL = process.env.SAAS_LOGO_URL || null;
@@ -2373,6 +2410,7 @@ bot.action(/^(wa_mass_now_|wa_mass_confirm_start_)(.+)$/, async (ctx) => {
     activeCampaigns.set(ctx.chat.id, camp);
 
     session.stage = "READY";
+    clearMassDraft(session); // V1.506: Limpar rascunho após iniciar disparo (economiza DB)
     await syncSession(ctx, session);
 
     ctx.editMessageText("🚀 Iniciando disparo agora...");
@@ -4503,6 +4541,7 @@ bot.on("text", async (ctx, next) => {
         }
 
         session.stage = "READY";
+        clearMassDraft(session); // V1.506: Limpar rascunho após agendar (economiza DB)
         await syncSession(ctx, session);
 
         ctx.reply(`✅ *Disparo Agendado!*\n\n📅 Data: \`${dateStr}\`\n🚀 Instância: \`${instId}\`\n\nO sistema iniciará o envio automaticamente no horário marcado.`);
