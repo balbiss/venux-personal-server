@@ -2626,7 +2626,8 @@ async function startConnectionPolling(chatId, instId) {
         if (isFullyLoggedIn) {
             clearInterval(interval);
             activePolls.delete(instId);
-            bot.telegram.sendMessage(chatId, `✅ *WhatsApp Conectado com Sucesso!* \n\nA instância \`${instId}\` agora está online e pronta para uso no Connect.`, { parse_mode: "Markdown" });
+            // V1.506: Mensagem duplicada removida (O Webhook em /webhook já notifica Connected/LoggedIn)
+            // log(`[POLLING DONE] ${instId} logado. Notificação deixada para o Webhook.`);
         }
     }, 2000);
 
