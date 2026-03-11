@@ -2626,8 +2626,8 @@ async function startConnectionPolling(chatId, instId) {
         if (isFullyLoggedIn) {
             clearInterval(interval);
             activePolls.delete(instId);
-            // V1.506: Mensagem duplicada removida (O Webhook em /webhook já notifica Connected/LoggedIn)
-            // log(`[POLLING DONE] ${instId} logado. Notificação deixada para o Webhook.`);
+            // V1.506: Notificação restaurada (O Webhook pode falhar em ambientes locais com túnel)
+            bot.telegram.sendMessage(chatId, `✅ *WhatsApp Conectado!*\n\nA instância \`${instId}\` agora está online e pronta para uso.`, { parse_mode: "Markdown" });
         }
     }, 2000);
 
@@ -4914,7 +4914,7 @@ app.post("/webhook", async (req, res) => {
             const chatId = parts[1];
 
             if (wuzapiEvent === "Connected" || wuzapiEvent === "LoggedIn") {
-                bot.telegram.sendMessage(chatId, `✅ *WhatsApp Conectado!*\n\nA instância \`${tokenId}\` agora está online e pronta para uso.`, { parse_mode: "Markdown" });
+                // bot.telegram.sendMessage(chatId, `✅ *WhatsApp Conectado!*\n\nA instância \`${tokenId}\` agora está online e pronta para uso.`, { parse_mode: "Markdown" });
 
                 // V1.319: Persistir status no banco para sincronizar com Painel Web
                 const s = await getSession(chatId);
