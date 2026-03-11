@@ -172,7 +172,7 @@ async function syncSession(ctx, session) {
     await saveSession(ctx.chat.id, session);
 }
 
-const SERVER_VERSION = "1.503"; // V1.503: Retry Loop para QR Code e Pairing Code (Auto-Heal Melhorado)
+const SERVER_VERSION = "1.504"; // V1.504: Aguarda 3s após /session/connect antes de pedir QR/Pair code
 const ROOT_MASTER_ID = "7924857149"; // V1.450: Trava de Segurança Root (Ninguém mais pode ser Master)
 const SAAS_NAME = process.env.SAAS_NAME || "Connect SaaS";
 const SAAS_LOGO_URL = process.env.SAAS_LOGO_URL || null;
@@ -2654,15 +2654,19 @@ bot.action(/^wa_qr_(.+)$/, async (ctx) => {
     // Inicia polling proativo
     startConnectionPolling(ctx.chat.id, id);
 
-    // V1.503: Loop de Retry para captura do QR Code (Wuzapi pode demorar alguns segundos na 1ª vez)
+    // V1.504: Espera inicial de 3s para Wuzapi estabilizar o websocket antes de pedir o QR
+    log(`[QR] Aguardando Wuzapi estabilizar o websocket para ${id}...`);
+    await new Promise(r => setTimeout(r, 3000));
+
+    // Loop de Retry (até 6 tentativas com intervalo de 2s = até 12s de espera máxima)
     let res;
     let qrAttempt = 0;
-    while (qrAttempt < 5) {
+    while (qrAttempt < 6) {
         qrAttempt++;
-        await new Promise(r => setTimeout(r, 1500));
         res = await callWuzapi("/session/qr", "GET", null, id);
         if (res.data && res.data.QRCode) break;
-        log(`[QR RETRY ${qrAttempt}/5] QR Code ainda não gerado para ${id}...`);
+        log(`[QR RETRY ${qrAttempt}/6] QR Code ainda não gerado para ${id}. Aguardando 2s...`);
+        await new Promise(r => setTimeout(r, 2000));
     }
 
     if (res.data && res.data.QRCode) {
@@ -4482,15 +4486,19 @@ bot.on("text", async (ctx, next) => {
         // WUZAPI: connect first
         await callWuzapi("/session/connect", "POST", { Immediate: true }, instId);
 
-        // V1.503: Loop de Retry para Pairing Code (Igual ao QR Code)
+        // V1.504: Espera inicial de 3s para Wuzapi estabilizar o websocket antes de pedir pair code
+        log(`[PAIR] Aguardando Wuzapi estabilizar o websocket para ${instId}...`);
+        await new Promise(r => setTimeout(r, 3000));
+
+        // Loop de Retry (até 6 tentativas com intervalo de 2s = até 12s de espera máxima)
         let res;
         let pairAttempt = 0;
-        while (pairAttempt < 5) {
+        while (pairAttempt < 6) {
             pairAttempt++;
-            await new Promise(r => setTimeout(r, 1500));
             res = await callWuzapi("/session/pairphone", "POST", { Phone: phone }, instId);
             if (res.success && res.data && res.data.LinkingCode) break;
-            log(`[PAIR RETRY ${pairAttempt}/5] Código de pareamento ainda não gerado para ${instId}...`);
+            log(`[PAIR RETRY ${pairAttempt}/6] Código não gerado ainda para ${instId}. Aguardando 2s...`);
+            await new Promise(r => setTimeout(r, 2000));
         }
 
         if (res.success && res.data && res.data.LinkingCode) {
